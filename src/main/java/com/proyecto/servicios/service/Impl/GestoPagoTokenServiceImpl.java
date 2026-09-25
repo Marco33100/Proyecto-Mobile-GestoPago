@@ -7,8 +7,9 @@ import com.proyecto.servicios.model.gestopago.GestoPagoAuthResponse;
 import com.proyecto.servicios.repositorys.gestopago.GestoPagoTokenRepository;
 import com.proyecto.servicios.service.GestoPagoTokenService;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
@@ -26,21 +27,25 @@ public class GestoPagoTokenServiceImpl implements GestoPagoTokenService {
     private final GestoPagoTokenRepository tokenRepository;
     private final GestoPagoTokenMapper tokenMapper;
 
-    @Value("${gestopago.auth.id-distribuidor}")
-    private Integer idDistribuidor;
+    private final Integer idDistribuidor;
+    private final String codigoDispositivo;
+    private final String password;
 
-    @Value("${gestopago.auth.codigo-dispositivo}")
-    private String codigoDispositivo;
-
-    @Value("${gestopago.auth.password}")
-    private String password;
-
-    public GestoPagoTokenServiceImpl(GestoPagoAuthClient gestoPagoAuthClient,
-                                     GestoPagoTokenRepository tokenRepository,
-                                     GestoPagoTokenMapper tokenMapper) {
+    @Autowired
+    public GestoPagoTokenServiceImpl(
+            GestoPagoAuthClient gestoPagoAuthClient,
+            GestoPagoTokenRepository tokenRepository,
+            GestoPagoTokenMapper tokenMapper,
+            @Value("${gestopago.auth.id-distribuidor}") Integer idDistribuidor,
+            @Value("${gestopago.auth.codigo-dispositivo}") String codigoDispositivo,
+            @Value("${gestopago.auth.password}") String password
+    ) {
         this.gestoPagoAuthClient = gestoPagoAuthClient;
         this.tokenRepository = tokenRepository;
         this.tokenMapper = tokenMapper;
+        this.idDistribuidor = idDistribuidor;
+        this.codigoDispositivo = codigoDispositivo;
+        this.password = password;
     }
 
     @Override
@@ -73,8 +78,8 @@ public class GestoPagoTokenServiceImpl implements GestoPagoTokenService {
             tokenRepository.save(tokenEntity);
             log.info("Token GestoPago renovado correctamente");
 
-        } catch (Exception e) {
-            log.error("Error al renovar token GestoPago: {}", e.getMessage(), e);
+        } catch (Exception exception) {
+            log.error("Error al renovar token GestoPago: {}", exception.getMessage(), exception);
         }
     }
 

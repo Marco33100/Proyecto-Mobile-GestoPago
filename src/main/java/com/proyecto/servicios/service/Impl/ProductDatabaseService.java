@@ -10,6 +10,7 @@ import com.proyecto.servicios.model.product.ProductListResponse;
 import com.proyecto.servicios.model.product.ProductMessage;
 import com.proyecto.servicios.model.product.ProductSyncResult;
 import com.proyecto.servicios.repositorys.gestopago.ProductRepository;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -17,7 +18,6 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 
 @Service
 @ConditionalOnProperty(name = "app.database.enabled", havingValue = "true")
@@ -26,6 +26,7 @@ public class ProductDatabaseService {
     private final ProductRepository productRepository;
     private final ProductEntityMapper productEntityMapper;
 
+    @Autowired
     public ProductDatabaseService(
             ProductRepository productRepository,
             ProductEntityMapper productEntityMapper
@@ -35,15 +36,12 @@ public class ProductDatabaseService {
     }
 
     @Transactional(transactionManager = "sfTransactionManager", readOnly = true)
-    public Optional<ProductListResponse> findCatalog() {
+    public ProductListResponse findCatalog() {
         try {
             List<ProductEntity> entities = productRepository.findAllByOrderByProductIdAsc();
-            if (entities.isEmpty()) {
-                return Optional.empty();
-            }
 
             ProductContainer container = new ProductContainer();
-            container.setProductos(entities.stream().map(productEntityMapper::toDto).toList());
+            container.setProductos(productEntityMapper.toDtos(entities));
 
             ProductMessage message = new ProductMessage();
             message.setCodigo("01");
@@ -52,7 +50,7 @@ public class ProductDatabaseService {
             ProductListResponse response = new ProductListResponse();
             response.setMensaje(message);
             response.setProductos(container);
-            return Optional.of(response);
+            return response;
         } catch (Exception exception) {
             throw databaseError("No fue posible consultar el catálogo en PostgreSQL", exception);
         }
@@ -78,9 +76,7 @@ public class ProductDatabaseService {
             }
 
             productRepository.deleteAllInBatch();
-            productRepository.saveAllAndFlush(
-                    uniqueProducts.values().stream().map(productEntityMapper::toEntity).toList()
-            );
+            productRepository.saveAllAndFlush(productEntityMapper.toEntities(uniqueProducts.values()));
             return new ProductSyncResult(true, previousCount, receivedCount);
         } catch (ProductIntegrationException exception) {
             throw exception;

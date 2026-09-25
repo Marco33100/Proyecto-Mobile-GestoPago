@@ -6,6 +6,7 @@ import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -26,6 +27,7 @@ public class JwtTokenService {
     private final String issuer;
     private final Duration expiration;
 
+    @Autowired
     public JwtTokenService(
             @Value("${auth.jwt.secret:}") String configuredSecret,
             @Value("${auth.jwt.issuer:prueba-api}") String issuer,

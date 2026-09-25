@@ -5,6 +5,7 @@ import com.proyecto.servicios.exception.ProductIntegrationErrorType;
 import com.proyecto.servicios.exception.ProductIntegrationException;
 import com.proyecto.servicios.model.product.ProductListResponse;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -33,6 +34,7 @@ public class ProductSnapshotFileService {
     private final Path baseDirectory;
     private final XmlMapper xmlMapper;
 
+    @Autowired
     public ProductSnapshotFileService(
             @Value("${product.sync.temp-directory}") String baseDirectory
     ) {

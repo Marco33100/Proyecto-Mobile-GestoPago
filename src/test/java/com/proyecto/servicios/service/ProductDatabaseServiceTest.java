@@ -7,6 +7,7 @@ import com.proyecto.servicios.model.product.ProductListResponse;
 import com.proyecto.servicios.model.product.ProductSyncResult;
 import com.proyecto.servicios.repositorys.gestopago.ProductRepository;
 import com.proyecto.servicios.service.Impl.ProductDatabaseService;
+import org.mapstruct.factory.Mappers;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -32,7 +33,7 @@ class ProductDatabaseServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new ProductDatabaseService(productRepository, new ProductEntityMapper());
+        service = new ProductDatabaseService(productRepository, Mappers.getMapper(ProductEntityMapper.class));
     }
 
     @Test
