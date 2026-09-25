@@ -8,6 +8,7 @@ import feign.FeignException;
 import feign.RetryableException;
 import feign.codec.DecodeException;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
@@ -28,6 +29,7 @@ public class GestopagoProductGateway {
     private volatile ProductIntegrationErrorType lastErrorType;
     private volatile String lastErrorMessage;
 
+    @Autowired
     public GestopagoProductGateway(
             ProductCatalogClient productCatalogClient,
             @Value("${product.service.failure-cooldown}") Duration failureCooldown

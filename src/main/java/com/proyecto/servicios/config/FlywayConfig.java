@@ -15,14 +15,19 @@ import javax.sql.DataSource;
 @ConditionalOnProperty(name = "app.database.enabled", havingValue = "true")
 public class FlywayConfig {
 
-    @Value("${spring.flyway.locations:classpath:db/migration}")
-    private String[] locations;
+    private final String[] locations;
+    private final String historyTable;
+    private final String schema;
 
-    @Value("${spring.flyway.table:flyway_schema_history}")
-    private String historyTable;
-
-    @Value("${spring.flyway.schemas:public}")
-    private String schema;
+    public FlywayConfig(
+            @Value("${spring.flyway.locations:classpath:db/migration}") String[] locations,
+            @Value("${spring.flyway.table:flyway_schema_history}") String historyTable,
+            @Value("${spring.flyway.schemas:public}") String schema
+    ) {
+        this.locations = locations;
+        this.historyTable = historyTable;
+        this.schema = schema;
+    }
 
     @Bean(name = "flyway")
     public Flyway flyway(@Qualifier("sfDatasource") DataSource dataSource) {

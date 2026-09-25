@@ -117,7 +117,9 @@ jacocoTestReport {
  * Genera imagen
  */
 task dockerImage(type: Exec) {
-    println 'CrearImagen'
+    doFirst {
+        println 'CrearImagen'
+    }
     commandLine "docker", "build", "-t", "proyecto-core:0.1", "$projectDir"
 }
 
@@ -125,7 +127,9 @@ task dockerImage(type: Exec) {
  * Ejecuta imagen
  */
 task dockerUp(type: Exec) {
-    println "Arranca imagen"
+    doFirst {
+        println "Arranca imagen"
+    }
     commandLine "docker-compose", "--compatibility", "up"
 }
 

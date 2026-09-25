@@ -5,12 +5,12 @@ import com.proyecto.servicios.exception.auth.AuthCacheException;
 import com.proyecto.servicios.exception.auth.AuthPersistenceException;
 import com.proyecto.servicios.repositorys.sf.UserSessionRepository;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
-import java.util.Optional;
 import java.util.UUID;
 
 @Slf4j
@@ -21,6 +21,7 @@ public class ActiveSessionService {
     private final UserSessionRepository sessionRepository;
     private final AuthCacheStore authCacheStore;
 
+    @Autowired
     public ActiveSessionService(UserSessionRepository sessionRepository, AuthCacheStore authCacheStore) {
         this.sessionRepository = sessionRepository;
         this.authCacheStore = authCacheStore;
@@ -57,17 +58,11 @@ public class ActiveSessionService {
         // PostgreSQL es la fuente de verdad. Así, si un login reemplazó la sesión
         // en la base pero Redis falló, el token anterior queda invalidado de inmediato.
         try {
-            Optional<UserSessionEntity> stored = sessionRepository.findById(userId)
-                    .filter(session -> session.getExpiresAt().isAfter(Instant.now()));
-            if (stored.isEmpty() || !stored.get().getSessionId().equals(sessionId)) {
-                return false;
-            }
-            try {
-                authCacheStore.replaceSession(userId, sessionId, stored.get().getExpiresAt());
-            } catch (AuthCacheException ignored) {
-                log.debug("No fue posible reconstruir la sesion en Redis");
-            }
-            return true;
+            return sessionRepository.findById(userId)
+                    .filter(session -> session.getExpiresAt().isAfter(Instant.now()))
+                    .filter(session -> session.getSessionId().equals(sessionId))
+                    .map(session -> restoreCache(userId, sessionId, session.getExpiresAt()))
+                    .orElse(false);
         } catch (DataAccessException exception) {
             log.warn("PostgreSQL no estuvo disponible al validar la sesion; se consultara Redis");
             try {
@@ -79,5 +74,14 @@ public class ActiveSessionService {
                 return false;
             }
         }
+    }
+
+    private boolean restoreCache(UUID userId, UUID sessionId, Instant expiresAt) {
+        try {
+            authCacheStore.replaceSession(userId, sessionId, expiresAt);
+        } catch (AuthCacheException exception) {
+            log.debug("No fue posible reconstruir la sesion en Redis");
+        }
+        return true;
     }
 }

@@ -17,6 +17,7 @@ import com.proyecto.servicios.repositorys.sf.AccountRepository;
 import com.proyecto.servicios.repositorys.sf.UserRepository;
 import com.proyecto.servicios.service.AuthService;
 import com.proyecto.servicios.service.JwtTokenService;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.dao.DataAccessException;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -41,6 +42,7 @@ public class AuthServiceImpl implements AuthService {
     private final AuthCacheStore authCacheStore;
     private final ActiveSessionService activeSessionService;
 
+    @Autowired
     public AuthServiceImpl(UserRepository userRepository, AccountRepository accountRepository,
                            PasswordEncoder passwordEncoder, JwtTokenService jwtTokenService,
                            AuthCacheStore authCacheStore, ActiveSessionService activeSessionService) {
@@ -126,8 +128,6 @@ public class AuthServiceImpl implements AuthService {
                 log.warn("Redis no estuvo disponible para cachear el usuario autenticado");
             }
             return toCachedUser(user);
-        } catch (InvalidCredentialsException exception) {
-            throw exception;
         } catch (DataAccessException databaseException) {
             log.warn("PostgreSQL no estuvo disponible durante el login; se consultara Redis");
             try {

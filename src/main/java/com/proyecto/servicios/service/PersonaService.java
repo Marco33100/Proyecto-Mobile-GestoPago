@@ -6,7 +6,10 @@ import com.proyecto.servicios.model.PersonaResponse;
 import com.proyecto.servicios.model.PersonasRequest;
 
 public interface PersonaService {
-    PersonaResponse creaPersona(PersonasRequest personasRequest);
-    GenericResponse eliminaPersona(EliminaPersonaRequest eliminaPersonaRequest);
-    GenericResponse actualizaPersona(PersonasRequest personasRequest);
+
+    PersonaResponse crearPersona(PersonasRequest request);
+
+    GenericResponse eliminarPersona(EliminaPersonaRequest request);
+
+    GenericResponse actualizarPersona(PersonasRequest request);
 }

@@ -2,43 +2,45 @@ package com.proyecto.servicios.mapper;
 
 import com.proyecto.servicios.entity.gestopago.ProductEntity;
 import com.proyecto.servicios.model.product.ProductDto;
-import org.springframework.stereotype.Component;
+import org.mapstruct.Mapper;
+import org.mapstruct.Mapping;
+import org.mapstruct.ReportingPolicy;
 
-import java.time.LocalDateTime;
+import java.util.Collection;
+import java.util.List;
 
-@Component
-public class ProductEntityMapper {
+/** Convierte el modelo deserializado desde XML en la entidad persistida. */
+@Mapper(componentModel = "spring", unmappedTargetPolicy = ReportingPolicy.IGNORE)
+public interface ProductEntityMapper {
 
-    public ProductEntity toEntity(ProductDto source) {
-        ProductEntity target = new ProductEntity();
-        target.setProductId(source.getIdProducto());
-        target.setServiceId(source.getIdServicio());
-        target.setCategoryServiceTypeId(source.getIdCatTipoServicio());
-        target.setServiceName(source.getServicio());
-        target.setProductName(source.getProducto());
-        target.setFrontType(source.getTipoFront());
-        target.setHasCheckDigit(source.getHasDigitoVerificador());
-        target.setPrice(source.getPrecio());
-        target.setShowHelp(source.getShowAyuda());
-        target.setReferenceType(source.getTipoReferencia());
-        target.setLegend(source.getLegend());
-        target.setUpdatedAt(LocalDateTime.now());
-        return target;
-    }
+    @Mapping(target = "productId", source = "idProducto")
+    @Mapping(target = "serviceId", source = "idServicio")
+    @Mapping(target = "categoryServiceTypeId", source = "idCatTipoServicio")
+    @Mapping(target = "serviceName", source = "servicio")
+    @Mapping(target = "productName", source = "producto")
+    @Mapping(target = "frontType", source = "tipoFront")
+    @Mapping(target = "hasCheckDigit", source = "hasDigitoVerificador")
+    @Mapping(target = "price", source = "precio")
+    @Mapping(target = "showHelp", source = "showAyuda")
+    @Mapping(target = "referenceType", source = "tipoReferencia")
+    @Mapping(target = "legend", source = "legend")
+    @Mapping(target = "updatedAt", expression = "java(java.time.LocalDateTime.now())")
+    ProductEntity toEntity(ProductDto source);
 
-    public ProductDto toDto(ProductEntity source) {
-        ProductDto target = new ProductDto();
-        target.setIdProducto(source.getProductId());
-        target.setIdServicio(source.getServiceId());
-        target.setIdCatTipoServicio(source.getCategoryServiceTypeId());
-        target.setServicio(source.getServiceName());
-        target.setProducto(source.getProductName());
-        target.setTipoFront(source.getFrontType());
-        target.setHasDigitoVerificador(source.getHasCheckDigit());
-        target.setPrecio(source.getPrice());
-        target.setShowAyuda(source.getShowHelp());
-        target.setTipoReferencia(source.getReferenceType());
-        target.setLegend(source.getLegend());
-        return target;
-    }
+    @Mapping(target = "idProducto", source = "productId")
+    @Mapping(target = "idServicio", source = "serviceId")
+    @Mapping(target = "idCatTipoServicio", source = "categoryServiceTypeId")
+    @Mapping(target = "servicio", source = "serviceName")
+    @Mapping(target = "producto", source = "productName")
+    @Mapping(target = "tipoFront", source = "frontType")
+    @Mapping(target = "hasDigitoVerificador", source = "hasCheckDigit")
+    @Mapping(target = "precio", source = "price")
+    @Mapping(target = "showAyuda", source = "showHelp")
+    @Mapping(target = "tipoReferencia", source = "referenceType")
+    @Mapping(target = "legend", source = "legend")
+    ProductDto toDto(ProductEntity source);
+
+    List<ProductEntity> toEntities(Collection<ProductDto> source);
+
+    List<ProductDto> toDtos(Collection<ProductEntity> source);
 }

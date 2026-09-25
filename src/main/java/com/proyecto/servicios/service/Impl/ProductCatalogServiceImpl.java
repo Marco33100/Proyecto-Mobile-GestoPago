@@ -1,16 +1,14 @@
 package com.proyecto.servicios.service.Impl;
 
 import com.proyecto.servicios.exception.ProductCacheException;
-import com.proyecto.servicios.exception.ProductIntegrationErrorType;
 import com.proyecto.servicios.exception.ProductIntegrationException;
 import com.proyecto.servicios.model.product.ProductListResponse;
-import com.proyecto.servicios.model.product.ProductSyncResult;
+import com.proyecto.servicios.service.GestopagoProductService;
 import com.proyecto.servicios.service.ProductCatalogService;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
-
-import java.util.Optional;
 
 @Slf4j
 @Service
@@ -18,27 +16,31 @@ public class ProductCatalogServiceImpl implements ProductCatalogService {
 
     private final ProductCacheStore productCacheStore;
     private final ObjectProvider<ProductDatabaseService> databaseServiceProvider;
-    private final GestopagoProductGateway gestopagoProductGateway;
+    private final GestopagoProductService gestopagoProductService;
     private final ProductCatalogRefreshLock refreshLock;
+    private final ProductCacheWarmupService productCacheWarmupService;
 
+    @Autowired
     public ProductCatalogServiceImpl(
             ProductCacheStore productCacheStore,
             ObjectProvider<ProductDatabaseService> databaseServiceProvider,
-            GestopagoProductGateway gestopagoProductGateway,
-            ProductCatalogRefreshLock refreshLock
+            GestopagoProductService gestopagoProductService,
+            ProductCatalogRefreshLock refreshLock,
+            ProductCacheWarmupService productCacheWarmupService
     ) {
         this.productCacheStore = productCacheStore;
         this.databaseServiceProvider = databaseServiceProvider;
-        this.gestopagoProductGateway = gestopagoProductGateway;
+        this.gestopagoProductService = gestopagoProductService;
         this.refreshLock = refreshLock;
+        this.productCacheWarmupService = productCacheWarmupService;
     }
 
     @Override
     public ProductListResponse obtenerProductos() {
         CacheLookup cacheLookup = findInRedis();
-        if (cacheLookup.value().isPresent()) {
+        if (ProductCatalogResponses.hasProducts(cacheLookup.value())) {
             log.debug("Catálogo de productos recuperado desde Redis");
-            return cacheLookup.value().get();
+            return cacheLookup.value();
         }
 
         ProductDatabaseService databaseService = databaseServiceProvider.getIfAvailable();
@@ -47,10 +49,10 @@ public class ProductCatalogServiceImpl implements ProductCatalogService {
         }
 
         // Redis caído: PostgreSQL puede atender concurrentemente sin bloquear todas las peticiones.
-        Optional<ProductListResponse> stored = findInPostgres(databaseService);
-        if (stored.isPresent()) {
+        ProductListResponse stored = findInPostgres(databaseService);
+        if (ProductCatalogResponses.hasProducts(stored)) {
             log.debug("Catálogo de productos recuperado desde PostgreSQL");
-            return stored.get();
+            return stored;
         }
 
         return refreshLock.execute(() -> refreshAfterCacheMiss(databaseService));
@@ -58,25 +60,22 @@ public class ProductCatalogServiceImpl implements ProductCatalogService {
 
     private ProductListResponse refreshAfterCacheMiss(ProductDatabaseService databaseService) {
         CacheLookup cacheLookup = findInRedis();
-        if (cacheLookup.value().isPresent()) {
-            return cacheLookup.value().get();
+        if (ProductCatalogResponses.hasProducts(cacheLookup.value())) {
+            return cacheLookup.value();
         }
 
-        Optional<ProductListResponse> stored = findInPostgres(databaseService);
-        if (stored.isPresent()) {
+        ProductListResponse stored = findInPostgres(databaseService);
+        if (ProductCatalogResponses.hasProducts(stored)) {
             if (cacheLookup.available()) {
-                updateRedisSafely(stored.get());
+                productCacheWarmupService.warmup(stored);
             }
-            return stored.get();
+            return stored;
         }
 
-        ProductListResponse externalResponse = gestopagoProductGateway.fetchCatalog();
-        ProductListResponse selectedResponse = persistExternalResponse(databaseService, externalResponse);
-        updateRedisSafely(selectedResponse);
-        return selectedResponse;
+        return gestopagoProductService.obtenerYGuardarProductos();
     }
 
-    private Optional<ProductListResponse> findInPostgres(ProductDatabaseService databaseService) {
+    private ProductListResponse findInPostgres(ProductDatabaseService databaseService) {
         if (databaseService != null) {
             try {
                 return databaseService.findCatalog();
@@ -85,66 +84,20 @@ public class ProductCatalogServiceImpl implements ProductCatalogService {
                         exception.getErrorType().getCode());
             }
         }
-        return Optional.empty();
+        return new ProductListResponse();
     }
 
     private CacheLookup findInRedis() {
         try {
             return new CacheLookup(productCacheStore.findCatalog(), true);
         } catch (ProductCacheException exception) {
-            log.warn("Redis no estuvo disponible; se utilizará el siguiente fallback");
-            return new CacheLookup(Optional.empty(), false);
-        }
-    }
-
-    private ProductListResponse persistExternalResponse(
-            ProductDatabaseService databaseService,
-            ProductListResponse response
-    ) {
-        if (databaseService == null) {
-            throw new ProductIntegrationException(
-                    ProductIntegrationErrorType.DATABASE_ERROR,
-                    "Gestopago respondió, pero PostgreSQL no está habilitado"
-            );
-        }
-
-        try {
-            ProductSyncResult result = databaseService.replaceIfLarger(response);
-            if (!result.updated()) {
-                log.warn(
-                        "No se reemplazó PostgreSQL: recibidos={}, existentes={}",
-                        result.receivedCount(),
-                        result.previousCount()
-                );
-                return databaseService.findCatalog().orElseThrow(() ->
-                        new ProductIntegrationException(
-                                ProductIntegrationErrorType.DATABASE_ERROR,
-                                "No fue posible recuperar el catálogo vigente de PostgreSQL"
-                        )
-                );
-            }
-            return response;
-        } catch (ProductIntegrationException exception) {
-            throw exception;
-        } catch (Exception exception) {
-            throw new ProductIntegrationException(
-                    ProductIntegrationErrorType.DATABASE_ERROR,
-                    "Gestopago respondió, pero el catálogo no pudo guardarse en PostgreSQL",
-                    exception
-            );
-        }
-    }
-
-    private void updateRedisSafely(ProductListResponse response) {
-        try {
-            productCacheStore.replaceCatalog(response);
-        } catch (ProductCacheException exception) {
-            log.warn("No se pudo actualizar Redis; PostgreSQL continuará como fallback");
+            log.error("Redis no estuvo disponible; se utilizará el siguiente fallback", exception);
+            return new CacheLookup(new ProductListResponse(), false);
         }
     }
 
     private record CacheLookup(
-            Optional<ProductListResponse> value,
+            ProductListResponse value,
             boolean available
     ) {
     }
