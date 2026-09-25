@@ -43,3 +43,12 @@ caso exitoso, los fallos del servicio externo, los timeouts, el XML inválido y 
 orden de fallback entre Redis, PostgreSQL y Gestopago. Estas decisiones buscan
 mantener el código legible, comprobable y preparado para futuras ampliaciones.
 
+## Endpoints del catálogo
+
+- `GET /api/products`: endpoint para clientes. Aplica el fallback Redis,
+  PostgreSQL y, finalmente, la integración con Gestopago.
+
+El endpoint cliente reutiliza el servicio interno de integración para consultar
+Gestopago, deserializar y validar el XML, convertir el modelo mediante MapStruct,
+guardar en PostgreSQL y actualizar Redis. No realiza una petición HTTP hacia el
+propio backend, lo que evita duplicación y latencia innecesaria.

@@ -22,7 +22,7 @@ public class InMemoryPersonaServiceImpl implements PersonaService {
     private final Map<String, PersonasRequest> personas = new ConcurrentHashMap<>();
 
     @Override
-    public PersonaResponse creaPersona(PersonasRequest request) {
+    public PersonaResponse crearPersona(PersonasRequest request) {
         PersonaResponse response = new PersonaResponse();
         if (request == null || isBlank(request.getNombre())) {
             response.setCodigo(1);
@@ -40,7 +40,7 @@ public class InMemoryPersonaServiceImpl implements PersonaService {
     }
 
     @Override
-    public GenericResponse eliminaPersona(EliminaPersonaRequest request) {
+    public GenericResponse eliminarPersona(EliminaPersonaRequest request) {
         GenericResponse response = new GenericResponse();
         if (request == null || isBlank(request.getNombre()) || personas.remove(request.getNombre()) == null) {
             response.setCodigo(1);
@@ -54,7 +54,7 @@ public class InMemoryPersonaServiceImpl implements PersonaService {
     }
 
     @Override
-    public GenericResponse actualizaPersona(PersonasRequest request) {
+    public GenericResponse actualizarPersona(PersonasRequest request) {
         GenericResponse response = new GenericResponse();
         if (request == null || isBlank(request.getNombre()) || !personas.containsKey(request.getNombre())) {
             response.setCodigo(1);

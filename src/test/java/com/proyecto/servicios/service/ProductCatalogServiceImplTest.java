@@ -6,9 +6,8 @@ import com.proyecto.servicios.exception.ProductIntegrationException;
 import com.proyecto.servicios.model.product.ProductContainer;
 import com.proyecto.servicios.model.product.ProductListResponse;
 import com.proyecto.servicios.model.product.ProductMessage;
-import com.proyecto.servicios.model.product.ProductSyncResult;
-import com.proyecto.servicios.service.Impl.GestopagoProductGateway;
 import com.proyecto.servicios.service.Impl.ProductCacheStore;
+import com.proyecto.servicios.service.Impl.ProductCacheWarmupService;
 import com.proyecto.servicios.service.Impl.ProductCatalogServiceImpl;
 import com.proyecto.servicios.service.Impl.ProductCatalogRefreshLock;
 import com.proyecto.servicios.service.Impl.ProductDatabaseService;
@@ -19,7 +18,6 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.beans.factory.ObjectProvider;
 
-import java.util.Optional;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
@@ -33,11 +31,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
-import static org.mockito.ArgumentMatchers.any;
 
 @ExtendWith(MockitoExtension.class)
 class ProductCatalogServiceImplTest {
@@ -49,7 +45,9 @@ class ProductCatalogServiceImplTest {
     @Mock
     private ProductDatabaseService databaseService;
     @Mock
-    private GestopagoProductGateway gestopagoGateway;
+    private GestopagoProductService gestopagoProductService;
+    @Mock
+    private ProductCacheWarmupService cacheWarmupService;
 
     private ProductCatalogServiceImpl service;
 
@@ -58,35 +56,37 @@ class ProductCatalogServiceImplTest {
         service = new ProductCatalogServiceImpl(
                 cacheStore,
                 databaseServiceProvider,
-                gestopagoGateway,
-                new ProductCatalogRefreshLock()
+                gestopagoProductService,
+                new ProductCatalogRefreshLock(),
+                cacheWarmupService
         );
     }
 
     @Test
     void returnsRedisCatalogWithoutCallingOtherSources() {
         ProductListResponse cached = response();
-        when(cacheStore.findCatalog()).thenReturn(Optional.of(cached));
+        when(cacheStore.findCatalog()).thenReturn(cached);
 
         ProductListResponse result = service.obtenerProductos();
 
         assertSame(cached, result);
         verify(databaseServiceProvider, never()).getIfAvailable();
-        verify(gestopagoGateway, never()).fetchCatalog();
+        verify(gestopagoProductService, never()).obtenerYGuardarProductos();
     }
 
     @Test
     void fallsBackToPostgresAndWarmsRedis() {
         ProductListResponse stored = response();
-        when(cacheStore.findCatalog()).thenReturn(Optional.empty());
+        when(cacheStore.findCatalog()).thenReturn(new ProductListResponse());
         when(databaseServiceProvider.getIfAvailable()).thenReturn(databaseService);
-        when(databaseService.findCatalog()).thenReturn(Optional.of(stored));
+        when(databaseService.findCatalog()).thenReturn(stored);
 
         ProductListResponse result = service.obtenerProductos();
 
         assertSame(stored, result);
-        verify(cacheStore).replaceCatalog(stored);
-        verify(gestopagoGateway, never()).fetchCatalog();
+        verify(cacheWarmupService).warmup(stored);
+        verify(cacheStore, never()).replaceCatalog(stored);
+        verify(gestopagoProductService, never()).obtenerYGuardarProductos();
     }
 
     @Test
@@ -94,7 +94,7 @@ class ProductCatalogServiceImplTest {
         ProductListResponse stored = response();
         when(cacheStore.findCatalog()).thenThrow(new ProductCacheException("redis", new RuntimeException()));
         when(databaseServiceProvider.getIfAvailable()).thenReturn(databaseService);
-        when(databaseService.findCatalog()).thenReturn(Optional.of(stored));
+        when(databaseService.findCatalog()).thenReturn(stored);
 
         assertSame(stored, service.obtenerProductos());
     }
@@ -102,28 +102,23 @@ class ProductCatalogServiceImplTest {
     @Test
     void emptyRedisAndDatabaseFetchGestopagoThenPopulateBothStores() {
         ProductListResponse external = response();
-        when(cacheStore.findCatalog()).thenReturn(Optional.empty());
+        when(cacheStore.findCatalog()).thenReturn(new ProductListResponse());
         when(databaseServiceProvider.getIfAvailable()).thenReturn(databaseService);
-        when(databaseService.findCatalog()).thenReturn(Optional.empty());
-        when(gestopagoGateway.fetchCatalog()).thenReturn(external);
-        when(databaseService.replaceIfLarger(external))
-                .thenReturn(new ProductSyncResult(true, 0, 1));
+        when(databaseService.findCatalog()).thenReturn(new ProductListResponse());
+        when(gestopagoProductService.obtenerYGuardarProductos()).thenReturn(external);
 
         ProductListResponse result = service.obtenerProductos();
 
         assertSame(external, result);
-        verify(databaseService).replaceIfLarger(external);
-        verify(cacheStore).replaceCatalog(external);
+        verify(gestopagoProductService).obtenerYGuardarProductos();
     }
 
     @Test
     void gestopagoSuccessAndDatabaseFailureReturnsCustomCodeTwo() {
-        ProductListResponse external = response();
-        when(cacheStore.findCatalog()).thenReturn(Optional.empty());
+        when(cacheStore.findCatalog()).thenReturn(new ProductListResponse());
         when(databaseServiceProvider.getIfAvailable()).thenReturn(databaseService);
-        when(databaseService.findCatalog()).thenReturn(Optional.empty());
-        when(gestopagoGateway.fetchCatalog()).thenReturn(external);
-        when(databaseService.replaceIfLarger(external)).thenThrow(
+        when(databaseService.findCatalog()).thenReturn(new ProductListResponse());
+        when(gestopagoProductService.obtenerYGuardarProductos()).thenThrow(
                 new ProductIntegrationException(
                         ProductIntegrationErrorType.DATABASE_ERROR,
                         "database error"
@@ -136,23 +131,23 @@ class ProductCatalogServiceImplTest {
         );
 
         assertEquals(2, exception.getErrorType().getCode());
-        verify(cacheStore, never()).replaceCatalog(external);
+        verify(gestopagoProductService).obtenerYGuardarProductos();
     }
 
     @Test
     void concurrentCacheMissesInvokeGestopagoOnlyOnce() throws Exception {
         ProductListResponse external = response();
         AtomicReference<ProductListResponse> simulatedCache = new AtomicReference<>();
-        when(cacheStore.findCatalog()).thenAnswer(invocation -> Optional.ofNullable(simulatedCache.get()));
-        doAnswer(invocation -> {
-            simulatedCache.set(invocation.getArgument(0));
-            return null;
-        }).when(cacheStore).replaceCatalog(any(ProductListResponse.class));
+        when(cacheStore.findCatalog()).thenAnswer(invocation -> {
+            ProductListResponse cached = simulatedCache.get();
+            return cached == null ? new ProductListResponse() : cached;
+        });
         when(databaseServiceProvider.getIfAvailable()).thenReturn(databaseService);
-        when(databaseService.findCatalog()).thenReturn(Optional.empty());
-        when(gestopagoGateway.fetchCatalog()).thenReturn(external);
-        when(databaseService.replaceIfLarger(external))
-                .thenReturn(new ProductSyncResult(true, 0, 1));
+        when(databaseService.findCatalog()).thenReturn(new ProductListResponse());
+        when(gestopagoProductService.obtenerYGuardarProductos()).thenAnswer(invocation -> {
+            simulatedCache.set(external);
+            return external;
+        });
 
         int requests = 20;
         ExecutorService executor = Executors.newFixedThreadPool(requests);
@@ -174,9 +169,8 @@ class ProductCatalogServiceImplTest {
             executor.shutdownNow();
         }
 
-        verify(gestopagoGateway, times(1)).fetchCatalog();
+        verify(gestopagoProductService, times(1)).obtenerYGuardarProductos();
         verify(databaseService, times(1)).findCatalog();
-        verify(databaseService, times(1)).replaceIfLarger(external);
     }
 
     private ProductListResponse response() {
@@ -186,7 +180,9 @@ class ProductCatalogServiceImplTest {
 
         ProductListResponse response = new ProductListResponse();
         response.setMensaje(message);
-        response.setProductos(new ProductContainer());
+        ProductContainer container = new ProductContainer();
+        container.setProductos(List.of(new com.proyecto.servicios.model.product.ProductDto()));
+        response.setProductos(container);
         return response;
     }
 }

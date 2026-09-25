@@ -11,11 +11,25 @@ public class ProductSyncConfiguration {
 
     @Bean(name = "productSyncExecutor")
     public Executor productSyncExecutor() {
+        return createExecutor(1, 1, 1, "product-sync-");
+    }
+
+    @Bean(name = "productCacheExecutor")
+    public Executor productCacheExecutor() {
+        return createExecutor(2, 4, 100, "product-cache-");
+    }
+
+    private Executor createExecutor(
+            int corePoolSize,
+            int maxPoolSize,
+            int queueCapacity,
+            String threadNamePrefix
+    ) {
         ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
-        executor.setCorePoolSize(1);
-        executor.setMaxPoolSize(1);
-        executor.setQueueCapacity(1);
-        executor.setThreadNamePrefix("product-sync-");
+        executor.setCorePoolSize(corePoolSize);
+        executor.setMaxPoolSize(maxPoolSize);
+        executor.setQueueCapacity(queueCapacity);
+        executor.setThreadNamePrefix(threadNamePrefix);
         executor.initialize();
         return executor;
     }

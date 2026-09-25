@@ -17,7 +17,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/products")
-@Tag(name = "Catálogo de productos", description = "Consulta Cache-Aside: Redis, PostgreSQL y Gestopago")
+@Tag(name = "Catálogo para clientes", description = "Endpoint cliente: Redis, PostgreSQL y fallback a Gestopago")
 @SecurityRequirement(name = "bearerAuth")
 public class ProductCatalogController {
 
@@ -28,7 +28,7 @@ public class ProductCatalogController {
     }
 
     @GetMapping
-    @Operation(summary = "Consulta el catálogo de productos")
+    @Operation(summary = "Consulta el catálogo para el cliente con caché multinivel")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Catálogo recuperado correctamente"),
             @ApiResponse(

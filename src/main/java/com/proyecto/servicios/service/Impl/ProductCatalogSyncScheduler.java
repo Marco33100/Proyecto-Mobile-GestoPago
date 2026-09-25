@@ -5,6 +5,7 @@ import com.proyecto.servicios.exception.ProductIntegrationException;
 import com.proyecto.servicios.model.product.ProductListResponse;
 import com.proyecto.servicios.model.product.ProductSyncResult;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -23,6 +24,7 @@ public class ProductCatalogSyncScheduler {
     private final ProductSnapshotFileService snapshotFileService;
     private final ProductCatalogRefreshLock refreshLock;
 
+    @Autowired
     public ProductCatalogSyncScheduler(
             GestopagoProductGateway gestopagoProductGateway,
             ProductDatabaseService productDatabaseService,
