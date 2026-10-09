@@ -6,6 +6,7 @@ build/
 .kotlin
 data/
 src/main/resources/application-local.properties
+.local-db-backups/
 
 ### IntelliJ IDEA ###
 .idea/modules.xml

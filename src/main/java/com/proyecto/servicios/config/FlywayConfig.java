@@ -18,15 +18,18 @@ public class FlywayConfig {
     private final String[] locations;
     private final String historyTable;
     private final String schema;
+    private final boolean baselineOnMigrate;
 
     public FlywayConfig(
             @Value("${spring.flyway.locations:classpath:db/migration}") String[] locations,
             @Value("${spring.flyway.table:flyway_schema_history}") String historyTable,
-            @Value("${spring.flyway.schemas:public}") String schema
+            @Value("${spring.flyway.schemas:public}") String schema,
+            @Value("${spring.flyway.baseline-on-migrate:true}") boolean baselineOnMigrate
     ) {
         this.locations = locations;
         this.historyTable = historyTable;
         this.schema = schema;
+        this.baselineOnMigrate = baselineOnMigrate;
     }
 
     @Bean(name = "flyway")
@@ -37,7 +40,7 @@ public class FlywayConfig {
                 .locations(locations)
                 .table(historyTable)
                 .schemas(schema)
-                .baselineOnMigrate(true)
+                .baselineOnMigrate(baselineOnMigrate)
                 .baselineVersion("0")
                 .load();
         flyway.migrate();

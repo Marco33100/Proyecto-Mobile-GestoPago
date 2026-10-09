@@ -2,10 +2,9 @@ package com.proyecto.servicios.service;
 
 import com.proyecto.servicios.model.auth.LoginRequest;
 import com.proyecto.servicios.model.auth.LoginResponse;
-import com.proyecto.servicios.model.auth.RegisterRequest;
-import com.proyecto.servicios.model.auth.RegisterResponse;
+import com.proyecto.servicios.model.auth.AuthenticatedUser;
 
 public interface AuthService {
-    RegisterResponse register(RegisterRequest request);
     LoginResponse login(LoginRequest request);
+    void logout(AuthenticatedUser usuario);
 }

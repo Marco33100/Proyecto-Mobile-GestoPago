@@ -14,9 +14,14 @@ import com.proyecto.servicios.service.Impl.ProductDatabaseService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.dao.DataAccessResourceFailureException;
+import org.springframework.transaction.CannotCreateTransactionException;
+import org.springframework.transaction.TransactionSystemException;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -26,6 +31,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
@@ -184,5 +190,34 @@ class ProductCatalogServiceImplTest {
         container.setProductos(List.of(new com.proyecto.servicios.model.product.ProductDto()));
         response.setProductos(container);
         return response;
+    }
+
+    static Stream<RuntimeException> fallosDePersistencia() {
+        return Stream.of(new CannotCreateTransactionException("fixture"),
+                new TransactionSystemException("fixture"),
+                new DataAccessResourceFailureException("fixture"));
+    }
+
+    @ParameterizedTest
+    @MethodSource("fallosDePersistencia")
+    void falloAlAbrirOConfirmarTransaccionContinuaConGestopago(RuntimeException fallo) {
+        ProductListResponse external = response();
+        when(cacheStore.findCatalog()).thenReturn(new ProductListResponse());
+        when(databaseServiceProvider.getIfAvailable()).thenReturn(databaseService);
+        when(databaseService.findCatalog()).thenThrow(fallo);
+        when(gestopagoProductService.obtenerYGuardarProductos()).thenReturn(external);
+        assertSame(external, service.obtenerProductos());
+        verify(gestopagoProductService).obtenerYGuardarProductos();
+        verify(cacheWarmupService, never()).warmup(external);
+    }
+
+    @Test
+    void redisCaidoYFalloDeTransaccionContinuanConGestopago() {
+        ProductListResponse external = response();
+        when(cacheStore.findCatalog()).thenThrow(new ProductCacheException("fixture", null));
+        when(databaseServiceProvider.getIfAvailable()).thenReturn(databaseService);
+        when(databaseService.findCatalog()).thenThrow(new CannotCreateTransactionException("fixture"));
+        when(gestopagoProductService.obtenerYGuardarProductos()).thenReturn(external);
+        assertSame(external, service.obtenerProductos());
     }
 }

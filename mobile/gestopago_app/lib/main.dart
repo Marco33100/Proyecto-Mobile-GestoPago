@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
 import 'storage/session_database.dart';
+import 'storage/session_store.dart';
 import 'models/login_session.dart';
 import 'screens/home_page.dart';
 import 'screens/login_page.dart';
@@ -48,9 +49,10 @@ class _GestopagoAppState extends State<GestopagoApp> {
 }
 
 class SessionGate extends StatefulWidget {
-  const SessionGate({super.key, required this.authApi});
+  const SessionGate({super.key, required this.authApi, this.sessionStore});
 
   final AuthApiService authApi;
+  final SessionStore? sessionStore;
 
   @override
   State<SessionGate> createState() => _SessionGateState();
@@ -59,6 +61,9 @@ class SessionGate extends StatefulWidget {
 class _SessionGateState extends State<SessionGate> {
   LoginSession? _session;
   bool _loading = true;
+  bool _loggingOut = false;
+
+  SessionStore get _store => widget.sessionStore ?? SessionDatabase.instance;
 
   @override
   void initState() {
@@ -67,18 +72,51 @@ class _SessionGateState extends State<SessionGate> {
   }
 
   Future<void> _restoreSession() async {
-    final session = await SessionDatabase.instance.current();
-    if (mounted) {
-      setState(() {
-        _session = session;
-        _loading = false;
-      });
+    try {
+      final session = await _store.current();
+      if (mounted) setState(() => _session = session);
+    } catch (_) {
+      _showNotice(
+          'No fue posible recuperar la sesion local. Inicia sesion nuevamente.');
+    } finally {
+      if (mounted) setState(() => _loading = false);
     }
   }
 
   Future<void> _logout() async {
-    await SessionDatabase.instance.clear();
-    if (mounted) setState(() => _session = null);
+    if (_loggingOut) return;
+    setState(() => _loggingOut = true);
+    final session = _session;
+    final warnings = <String>[];
+    try {
+      if (session != null) await widget.authApi.logout(session);
+    } catch (_) {
+      warnings.add(
+          'No se pudo confirmar el cierre en el servidor. La sesion remota podria seguir activa.');
+    }
+    try {
+      await _store.clear();
+    } catch (_) {
+      warnings
+          .add('No fue posible borrar la sesion guardada en el dispositivo.');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _session = null;
+          _loggingOut = false;
+        });
+        if (warnings.isNotEmpty) _showNotice(warnings.join(' '));
+      }
+    }
+  }
+
+  void _showNotice(String message) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text(message)));
+    });
   }
 
   @override
@@ -88,10 +126,15 @@ class _SessionGateState extends State<SessionGate> {
     }
     final session = _session;
     if (session != null) {
-      return HomePage(session: session, onLogout: _logout);
+      return HomePage(
+          session: session,
+          onLogout: _logout,
+          authApi: widget.authApi,
+          isLoggingOut: _loggingOut);
     }
     return LoginPage(
       authApi: widget.authApi,
+      sessionStore: _store,
       onAuthenticated: (session) => setState(() => _session = session),
     );
   }

@@ -24,7 +24,7 @@ class RegisterRequestValidationTest {
     @Test
     void acceptsANameWithSingleSpaces() {
         RegisterRequest request = new RegisterRequest(
-                "marco@example.com", "marco_01", "Password1", "Marco Antonio Martinez"
+                "marco@example.com", "marco_01", "Password1!", "Marco Antonio Martinez"
         );
 
         assertThat(validator.validate(request)).isEmpty();
@@ -42,10 +42,10 @@ class RegisterRequestValidationTest {
     @Test
     void rejectsSpacesInEmailAndIdentifier() {
         RegisterRequest spacedEmail = new RegisterRequest(
-                " marco@example.com ", "marco_01", "Password1", "Marco Martinez"
+                " marco@example.com ", "marco_01", "Password1!", "Marco Martinez"
         );
         RegisterRequest spacedIdentifier = new RegisterRequest(
-                "marco@example.com", " marco_01 ", "Password1", "Marco Martinez"
+                "marco@example.com", " marco_01 ", "Password1!", "Marco Martinez"
         );
 
         assertThat(validator.validate(spacedEmail)).isNotEmpty();
@@ -54,7 +54,18 @@ class RegisterRequestValidationTest {
 
     private RegisterRequest validRequest(String fullName) {
         return new RegisterRequest(
-                "marco@example.com", "marco_01", "Password1", fullName
+                "marco@example.com", "marco_01", "Password1!", fullName
         );
+    }
+
+    @Test
+    void nombreCompletoAdmiteCuatroPartesDeCincuentaYRechazaElExceso() {
+        String complete = String.join(" ", "A".repeat(50), "B".repeat(50),
+                "C".repeat(50), "D".repeat(50));
+        assertThat(complete).hasSize(203);
+        assertThat(validator.validate(validRequest(complete))).isEmpty();
+        assertThat(validator.validate(validRequest(complete + "E")))
+                .extracting(violation -> violation.getPropertyPath().toString())
+                .containsExactly("fullName");
     }
 }

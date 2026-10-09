@@ -4,6 +4,7 @@ import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
+import com.proyecto.servicios.model.cliente.ContrasenaSegura;
 
 public record RegisterRequest(
         @NotBlank(message = "El correo es obligatorio")
@@ -20,19 +21,19 @@ public record RegisterRequest(
         String identifier,
 
         @NotBlank(message = "La contrasena es obligatoria")
-        @Size(min = 8, max = 72, message = "La contrasena debe tener entre 8 y 72 caracteres")
-        @Pattern(
-                regexp = "^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d).+$",
-                message = "La contrasena debe incluir mayuscula, minuscula y numero"
-        )
+        @ContrasenaSegura
         String password,
 
         @NotBlank(message = "El nombre es obligatorio")
-        @Size(min = 2, max = 150, message = "El nombre debe tener entre 2 y 150 caracteres")
+        @Size(min = 2, max = 203, message = "El nombre completo debe tener entre 2 y 203 caracteres")
         @Pattern(
                 regexp = "^(?!.*\\s{2,})\\S(?:.*\\S)?$",
                 message = "El nombre no puede iniciar o terminar con espacios ni contener espacios consecutivos"
         )
         String fullName
 ) {
+    @Override
+    public String toString() {
+        return "RegisterRequest[datos personales y contrasena protegidos]";
+    }
 }

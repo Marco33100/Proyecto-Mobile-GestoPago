@@ -1,15 +1,21 @@
 import 'package:flutter/material.dart';
 
 import '../storage/session_database.dart';
+import '../storage/session_store.dart';
 import '../models/login_session.dart';
 import '../services/auth_api_service.dart';
-import 'register_page.dart';
+import '../validation/login_validators.dart';
 
 class LoginPage extends StatefulWidget {
-  const LoginPage({super.key, required this.authApi, required this.onAuthenticated});
+  const LoginPage(
+      {super.key,
+      required this.authApi,
+      required this.onAuthenticated,
+      this.sessionStore});
 
   final AuthApiService authApi;
   final ValueChanged<LoginSession> onAuthenticated;
+  final SessionStore? sessionStore;
 
   @override
   State<LoginPage> createState() => _LoginPageState();
@@ -44,13 +50,15 @@ class _LoginPageState extends State<LoginPage> {
         email: _emailController.text,
         password: _passwordController.text,
       );
-      await SessionDatabase.instance.save(session);
+      await (widget.sessionStore ?? SessionDatabase.instance).save(session);
       if (!mounted) return;
       widget.onAuthenticated(session);
     } on ApiException catch (error) {
       if (mounted) _showError(error.message);
     } catch (_) {
-      if (mounted) _showError('No fue posible guardar la sesion en el dispositivo.');
+      if (mounted) {
+        _showError('No fue posible guardar la sesion en el dispositivo.');
+      }
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -60,18 +68,6 @@ class _LoginPageState extends State<LoginPage> {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(content: Text(message)));
-  }
-
-  Future<void> _openRegistration() async {
-    final registeredEmail = await Navigator.of(context).push<String>(
-      MaterialPageRoute(
-        builder: (_) => RegisterPage(authApi: widget.authApi),
-      ),
-    );
-    if (registeredEmail != null && mounted) {
-      _emailController.text = registeredEmail;
-      _passwordController.clear();
-    }
   }
 
   @override
@@ -98,15 +94,7 @@ class _LoginPageState extends State<LoginPage> {
                         labelText: 'Correo',
                         border: OutlineInputBorder(),
                       ),
-                      validator: (value) {
-                        final email = value ?? '';
-                        if (email.trim().isEmpty) return 'Ingresa tu correo';
-                        if (email != email.trim() || RegExp(r'\s').hasMatch(email)) {
-                          return 'El correo no puede contener espacios';
-                        }
-                        if (!email.contains('@')) return 'Ingresa un correo valido';
-                        return null;
-                      },
+                      validator: LoginValidators.email,
                     ),
                     const SizedBox(height: 16),
                     TextFormField(
@@ -122,13 +110,13 @@ class _LoginPageState extends State<LoginPage> {
                             () => _obscurePassword = !_obscurePassword,
                           ),
                           icon: Icon(
-                            _obscurePassword ? Icons.visibility : Icons.visibility_off,
+                            _obscurePassword
+                                ? Icons.visibility
+                                : Icons.visibility_off,
                           ),
                         ),
                       ),
-                      validator: (value) => (value?.isEmpty ?? true)
-                          ? 'Ingresa tu contraseña'
-                          : null,
+                      validator: LoginValidators.password,
                     ),
                     const SizedBox(height: 24),
                     FilledButton(
@@ -141,9 +129,9 @@ class _LoginPageState extends State<LoginPage> {
                           : const Text('Iniciar sesion'),
                     ),
                     const SizedBox(height: 8),
-                    TextButton(
-                      onPressed: _loading ? null : _openRegistration,
-                      child: const Text('Crear una cuenta'),
+                    const Text(
+                      'Para crear tu cuenta, solicita el registro completo a un ejecutivo.',
+                      textAlign: TextAlign.center,
                     ),
                   ],
                 ),

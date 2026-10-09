@@ -7,7 +7,7 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
 
-/** Permite iniciar tareas sin usuarios cuando PostgreSQL esta deshabilitado. */
+/** Sin PostgreSQL solo se permiten salud y documentacion, nunca APIs sin autenticacion. */
 @Configuration
 @ConditionalOnProperty(
         name = "app.database.enabled",
@@ -17,12 +17,18 @@ import org.springframework.security.web.SecurityFilterChain;
 public class PublicSecurityConfiguration {
 
     @Bean
-    public SecurityFilterChain publicSecurityFilterChain(HttpSecurity http) throws Exception {
+    public SecurityFilterChain publicSecurityFilterChain(HttpSecurity http,
+            RestAuthenticationEntryPoint authenticationEntryPoint) throws Exception {
         return http
                 .csrf(csrf -> csrf.disable())
                 .sessionManagement(session ->
                         session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-                .authorizeHttpRequests(authorize -> authorize.anyRequest().permitAll())
+                .exceptionHandling(exceptions -> exceptions.authenticationEntryPoint(
+                        (request, response, exception) -> authenticationEntryPoint.serviceUnavailable(request, response)))
+                .authorizeHttpRequests(authorize -> authorize
+                        .requestMatchers("/actuator/health", "/v3/api-docs/**", "/swagger-ui/**",
+                                "/swagger-ui.html", "/error").permitAll()
+                        .anyRequest().denyAll())
                 .build();
     }
 }
