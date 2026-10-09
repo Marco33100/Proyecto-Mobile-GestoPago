@@ -3,16 +3,44 @@ package com.proyecto.servicios.service;
 import com.proyecto.servicios.model.auth.AuthenticatedUser;
 import com.proyecto.servicios.model.auth.CachedUser;
 import io.jsonwebtoken.JwtException;
+import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.security.Keys;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
 import java.time.Instant;
 import java.util.UUID;
+import java.util.Date;
+import java.nio.charset.StandardCharsets;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class JwtTokenServiceTest {
+
+    @Test
+    void rechazaJwtExpiradoYSinExpiracionAunqueLaFirmaSeaCorrecta() {
+        String secret = "test-secret-with-more-than-32-bytes-123456789";
+        JwtTokenService service = new JwtTokenService(secret, "test-api", Duration.ofHours(2));
+        var key = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
+        var builder = Jwts.builder().subject(UUID.randomUUID().toString()).id(UUID.randomUUID().toString())
+                .issuer("test-api").issuedAt(Date.from(Instant.now().minusSeconds(30)))
+                .claim("email", "uno@example.com").claim("identifier", "uno@example.com");
+        String sinExpiracion = builder.signWith(key).compact();
+        assertThatThrownBy(() -> service.validate(sinExpiracion)).isInstanceOf(JwtException.class);
+        String expirado = builder.expiration(Date.from(Instant.now().minusSeconds(1))).signWith(key).compact();
+        assertThatThrownBy(() -> service.validate(expirado)).isInstanceOf(JwtException.class);
+    }
+
+    @Test
+    void rechazaEmisorDistinto() {
+        String secret = "test-secret-with-more-than-32-bytes-123456789";
+        var issuer = new JwtTokenService(secret, "otro-emisor", Duration.ofHours(2));
+        var verifier = new JwtTokenService(secret, "test-api", Duration.ofHours(2));
+        String token = issuer.generate(new CachedUser(UUID.randomUUID(), "uno@example.com", "uno", "hash",
+                "Marco Martinez", true), UUID.randomUUID()).value();
+        assertThatThrownBy(() -> verifier.validate(token)).isInstanceOf(JwtException.class);
+    }
 
     @Test
     void generatesSignedTokenWithConfiguredExpiration() {

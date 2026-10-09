@@ -21,6 +21,33 @@ public class RestAuthenticationEntryPoint implements AuthenticationEntryPoint {
         this.objectMapper = objectMapper;
     }
 
+    public void serviceUnavailable(HttpServletRequest request, HttpServletResponse response) throws IOException {
+        response.setStatus(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
+        response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+        objectMapper.writeValue(response.getOutputStream(), new SecurityErrorResponse(
+                Instant.now(), HttpServletResponse.SC_SERVICE_UNAVAILABLE, "AUTH_DATABASE_ERROR",
+                "El servicio de autenticacion no esta disponible", request.getRequestURI()));
+    }
+
+    public void forbidden(HttpServletRequest request, HttpServletResponse response) throws IOException {
+        response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+        response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+        objectMapper.writeValue(response.getOutputStream(), new SecurityErrorResponse(
+                Instant.now(), HttpServletResponse.SC_FORBIDDEN, "AUTH_FORBIDDEN",
+                "No tienes permisos para realizar esta operacion", request.getRequestURI()));
+    }
+
+    public void tooManyRequests(HttpServletRequest request, HttpServletResponse response, long retryAfter)
+            throws IOException {
+        response.setStatus(429);
+        response.setHeader("Retry-After", Long.toString(retryAfter));
+        response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+        objectMapper.writeValue(response.getOutputStream(), new SecurityErrorResponse(
+                Instant.now(), 429, "AUTH_TOO_MANY_ATTEMPTS",
+                "Demasiados intentos de inicio de sesion. Espera antes de intentar nuevamente.",
+                request.getRequestURI()));
+    }
+
     @Override
     public void commence(HttpServletRequest request, HttpServletResponse response,
                          AuthenticationException authenticationException) throws IOException {
