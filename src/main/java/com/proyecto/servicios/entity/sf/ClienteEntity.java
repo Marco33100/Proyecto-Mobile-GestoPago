@@ -4,6 +4,8 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
@@ -11,14 +13,15 @@ import jakarta.persistence.Version;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
-import java.util.UUID;
 
 @Entity
 @Table(name = "clientes")
 public class ClienteEntity {
 
     @Id
-    private UUID id;
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(updatable = false)
+    private Long id;
 
     @Column(nullable = false, length = 50)
     private String nombre;
@@ -42,14 +45,14 @@ public class ClienteEntity {
     private String rfc;
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 20)
+    @Column(nullable = false, length = 10)
     private Sexo sexo;
 
     @Column(nullable = false, length = 60)
     private String nacionalidad;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "estado_civil", nullable = false, length = 30)
+    @Column(name = "estado_civil", nullable = false, length = 11)
     private EstadoCivil estadoCivil;
 
     @Column(name = "referencia_reconocimiento_facial", length = 255)
@@ -90,7 +93,6 @@ public class ClienteEntity {
     }
 
     public ClienteEntity(
-            UUID id,
             String nombre,
             String segundoNombre,
             String apellidoPaterno,
@@ -110,7 +112,6 @@ public class ClienteEntity {
             BigDecimal ingresoMensual,
             Instant fechaCreacion
     ) {
-        this.id = id;
         this.nombre = nombre;
         this.segundoNombre = segundoNombre;
         this.apellidoPaterno = apellidoPaterno;
@@ -133,7 +134,53 @@ public class ClienteEntity {
         this.fechaActualizacion = fechaCreacion;
     }
 
-    public UUID getId() { return id; }
+    public void actualizar(
+            String nombre,
+            String segundoNombre,
+            String apellidoPaterno,
+            String apellidoMaterno,
+            LocalDate fechaNacimiento,
+            Sexo sexo,
+            String nacionalidad,
+            EstadoCivil estadoCivil,
+            String referenciaReconocimientoFacial,
+            String correo,
+            String telefonoMovil,
+            String telefonoAlternativo,
+            String ocupacion,
+            String empresa,
+            BigDecimal ingresoMensual,
+            Instant fechaActualizacion
+    ) {
+        this.nombre = nombre;
+        this.segundoNombre = segundoNombre;
+        this.apellidoPaterno = apellidoPaterno;
+        this.apellidoMaterno = apellidoMaterno;
+        this.fechaNacimiento = fechaNacimiento;
+        this.sexo = sexo;
+        this.nacionalidad = nacionalidad;
+        this.estadoCivil = estadoCivil;
+        this.referenciaReconocimientoFacial = referenciaReconocimientoFacial;
+        this.correo = correo;
+        this.telefonoMovil = telefonoMovil;
+        this.telefonoAlternativo = telefonoAlternativo;
+        this.ocupacion = ocupacion;
+        this.empresa = empresa;
+        this.ingresoMensual = ingresoMensual;
+        this.fechaActualizacion = fechaActualizacion;
+    }
+
+    public void desactivar(Instant fechaActualizacion) {
+        this.activo = false;
+        this.fechaActualizacion = fechaActualizacion;
+    }
+
+    public Long getId() { return id; }
+    public String getNombreCompleto() {
+        return java.util.stream.Stream.of(nombre, segundoNombre, apellidoPaterno, apellidoMaterno)
+                .filter(parte -> parte != null && !parte.isBlank())
+                .collect(java.util.stream.Collectors.joining(" "));
+    }
     public String getNombre() { return nombre; }
     public String getSegundoNombre() { return segundoNombre; }
     public String getApellidoPaterno() { return apellidoPaterno; }

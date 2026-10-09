@@ -87,6 +87,28 @@ public class DomicilioEntity {
         this.fechaActualizacion = fechaCreacion;
     }
 
+    public void actualizar(
+            String calle,
+            String numeroExterior,
+            String numeroInterior,
+            String colonia,
+            String municipio,
+            String estado,
+            String codigoPostal,
+            String pais,
+            Instant fechaActualizacion
+    ) {
+        this.calle = calle;
+        this.numeroExterior = numeroExterior;
+        this.numeroInterior = numeroInterior;
+        this.colonia = colonia;
+        this.municipio = municipio;
+        this.estado = estado;
+        this.codigoPostal = codigoPostal;
+        this.pais = pais;
+        this.fechaActualizacion = fechaActualizacion;
+    }
+
     public UUID getId() { return id; }
     public ClienteEntity getCliente() { return cliente; }
     public String getCalle() { return calle; }

@@ -18,4 +18,8 @@ public record LoginRequest(
         @Size(max = 72, message = "La contrasena no puede superar 72 caracteres")
         String password
 ) {
+    @Override
+    public String toString() {
+        return "LoginRequest[credenciales protegidas]";
+    }
 }

@@ -9,6 +9,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
+import org.springframework.dao.DataAccessException;
+import org.springframework.transaction.TransactionException;
 
 @Slf4j
 @Service
@@ -82,6 +84,10 @@ public class ProductCatalogServiceImpl implements ProductCatalogService {
             } catch (ProductIntegrationException exception) {
                 log.error("PostgreSQL no estuvo disponible; se intentará Gestopago: codigo={}",
                         exception.getErrorType().getCode());
+            } catch (TransactionException | DataAccessException exception) {
+                // La apertura/confirmacion de @Transactional ocurre fuera del metodo del servicio.
+                log.error("Fallo de acceso o transaccion en PostgreSQL; se intentara Gestopago: {}",
+                        exception.getClass().getSimpleName());
             }
         }
         return new ProductListResponse();

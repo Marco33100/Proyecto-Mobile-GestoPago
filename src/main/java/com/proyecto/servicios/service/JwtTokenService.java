@@ -4,6 +4,7 @@ import com.proyecto.servicios.model.auth.AuthenticatedUser;
 import com.proyecto.servicios.model.auth.CachedUser;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.MalformedJwtException;
 import io.jsonwebtoken.security.Keys;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -61,6 +62,12 @@ public class JwtTokenService {
                 .build()
                 .parseSignedClaims(token)
                 .getPayload();
+        if (claims.getExpiration() == null || claims.getIssuedAt() == null
+                || !claims.getExpiration().after(claims.getIssuedAt())
+                || !StringUtils.hasText(claims.get("email", String.class))
+                || !StringUtils.hasText(claims.get("identifier", String.class))) {
+            throw new MalformedJwtException("El JWT no contiene los datos de sesion requeridos");
+        }
         return new AuthenticatedUser(
                 UUID.fromString(claims.getSubject()),
                 UUID.fromString(claims.getId()),
