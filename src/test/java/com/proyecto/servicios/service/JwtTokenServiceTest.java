@@ -12,11 +12,45 @@ import java.time.Instant;
 import java.util.UUID;
 import java.util.Date;
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.Callable;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class JwtTokenServiceTest {
+
+    @Test
+    void parserCompartidoValidaSesionesConcurrentesSinMezclarIdentidades() throws Exception {
+        JwtTokenService service = new JwtTokenService(
+                "test-secret-with-more-than-32-bytes-123456789", "test-api", Duration.ofHours(2));
+        var users = IntStream.range(0, 32)
+                .mapToObj(index -> new CachedUser(UUID.randomUUID(), "user" + index + "@example.com",
+                        "user" + index, "fixture-hash", "Usuario de prueba", true)).toList();
+        var sessionIds = users.stream().map(user -> UUID.randomUUID()).toList();
+        var tokens = IntStream.range(0, users.size())
+                .mapToObj(index -> service.generate(users.get(index), sessionIds.get(index)).value()).toList();
+        var tasks = IntStream.range(0, users.size()).mapToObj(index -> (Callable<Void>) () -> {
+            for (int repetition = 0; repetition < 4; repetition++) {
+                AuthenticatedUser result = service.validate(tokens.get(index));
+                assertThat(result.userId()).isEqualTo(users.get(index).id());
+                assertThat(result.sessionId()).isEqualTo(sessionIds.get(index));
+                assertThat(result.email()).isEqualTo(users.get(index).email());
+                assertThat(result.identifier()).isEqualTo(users.get(index).identifier());
+            }
+            return null;
+        }).toList();
+        var executor = Executors.newFixedThreadPool(8);
+        try {
+            for (var result : executor.invokeAll(tasks, 15, TimeUnit.SECONDS)) {
+                result.get(1, TimeUnit.SECONDS);
+            }
+        } finally {
+            executor.shutdownNow();
+        }
+    }
 
     @Test
     void rechazaJwtExpiradoYSinExpiracionAunqueLaFirmaSeaCorrecta() {

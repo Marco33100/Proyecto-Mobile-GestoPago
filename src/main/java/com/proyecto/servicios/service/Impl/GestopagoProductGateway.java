@@ -17,6 +17,7 @@ import org.springframework.stereotype.Service;
 import java.net.ConnectException;
 import java.net.SocketTimeoutException;
 import java.time.Duration;
+import java.util.Locale;
 
 @Slf4j
 @Service
@@ -27,9 +28,8 @@ public class GestopagoProductGateway {
     private final ProductCatalogClient productCatalogClient;
     private final GestoPagoAccessTokenProvider tokenProvider;
     private final long failureCooldownNanos;
-    private volatile long retryAfterNanos;
-    private volatile ProductIntegrationErrorType lastErrorType;
-    private volatile String lastErrorMessage;
+    // Publicar un unico estado evita mezclar el codigo, mensaje y plazo de fallos concurrentes.
+    private volatile FailureCooldown failureCooldown;
 
     @Autowired
     public GestopagoProductGateway(
@@ -147,7 +147,7 @@ public class GestopagoProductGateway {
         if (message == null) {
             return false;
         }
-        String normalized = message.toLowerCase();
+        String normalized = message.toLowerCase(Locale.ROOT);
         return normalized.contains("timed out")
                 || normalized.contains("timeout")
                 || normalized.contains("connection")
@@ -155,20 +155,21 @@ public class GestopagoProductGateway {
     }
 
     private void rejectDuringCooldown() {
-        if (System.nanoTime() < retryAfterNanos && lastErrorType != null) {
-            throw new ProductIntegrationException(lastErrorType, lastErrorMessage);
+        FailureCooldown currentFailure = failureCooldown;
+        if (currentFailure != null && System.nanoTime() < currentFailure.retryAfterNanos()) {
+            throw new ProductIntegrationException(currentFailure.errorType(), currentFailure.message());
         }
     }
 
     private void registerFailure(ProductIntegrationException exception) {
-        lastErrorType = exception.getErrorType();
-        lastErrorMessage = exception.getMessage();
-        retryAfterNanos = System.nanoTime() + failureCooldownNanos;
+        failureCooldown = new FailureCooldown(exception.getErrorType(), exception.getMessage(),
+                System.nanoTime() + failureCooldownNanos);
     }
 
     private void clearFailure() {
-        retryAfterNanos = 0;
-        lastErrorType = null;
-        lastErrorMessage = null;
+        failureCooldown = null;
+    }
+
+    private record FailureCooldown(ProductIntegrationErrorType errorType, String message, long retryAfterNanos) {
     }
 }

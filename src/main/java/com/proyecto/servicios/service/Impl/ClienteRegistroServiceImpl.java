@@ -34,6 +34,7 @@ import org.springframework.dao.DataAccessException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
@@ -70,6 +71,7 @@ public class ClienteRegistroServiceImpl implements ClienteRegistroService {
     }
 
     @Override
+    @PreAuthorize("hasRole('EJECUTIVO')")
     @Transactional(transactionManager = "sfTransactionManager")
     public ClienteResponse registrar(RegistrarClienteRequest request) {
         validarReglas(request);

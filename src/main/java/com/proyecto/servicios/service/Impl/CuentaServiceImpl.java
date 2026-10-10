@@ -9,6 +9,17 @@ import com.proyecto.servicios.exception.cliente.CuentaNoEncontradaException;
 import com.proyecto.servicios.mapper.ClienteResponseMapper;
 import com.proyecto.servicios.model.cliente.CuentaResponse;
 import com.proyecto.servicios.model.cliente.PaginaResponse;
+import com.proyecto.servicios.model.cliente.SaldoCuentaResponse;
+import com.proyecto.servicios.model.cliente.ActualizarEstadoCuentaRequest;
+import com.proyecto.servicios.exception.cliente.CuentaConflictException;
+import com.proyecto.servicios.model.auth.AuthenticatedUser;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.authentication.AuthenticationCredentialsNotFoundException;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+import static com.proyecto.servicios.support.CuentaDatos.normalizarNumeroCuenta;
+import com.proyecto.servicios.support.PaginacionDatos;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import com.proyecto.servicios.repositorys.sf.CuentaRepository;
@@ -45,11 +56,15 @@ public class CuentaServiceImpl implements CuentaService {
     }
 
     @Override
+    @PreAuthorize("hasAnyRole('EJECUTIVO', 'CLIENTE')")
     @Transactional(transactionManager = "sfTransactionManager", readOnly = true)
     public CuentaResponse consultarPorNumeroCuenta(String numeroCuenta) {
         String numeroNormalizado = normalizarNumeroCuenta(numeroCuenta);
+        UUID propietario = propietarioParaConsulta();
         try {
-            CuentaEntity cuenta = cuentaRepository.findByNumeroCuenta(numeroNormalizado);
+            CuentaEntity cuenta = propietario == null
+                    ? cuentaRepository.findByNumeroCuenta(numeroNormalizado)
+                    : cuentaRepository.consultarCuentaPropia(numeroNormalizado, propietario);
             if (cuenta == null) {
                 throw new CuentaNoEncontradaException("No existe la cuenta solicitada");
             }
@@ -61,9 +76,14 @@ public class CuentaServiceImpl implements CuentaService {
     }
 
     @Override
+    @PreAuthorize("hasRole('EJECUTIVO')")
     @Transactional(transactionManager = "sfTransactionManager")
     public CuentaResponse desactivar(String numeroCuenta) {
-        String numeroNormalizado = normalizarNumeroCuenta(numeroCuenta);
+        return desactivarNormalizada(normalizarNumeroCuenta(numeroCuenta));
+    }
+
+    // Ambos puntos de entrada tienen autorizacion y transaccion propias; no dependen de auto-invocacion AOP.
+    private CuentaResponse desactivarNormalizada(String numeroNormalizado) {
         try {
             CuentaEntity cuenta = cuentaRepository.findByNumeroCuentaForUpdate(numeroNormalizado);
             if (cuenta == null) {
@@ -83,19 +103,91 @@ public class CuentaServiceImpl implements CuentaService {
         }
     }
 
-    private String normalizarNumeroCuenta(String numeroCuenta) {
-        if (numeroCuenta == null || numeroCuenta.isBlank() || numeroCuenta.trim().length() > 24) {
-            throw new ClienteValidationException("El numero de cuenta debe contener entre 1 y 24 caracteres");
+    @Override
+    @PreAuthorize("hasRole('EJECUTIVO')")
+    @Transactional(transactionManager = "sfTransactionManager")
+    public CuentaResponse actualizarEstado(String numeroCuenta, ActualizarEstadoCuentaRequest request) {
+        String numeroNormalizado = normalizarNumeroCuenta(numeroCuenta);
+        if (request == null || request.activa() == null) {
+            throw new ClienteValidationException("El campo activa es obligatorio");
         }
-        return numeroCuenta.trim().toUpperCase(Locale.ROOT);
+        if (request.activa()) {
+            throw new CuentaConflictException("La reactivacion de cuentas no esta permitida");
+        }
+        return desactivarNormalizada(numeroNormalizado);
     }
 
     @Override
+    @PreAuthorize("hasAnyRole('EJECUTIVO', 'CLIENTE')")
+    @Transactional(transactionManager = "sfTransactionManager", readOnly = true)
+    public SaldoCuentaResponse consultarSaldo(String numeroCuenta) {
+        String numeroNormalizado = normalizarNumeroCuenta(numeroCuenta);
+        UUID propietario = propietarioParaConsulta();
+        try {
+            SaldoCuentaResponse saldo = propietario == null
+                    ? cuentaRepository.consultarSaldo(numeroNormalizado)
+                    : cuentaRepository.consultarSaldoPropio(numeroNormalizado, propietario);
+            if (saldo == null) {
+                throw new CuentaNoEncontradaException("No existe la cuenta solicitada");
+            }
+            return saldo;
+        } catch (DataAccessException exception) {
+            log.error("Error al consultar saldo: {}", exception.getClass().getSimpleName());
+            throw new CuentaPersistenceException("No fue posible consultar el saldo", exception);
+        }
+    }
+
+    @Override
+    @PreAuthorize("hasRole('CLIENTE')")
+    @Transactional(transactionManager = "sfTransactionManager", readOnly = true)
+    public PaginaResponse<CuentaResponse> consultarPropias(int pagina, int tamanio) {
+        PaginacionDatos.validar(pagina, tamanio);
+        UUID usuarioId = usuarioClienteAutenticado(autenticacionActual());
+        try {
+            return PaginaResponse.desde(cuentaRepository.consultarCuentasPropias(usuarioId,
+                    PageRequest.of(pagina, tamanio, Sort.by("numeroCuenta")))
+                    .map(responseMapper::toCuentaResponse));
+        } catch (DataAccessException exception) {
+            log.error("Error al consultar cuentas propias: {}", exception.getClass().getSimpleName());
+            throw new CuentaPersistenceException("No fue posible consultar las cuentas propias", exception);
+        }
+    }
+
+    // null identifica exclusivamente la consulta administrativa autorizada, nunca una sesion ausente.
+    private UUID propietarioParaConsulta() {
+        Authentication authentication = autenticacionActual();
+        if (tieneRol(authentication, "ROLE_EJECUTIVO")) {
+            return null;
+        }
+        return usuarioClienteAutenticado(authentication);
+    }
+
+    private Authentication autenticacionActual() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || !authentication.isAuthenticated()) {
+            throw new AuthenticationCredentialsNotFoundException("Se requiere una sesion valida");
+        }
+        return authentication;
+    }
+
+    private UUID usuarioClienteAutenticado(Authentication authentication) {
+        if (!tieneRol(authentication, "ROLE_CLIENTE")
+                || !(authentication.getPrincipal() instanceof AuthenticatedUser user)
+                || user.userId() == null) {
+            throw new AccessDeniedException("No tienes permisos para consultar esta cuenta");
+        }
+        return user.userId();
+    }
+
+    private boolean tieneRol(Authentication authentication, String role) {
+        return authentication.getAuthorities().stream().anyMatch(authority -> role.equals(authority.getAuthority()));
+    }
+
+    @Override
+    @PreAuthorize("hasRole('EJECUTIVO')")
     @Transactional(transactionManager = "sfTransactionManager", readOnly = true)
     public PaginaResponse<CuentaResponse> consultarActivas(int pagina, int tamanio) {
-        if (pagina < 0 || tamanio < 1 || tamanio > 100) {
-            throw new ClienteValidationException("Pagina o tamanio fuera del rango permitido");
-        }
+        PaginacionDatos.validar(pagina, tamanio);
         try {
             return PaginaResponse.desde(cuentaRepository.findAllByActivaTrue(
                     PageRequest.of(pagina, tamanio, Sort.by("numeroCuenta")))
@@ -107,6 +199,7 @@ public class CuentaServiceImpl implements CuentaService {
     }
 
     @Override
+    @PreAuthorize("hasRole('EJECUTIVO')")
     @Transactional(transactionManager = "sfTransactionManager")
     public CuentaEntity crearPara(ClienteEntity cliente) {
         if (!cliente.isActivo()) {

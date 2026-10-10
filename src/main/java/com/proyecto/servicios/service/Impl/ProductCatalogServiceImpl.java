@@ -97,7 +97,8 @@ public class ProductCatalogServiceImpl implements ProductCatalogService {
         try {
             return new CacheLookup(productCacheStore.findCatalog(), true);
         } catch (ProductCacheException exception) {
-            log.error("Redis no estuvo disponible; se utilizará el siguiente fallback", exception);
+            log.error("Redis no estuvo disponible; se utilizara el siguiente fallback: tipo={}",
+                    exception.getClass().getSimpleName());
             return new CacheLookup(new ProductListResponse(), false);
         }
     }

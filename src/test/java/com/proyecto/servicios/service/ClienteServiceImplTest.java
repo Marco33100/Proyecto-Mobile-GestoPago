@@ -6,6 +6,8 @@ import com.proyecto.servicios.entity.sf.DomicilioEntity;
 import com.proyecto.servicios.entity.sf.EstadoCivil;
 import com.proyecto.servicios.entity.sf.Sexo;
 import com.proyecto.servicios.entity.sf.UserEntity;
+import com.proyecto.servicios.controller.ClienteController;
+import com.proyecto.servicios.controller.GlobalApiExceptionHandler;
 import com.proyecto.servicios.model.cliente.UsuarioClienteModificadoEvent;
 import com.proyecto.servicios.exception.cliente.ClienteNoEncontradoException;
 import com.proyecto.servicios.exception.cliente.ClienteValidationException;
@@ -30,6 +32,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -45,6 +48,10 @@ import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.mock;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import org.mockito.InOrder;
 
 @ExtendWith(MockitoExtension.class)
@@ -198,6 +205,22 @@ class ClienteServiceImplTest {
                 () -> clienteService.consultarTodos(0, 20, true,
                         LocalDate.of(2026, 10, 3), LocalDate.of(2026, 10, 1)));
         verifyNoInteractions(clienteRepository, domicilioRepository, cuentaRepository);
+    }
+
+    @Test
+    void fechaHastaQueDesbordaElRangoDevuelve400SinConsultarLaBase() throws Exception {
+        var mvc = MockMvcBuilders.standaloneSetup(
+                        new ClienteController(clienteService, mock(ClienteRegistroService.class)))
+                .setControllerAdvice(new GlobalApiExceptionHandler()).build();
+
+        mvc.perform(get("/api/clientes")
+                        .param("hasta", LocalDate.MAX.toString()))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("code").value("INVALID_CLIENT_DATA"));
+
+        assertThrows(ClienteValidationException.class,
+                () -> clienteService.consultarTodos(0, 20, null, null, LocalDate.MAX));
+        verifyNoInteractions(clienteRepository, domicilioRepository, cuentaRepository, userRepository, sessionRepository);
     }
 
     @Test

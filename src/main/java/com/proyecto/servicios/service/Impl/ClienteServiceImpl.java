@@ -6,6 +6,7 @@ import static com.proyecto.servicios.support.ClienteDatos.normalizarMayusculas;
 import static com.proyecto.servicios.support.ClienteDatos.normalizarCorreo;
 import static com.proyecto.servicios.support.ClienteDatos.validarMayoriaDeEdad;
 import static com.proyecto.servicios.support.ClienteDatos.validarNombres;
+import com.proyecto.servicios.support.PaginacionDatos;
 
 import com.proyecto.servicios.entity.sf.ClienteEntity;
 import com.proyecto.servicios.entity.sf.CuentaEntity;
@@ -40,9 +41,11 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.time.DateTimeException;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.List;
@@ -53,10 +56,9 @@ import java.util.stream.Collectors;
 @Slf4j
 @Service
 @ConditionalOnProperty(name = "app.database.enabled", havingValue = "true")
+@PreAuthorize("hasRole('EJECUTIVO')")
 @Transactional(transactionManager = "sfTransactionManager", readOnly = true)
 public class ClienteServiceImpl implements ClienteService {
-
-    private static final int TAMANIO_MAXIMO_PAGINA = 100;
 
     private final ClienteRepository clienteRepository;
     private final DomicilioRepository domicilioRepository;
@@ -92,6 +94,7 @@ public class ClienteServiceImpl implements ClienteService {
 
     @Override
     public ClienteResponse consultarPorId(Long id) {
+        validarId(id);
         return consultarUno(() -> clienteRepository.findClienteById(id), "ID " + id);
     }
 
@@ -101,9 +104,7 @@ public class ClienteServiceImpl implements ClienteService {
         if (desde != null && hasta != null && desde.isAfter(hasta)) {
             throw new ClienteValidationException("La fecha desde no puede ser posterior a hasta");
         }
-        if (pagina < 0 || tamanio < 1 || tamanio > TAMANIO_MAXIMO_PAGINA) {
-            throw new ClienteValidationException("Pagina o tamanio fuera del rango permitido");
-        }
+        PaginacionDatos.validar(pagina, tamanio);
         Specification<ClienteEntity> filtro = (root, query, builder) -> builder.conjunction();
         if (activo != null) {
             filtro = filtro.and((root, query, builder) -> builder.equal(root.get("activo"), activo));
@@ -114,7 +115,12 @@ public class ClienteServiceImpl implements ClienteService {
                     builder.greaterThanOrEqualTo(root.get("fechaCreacion"), inicio));
         }
         if (hasta != null) {
-            Instant finExclusivo = hasta.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant();
+            Instant finExclusivo;
+            try {
+                finExclusivo = hasta.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant();
+            } catch (DateTimeException exception) {
+                throw new ClienteValidationException("La fecha hasta no permite calcular el limite del rango");
+            }
             filtro = filtro.and((root, query, builder) ->
                     builder.lessThan(root.get("fechaCreacion"), finExclusivo));
         }
@@ -153,7 +159,7 @@ public class ClienteServiceImpl implements ClienteService {
 
     @Override
     public ClienteResponse consultarPorNumeroCuenta(String numeroCuenta) {
-        String cuentaNormalizada = normalizarMayusculas(numeroCuenta);
+        String cuentaNormalizada = com.proyecto.servicios.support.CuentaDatos.normalizarNumeroCuenta(numeroCuenta);
         return consultarUno(() -> {
             CuentaEntity cuenta = cuentaRepository.findByNumeroCuenta(cuentaNormalizada);
             return cuenta == null ? null : cuenta.getCliente();
@@ -163,6 +169,7 @@ public class ClienteServiceImpl implements ClienteService {
     @Override
     @Transactional(transactionManager = "sfTransactionManager")
     public ClienteResponse actualizar(Long id, ActualizarClienteRequest request) {
+        validarId(id);
         validarMayoriaDeEdad(request.fechaNacimiento());
         validarNombres(request.nombre(), request.apellidoPaterno(), request.apellidoMaterno());
         String correoNormalizado = normalizarCorreo(request.correo());
@@ -200,6 +207,7 @@ public class ClienteServiceImpl implements ClienteService {
     @Override
     @Transactional(transactionManager = "sfTransactionManager")
     public ClienteResponse desactivar(Long id) {
+        validarId(id);
         try {
             ClienteEntity cliente = clienteRepository.findByIdForUpdate(id);
             if (cliente == null) {
@@ -303,6 +311,12 @@ public class ClienteServiceImpl implements ClienteService {
                 domicilioRepository.findByClienteId(cliente.getId()),
                 cuentaRepository.findAllByClienteId(cliente.getId())
         );
+    }
+
+    private void validarId(Long id) {
+        if (id == null || id <= 0) {
+            throw new ClienteValidationException("El ID debe ser mayor que cero");
+        }
     }
 
     private ClienteEntity obtenerCliente(Long id) {
