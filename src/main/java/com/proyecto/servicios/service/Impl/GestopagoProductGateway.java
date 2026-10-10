@@ -3,6 +3,7 @@ package com.proyecto.servicios.service.Impl;
 import com.proyecto.servicios.client.ProductCatalogClient;
 import com.proyecto.servicios.exception.ProductIntegrationErrorType;
 import com.proyecto.servicios.exception.ProductIntegrationException;
+import com.proyecto.servicios.exception.GestoPagoTokenRejectedException;
 import com.proyecto.servicios.model.product.ProductListResponse;
 import feign.FeignException;
 import feign.RetryableException;
@@ -24,6 +25,7 @@ public class GestopagoProductGateway {
     private static final String SUCCESS_CODE = "01";
 
     private final ProductCatalogClient productCatalogClient;
+    private final GestoPagoAccessTokenProvider tokenProvider;
     private final long failureCooldownNanos;
     private volatile long retryAfterNanos;
     private volatile ProductIntegrationErrorType lastErrorType;
@@ -32,9 +34,11 @@ public class GestopagoProductGateway {
     @Autowired
     public GestopagoProductGateway(
             ProductCatalogClient productCatalogClient,
+            GestoPagoAccessTokenProvider tokenProvider,
             @Value("${product.service.failure-cooldown}") Duration failureCooldown
     ) {
         this.productCatalogClient = productCatalogClient;
+        this.tokenProvider = tokenProvider;
         this.failureCooldownNanos = failureCooldown.toNanos();
     }
 
@@ -42,7 +46,7 @@ public class GestopagoProductGateway {
         rejectDuringCooldown();
         log.info("Inicia invocación al catálogo de productos Gestopago");
         try {
-            ResponseEntity<ProductListResponse> response = productCatalogClient.getProductList();
+            ResponseEntity<ProductListResponse> response = fetchWithTokenRecovery();
             validateResponse(response);
             clearFailure();
             return response.getBody();
@@ -74,7 +78,7 @@ public class GestopagoProductGateway {
             registerFailure(mapped);
             throw mapped;
         } catch (Exception exception) {
-            log.error("Error inesperado al consultar Gestopago", exception);
+            log.error("Error inesperado al consultar Gestopago: tipo={}", exception.getClass().getSimpleName());
             ProductIntegrationException mapped = new ProductIntegrationException(
                     ProductIntegrationErrorType.GESTOPAGO_UNAVAILABLE,
                     "El servicio externo de Gestopago no funciona o está caído",
@@ -84,6 +88,17 @@ public class GestopagoProductGateway {
             throw mapped;
         } finally {
             log.info("Finaliza invocación al catálogo de productos Gestopago");
+        }
+    }
+
+    private ResponseEntity<ProductListResponse> fetchWithTokenRecovery() {
+        String token = tokenProvider.obtenerToken();
+        try {
+            return productCatalogClient.getProductList("Bearer " + token);
+        } catch (GestoPagoTokenRejectedException rejected) {
+            String renewed = tokenProvider.renovarTrasRechazo(token);
+            // GET de solo lectura; nunca un bucle ni reintentos de pagos.
+            return productCatalogClient.getProductList("Bearer " + renewed);
         }
     }
 

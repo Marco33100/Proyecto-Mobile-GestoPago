@@ -2,12 +2,29 @@ package com.proyecto.servicios.config;
 
 import feign.Logger;
 import feign.RequestInterceptor;
+import feign.Retryer;
 import feign.codec.ErrorDecoder;
 import org.springframework.context.annotation.Bean;
 import java.net.URI;
+import org.springframework.util.StringUtils;
 
 /** Configuracion exclusiva de este cliente; el proveedor exige secretos en query params. */
 public class GestoPagoAuthClientConfiguration {
+    @Bean
+    Retryer authRetryer() {
+        return Retryer.NEVER_RETRY;
+    }
+
+    @Bean
+    RequestInterceptor authApiKey(ProductServiceProperties properties) {
+        return request -> {
+            request.header("Accept", "application/json");
+            if (StringUtils.hasText(properties.getApiKey())) {
+                request.header("X-API-Key", properties.getApiKey().trim());
+            }
+        };
+    }
+
     @Bean
     Logger authLogger() {
         // NoOp evita fugas aun si alguien configura accidentalmente loggerLevel=FULL.

@@ -69,7 +69,7 @@ Key Value es compatible con los clientes Redis del proyecto. El backend admite
 
 | Opcion | Valor |
 | --- | --- |
-| Branch | `develop` |
+| Branch | `main`, despues de integrar y subir los cambios verificados de `develop` |
 | Language / Runtime | `Docker` |
 | Root Directory | Vacio: el Dockerfile esta en la raiz del repositorio |
 | Dockerfile Path | `./Dockerfile` |
@@ -94,8 +94,11 @@ Configurar antes del primer despliegue:
 | `SPRING_DATASOURCE_PASSWORD` | Password de PostgreSQL de Render |
 | `REDIS_URL` | Internal URL de Key Value |
 | `AUTH_JWT_SECRET` | Secreto aleatorio estable de al menos 32 bytes; recomendado 64 caracteres hexadecimales |
-| `PRODUCT_SERVICE_BEARER_TOKEN` | Token vigente del proveedor Gestopago, sin el prefijo `Bearer ` |
 | `PRODUCT_SERVICE_API_KEY` | API key del proveedor, si el servicio la requiere |
+| `GESTOPAGO_AUTH_ENABLED` | `true`: predeterminado del perfil Render; obtener/renovar el token automaticamente |
+| `GESTOPAGO_AUTH_ID_DISTRIBUIDOR` | idDistribuidor asignado por Gestopago, el mismo que funciona en Postman |
+| `GESTOPAGO_AUTH_CODIGO_DISPOSITIVO` | codigoDispositivo asignado por Gestopago |
+| `GESTOPAGO_AUTH_PASSWORD` | Password de autenticacion del proveedor; NO es la contrasena del ejecutivo |
 
 Render proporciona `PORT` y `RENDER_EXTERNAL_URL`. Swagger utiliza esta ultima
 para enviar peticiones al backend publicado, no a `localhost`. Un dominio propio
@@ -104,6 +107,33 @@ puede configurarse mediante `API_DOCUMENTATION_SERVER_URL=https://tu-dominio`.
 Generar el secreto JWT en un administrador de passwords o generador criptografico
 y guardarlo directamente en Render. No regenerarlo en cada despliegue: invalidaria
 los JWT emitidos. Este secreto no es el token de Gestopago.
+
+Con renovacion automatica **no se necesita `PRODUCT_SERVICE_BEARER_TOKEN`**.
+La peticion POST de autenticacion conserva los Params del contrato que se probo
+en Postman, siempre por HTTPS, e incluye `X-API-Key` cuando esta configurado.
+Las credenciales quedan unicamente en Environment; el cliente no registra URLs,
+cabeceras, cuerpos ni causas Feign que puedan contener secretos.
+
+El proveedor documenta una vigencia de 24 horas y prohíbe obtener un token por
+cada consulta. Se reutiliza el token activo en memoria y PostgreSQL. Al necesitar
+el catalogo se renueva si ya vencio, con margen de 30 segundos, o si la respuesta
+es HTTP 401 o HTTP 403 con JSON `token=EXPIRED`. Solo en esos rechazos se permite
+un reintento del GET; otros 403 no provocan renovacion. Las peticiones concurrentes
+comparten la renovacion por instancia y un reinicio puede reutilizar el token
+persistido que siga vigente. No depende de un cron ejecutado durante la suspension.
+Si llega un `expires_in` menor, se respeta esa vigencia mas corta.
+[Contrato de autenticacion Gestopago](https://documenter.getpostman.com/view/19876210/Uz5MFtdn).
+
+El modo manual sigue disponible: `GESTOPAGO_AUTH_ENABLED=false` y
+`PRODUCT_SERVICE_BEARER_TOKEN=TOKEN_VIGENTE_SIN_PREFIJO_BEARER`. Ese modo exige
+reemplazar el token al caducar; no es la opcion recomendada para una demostracion
+en una fecha desconocida. El modo automatico nunca usa un token fijo como fallback
+si falla la autenticacion. No se cambian los roles ni los JWT de usuarios.
+
+El catalogo sigue el flujo Redis -> PostgreSQL -> proveedor; las pruebas del
+backend no deben forzar consultas externas por cada usuario. Gestopago documenta
+un maximo de tres consultas de catalogo por dia. La renovacion del token no elimina
+esa restriccion ni garantiza disponibilidad del proveedor.
 
 Para crear el primer ejecutivo en la base nueva, agregar temporalmente:
 
