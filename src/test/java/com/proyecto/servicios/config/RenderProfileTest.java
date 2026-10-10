@@ -41,6 +41,15 @@ class RenderProfileTest {
             assertThat(env.getProperty("management.health.redis.enabled", Boolean.class)).isFalse();
             assertThat(env.getProperty("management.endpoint.health.show-details")).isEqualTo("never");
             assertThat(env.getProperty("auth.bootstrap-executive.enabled", Boolean.class)).isFalse();
+            assertThat(env.getProperty("gestopago.auth.enabled", Boolean.class)).isTrue();
+        });
+    }
+
+    @Test
+    void permiteOptarExplicitamentePorTokenManual() {
+        configuredRender().withPropertyValues("GESTOPAGO_AUTH_ENABLED=false").run(context -> {
+            assertThat(context).hasNotFailed();
+            assertThat(context.getEnvironment().getProperty("gestopago.auth.enabled", Boolean.class)).isFalse();
         });
     }
 

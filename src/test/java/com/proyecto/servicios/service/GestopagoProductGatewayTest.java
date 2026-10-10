@@ -6,6 +6,7 @@ import com.proyecto.servicios.model.product.ProductContainer;
 import com.proyecto.servicios.model.product.ProductListResponse;
 import com.proyecto.servicios.model.product.ProductMessage;
 import com.proyecto.servicios.service.Impl.GestopagoProductGateway;
+import com.proyecto.servicios.service.Impl.GestoPagoAccessTokenProvider;
 import feign.FeignException;
 import feign.RetryableException;
 import org.junit.jupiter.api.BeforeEach;
@@ -30,17 +31,21 @@ class GestopagoProductGatewayTest {
     @Mock
     private ProductCatalogClient productCatalogClient;
 
+    @Mock
+    private GestoPagoAccessTokenProvider tokenProvider;
+
     private GestopagoProductGateway gateway;
 
     @BeforeEach
     void setUp() {
-        gateway = new GestopagoProductGateway(productCatalogClient, Duration.ofSeconds(30));
+        when(tokenProvider.obtenerToken()).thenReturn("fixture-token");
+        gateway = new GestopagoProductGateway(productCatalogClient, tokenProvider, Duration.ofSeconds(30));
     }
 
     @Test
     void returnsSuccessfulCatalog() {
         ProductListResponse expected = response("01");
-        when(productCatalogClient.getProductList()).thenReturn(ResponseEntity.ok(expected));
+        when(productCatalogClient.getProductList("Bearer fixture-token")).thenReturn(ResponseEntity.ok(expected));
 
         assertSame(expected, gateway.fetchCatalog());
     }
@@ -49,7 +54,7 @@ class GestopagoProductGatewayTest {
     void unavailableGestopagoReturnsCodeOne() {
         FeignException exception = mock(FeignException.class);
         when(exception.status()).thenReturn(503);
-        when(productCatalogClient.getProductList()).thenThrow(exception);
+        when(productCatalogClient.getProductList("Bearer fixture-token")).thenThrow(exception);
 
         ProductIntegrationException result = assertThrows(
                 ProductIntegrationException.class,
@@ -63,7 +68,7 @@ class GestopagoProductGatewayTest {
     void timeoutReturnsCodeOne() {
         RetryableException exception = mock(RetryableException.class);
         when(exception.getCause()).thenReturn(new SocketTimeoutException("timeout"));
-        when(productCatalogClient.getProductList()).thenThrow(exception);
+        when(productCatalogClient.getProductList("Bearer fixture-token")).thenThrow(exception);
 
         ProductIntegrationException result = assertThrows(
                 ProductIntegrationException.class,
@@ -76,7 +81,7 @@ class GestopagoProductGatewayTest {
     @Test
     void invalidPayloadReturnsCodeTwo() {
         ProductListResponse invalid = new ProductListResponse();
-        when(productCatalogClient.getProductList()).thenReturn(ResponseEntity.ok(invalid));
+        when(productCatalogClient.getProductList("Bearer fixture-token")).thenReturn(ResponseEntity.ok(invalid));
 
         ProductIntegrationException result = assertThrows(
                 ProductIntegrationException.class,
