@@ -29,7 +29,6 @@ transferencias, historial de movimientos ni reconocimiento facial; para este
 - [Consultas y optimización](#revision-de-consultas).
 - [Contrato de tipos y longitudes](docs/database-lengths.md).
 - [Configuración y uso de Flutter](mobile/gestopago_app/README.md).
-- [Preparación y despliegue del backend en Render](docs/render.md).
 
 ## Tecnologías y organización
 
