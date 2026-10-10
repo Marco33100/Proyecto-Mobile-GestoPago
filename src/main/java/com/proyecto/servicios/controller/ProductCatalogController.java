@@ -1,7 +1,7 @@
 package com.proyecto.servicios.controller;
 
 import com.proyecto.servicios.model.product.ProductListResponse;
-import com.proyecto.servicios.model.product.IntegrationErrorResponse;
+import com.proyecto.servicios.model.ApiErrorResponse;
 import com.proyecto.servicios.service.ProductCatalogService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -16,7 +16,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
-@RequestMapping("/api/products")
+@RequestMapping(value = "/api/products", produces = "application/json")
 @Tag(name = "Catálogo para clientes", description = "Endpoint cliente: Redis, PostgreSQL y fallback a Gestopago")
 @SecurityRequirement(name = "bearerAuth")
 public class ProductCatalogController {
@@ -33,13 +33,13 @@ public class ProductCatalogController {
             @ApiResponse(responseCode = "200", description = "Catálogo recuperado correctamente"),
             @ApiResponse(
                     responseCode = "500",
-                    description = "Código 2: error de persistencia, deserialización o procesamiento local",
-                    content = @Content(schema = @Schema(implementation = IntegrationErrorResponse.class))
+                    description = "PRODUCT_DATABASE_ERROR: error de persistencia, deserialización o procesamiento local",
+                    content = @Content(schema = @Schema(implementation = ApiErrorResponse.class))
             ),
             @ApiResponse(
                     responseCode = "502",
-                    description = "Código 1: Gestopago no disponible, conexión rechazada o timeout",
-                    content = @Content(schema = @Schema(implementation = IntegrationErrorResponse.class))
+                    description = "GESTOPAGO_UNAVAILABLE: Gestopago no disponible, conexión rechazada o timeout",
+                    content = @Content(schema = @Schema(implementation = ApiErrorResponse.class))
             )
     })
     public ResponseEntity<ProductListResponse> obtenerProductos() {

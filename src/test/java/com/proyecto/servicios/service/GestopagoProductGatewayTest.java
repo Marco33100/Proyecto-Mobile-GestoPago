@@ -18,12 +18,18 @@ import org.springframework.http.ResponseEntity;
 
 import java.net.SocketTimeoutException;
 import java.time.Duration;
+import java.util.concurrent.Callable;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.stream.IntStream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 
 @ExtendWith(MockitoExtension.class)
 class GestopagoProductGatewayTest {
@@ -89,6 +95,42 @@ class GestopagoProductGatewayTest {
         );
 
         assertEquals(2, result.getErrorType().getCode());
+    }
+
+    @Test
+    void peticionesConcurrentesDuranteCooldownConservanElErrorSinRepetirLaConsultaExterna() throws Exception {
+        when(productCatalogClient.getProductList("Bearer fixture-token"))
+                .thenReturn(ResponseEntity.ok(new ProductListResponse()));
+        ProductIntegrationException initial = assertThrows(ProductIntegrationException.class, gateway::fetchCatalog);
+        var tasks = IntStream.range(0, 32).mapToObj(index -> (Callable<Void>) () -> {
+            ProductIntegrationException result = assertThrows(ProductIntegrationException.class, gateway::fetchCatalog);
+            assertEquals(initial.getErrorType(), result.getErrorType());
+            assertEquals(initial.getMessage(), result.getMessage());
+            return null;
+        }).toList();
+        var executor = Executors.newFixedThreadPool(8);
+        try {
+            for (var result : executor.invokeAll(tasks, 15, TimeUnit.SECONDS)) {
+                result.get(1, TimeUnit.SECONDS);
+            }
+        } finally {
+            executor.shutdownNow();
+        }
+        verify(productCatalogClient, times(1)).getProductList("Bearer fixture-token");
+        verify(tokenProvider, times(1)).obtenerToken();
+    }
+
+    @Test
+    void sinCooldownPuedeRecuperarseDelFalloEnLaSiguienteConsulta() {
+        gateway = new GestopagoProductGateway(productCatalogClient, tokenProvider, Duration.ZERO);
+        ProductListResponse expected = response("01");
+        when(productCatalogClient.getProductList("Bearer fixture-token"))
+                .thenReturn(ResponseEntity.ok(new ProductListResponse()))
+                .thenReturn(ResponseEntity.ok(expected));
+
+        assertThrows(ProductIntegrationException.class, gateway::fetchCatalog);
+        assertSame(expected, gateway.fetchCatalog());
+        verify(productCatalogClient, times(2)).getProductList("Bearer fixture-token");
     }
 
     private ProductListResponse response(String code) {

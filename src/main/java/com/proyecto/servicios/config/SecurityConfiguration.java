@@ -4,13 +4,16 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
+import org.springframework.http.HttpMethod;
 import com.proyecto.servicios.service.Impl.LoginAttemptLimiter;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
 @Configuration
+@EnableMethodSecurity
 @ConditionalOnProperty(name = "app.database.enabled", havingValue = "true")
 public class SecurityConfiguration {
 
@@ -48,6 +51,10 @@ public class SecurityConfiguration {
                                 "/actuator/health", "/error"
                         ).permitAll()
                         .requestMatchers("/api/auth/register").denyAll()
+                        .requestMatchers("/api/cuentas/activas").hasRole("EJECUTIVO")
+                        .requestMatchers(HttpMethod.GET, "/api/cuentas/mias").hasRole("CLIENTE")
+                        .requestMatchers(HttpMethod.GET, "/api/cuentas/{numeroCuenta}",
+                                "/api/cuentas/{numeroCuenta}/saldo").hasAnyRole("EJECUTIVO", "CLIENTE")
                         .requestMatchers("/api/clientes", "/api/clientes/**",
                                 "/api/cuentas", "/api/cuentas/**").hasRole("EJECUTIVO")
                         .requestMatchers("/api/**").authenticated()

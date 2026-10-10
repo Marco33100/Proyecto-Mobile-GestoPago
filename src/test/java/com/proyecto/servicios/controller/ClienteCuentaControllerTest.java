@@ -35,17 +35,22 @@ class ClienteCuentaControllerTest {
         mvc = MockMvcBuilders.standaloneSetup(
                 new ClienteController(clientes, mock(ClienteRegistroService.class)),
                 new CuentaController(cuentas))
-                .setControllerAdvice(new ClienteExceptionHandler()).build();
+                .setControllerAdvice(new GlobalApiExceptionHandler()).build();
     }
 
     @Test
     void consultaCuentaYSaldoConPrefijoApi() throws Exception {
-        var respuesta = new CuentaResponse(UUID.randomUUID(), "CTA-123", new BigDecimal("25.50"), true);
-        when(cuentas.consultarPorNumeroCuenta("CTA-123")).thenReturn(respuesta);
-        mvc.perform(get("/api/cuentas/CTA-123")).andExpect(status().isOk())
-                .andExpect(jsonPath("numeroCuenta").value("CTA-123"));
-        mvc.perform(get("/api/cuentas/CTA-123/saldo")).andExpect(status().isOk())
+        String numero = "CTA-0123456789ABCDEF0123";
+        var respuesta = new CuentaResponse(UUID.randomUUID(), numero, new BigDecimal("25.50"), true);
+        when(cuentas.consultarPorNumeroCuenta(numero)).thenReturn(respuesta);
+        when(cuentas.consultarSaldo(numero)).thenReturn(
+                new com.proyecto.servicios.model.cliente.SaldoCuentaResponse(numero, new BigDecimal("25.50")));
+        mvc.perform(get("/api/cuentas/" + numero)).andExpect(status().isOk())
+                .andExpect(jsonPath("numeroCuenta").value(numero));
+        mvc.perform(get("/api/cuentas/" + numero + "/saldo")).andExpect(status().isOk())
                 .andExpect(jsonPath("saldo").value(25.50));
+        verify(cuentas).consultarPorNumeroCuenta(numero);
+        verify(cuentas).consultarSaldo(numero);
     }
 
     @Test
@@ -81,11 +86,12 @@ class ClienteCuentaControllerTest {
 
     @Test
     void cuentaInexistenteDevuelveJson404ConPath() throws Exception {
-        when(cuentas.consultarPorNumeroCuenta("NOEXISTE"))
+        String numero = "CTA-FFFFFFFFFFFFFFFFFFFF";
+        when(cuentas.consultarPorNumeroCuenta(numero))
                 .thenThrow(new CuentaNoEncontradaException("No existe la cuenta solicitada"));
-        mvc.perform(get("/api/cuentas/NOEXISTE")).andExpect(status().isNotFound())
+        mvc.perform(get("/api/cuentas/" + numero)).andExpect(status().isNotFound())
                 .andExpect(jsonPath("code").value("ACCOUNT_NOT_FOUND"))
-                .andExpect(jsonPath("path").value("/api/cuentas/NOEXISTE"));
+                .andExpect(jsonPath("path").value("/api/cuentas/" + numero));
     }
 
     @Test

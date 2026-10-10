@@ -68,7 +68,7 @@ class UsuarioAuthSecurityTest {
                 context.getBean(com.proyecto.servicios.service.Impl.LoginAttemptLimiter.class)), new UsuarioController(
                 new UsuarioServiceImpl(usuarios, sesiones, encoder, mock(ApplicationEventPublisher.class))))
                 .setCustomArgumentResolvers(new AuthenticationPrincipalArgumentResolver())
-                .setControllerAdvice(new AuthExceptionHandler())
+                .setControllerAdvice(new GlobalApiExceptionHandler())
                 .addFilters(context.getBean("springSecurityFilterChain", Filter.class)).build();
     }
 

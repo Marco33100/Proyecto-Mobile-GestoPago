@@ -1,6 +1,7 @@
 package com.proyecto.servicios.repositorys.sf;
 
 import com.proyecto.servicios.entity.sf.CuentaEntity;
+import com.proyecto.servicios.model.cliente.SaldoCuentaResponse;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -22,6 +23,26 @@ public interface CuentaRepository extends JpaRepository<CuentaEntity, UUID> {
     List<CuentaEntity> findAllByClienteIdIn(Collection<Long> clienteIds);
 
     CuentaEntity findByNumeroCuenta(String numeroCuenta);
+
+    @Query("select c from CuentaEntity c where c.numeroCuenta = :numeroCuenta and c.cliente.id in "
+            + "(select u.cliente.id from UserEntity u where u.id = :usuarioId)")
+    CuentaEntity consultarCuentaPropia(@Param("numeroCuenta") String numeroCuenta,
+                                     @Param("usuarioId") UUID usuarioId);
+
+    @Query("select c from CuentaEntity c where c.cliente.id in "
+            + "(select u.cliente.id from UserEntity u where u.id = :usuarioId)")
+    Page<CuentaEntity> consultarCuentasPropias(@Param("usuarioId") UUID usuarioId, Pageable pageable);
+
+    @Query("select new com.proyecto.servicios.model.cliente.SaldoCuentaResponse(c.numeroCuenta, c.saldo) "
+            + "from CuentaEntity c where c.numeroCuenta = :numeroCuenta")
+    SaldoCuentaResponse consultarSaldo(
+            @Param("numeroCuenta") String numeroCuenta);
+
+    @Query("select new com.proyecto.servicios.model.cliente.SaldoCuentaResponse(c.numeroCuenta, c.saldo) "
+            + "from CuentaEntity c where c.numeroCuenta = :numeroCuenta and c.cliente.id in "
+            + "(select u.cliente.id from UserEntity u where u.id = :usuarioId)")
+    SaldoCuentaResponse consultarSaldoPropio(@Param("numeroCuenta") String numeroCuenta,
+                                           @Param("usuarioId") UUID usuarioId);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select c from CuentaEntity c where c.numeroCuenta = :numeroCuenta")

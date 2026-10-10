@@ -4,6 +4,14 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.proyecto.servicios.config.*;
 import com.proyecto.servicios.entity.sf.RolUsuario;
 import com.proyecto.servicios.model.auth.AuthenticatedUser;
+import com.proyecto.servicios.exception.cliente.CuentaNoEncontradaException;
+import com.proyecto.servicios.model.cliente.CuentaResponse;
+import com.proyecto.servicios.model.cliente.SaldoCuentaResponse;
+import com.proyecto.servicios.model.cliente.PaginaResponse;
+import com.proyecto.servicios.mapper.ClienteResponseMapper;
+import com.proyecto.servicios.repositorys.sf.CuentaRepository;
+import com.proyecto.servicios.service.Impl.CuentaServiceImpl;
+import java.math.BigDecimal;
 import com.proyecto.servicios.service.*;
 import com.proyecto.servicios.service.Impl.ActiveSessionService;
 import jakarta.servlet.Filter;
@@ -32,6 +40,7 @@ class ClienteCuentaSecurityTest {
     private ClienteService clientes;
     private CuentaService cuentas;
     private ClienteRegistroService registro;
+    private AuthenticatedUser usuario;
 
     @BeforeEach
     void setUp() {
@@ -43,13 +52,13 @@ class ClienteCuentaSecurityTest {
                 LoginRateLimitProperties.class, com.proyecto.servicios.service.Impl.LoginAttemptLimiter.class);
         context.refresh();
         sessions = context.getBean(ActiveSessionService.class);
-        when(context.getBean(JwtTokenService.class).validate("token")).thenReturn(
-                new AuthenticatedUser(UUID.randomUUID(), UUID.randomUUID(), "uno@example.com", "uno"));
+        usuario = new AuthenticatedUser(UUID.randomUUID(), UUID.randomUUID(), "uno@example.com", "uno");
+        when(context.getBean(JwtTokenService.class).validate("token")).thenReturn(usuario);
         clientes = mock(ClienteService.class);
         cuentas = mock(CuentaService.class);
         registro = mock(ClienteRegistroService.class);
         mvc = MockMvcBuilders.standaloneSetup(new ClienteController(clientes, registro), new CuentaController(cuentas))
-                .setControllerAdvice(new ClienteExceptionHandler())
+                .setControllerAdvice(new GlobalApiExceptionHandler())
                 .addFilters(context.getBean("springSecurityFilterChain", Filter.class)).build();
     }
 
@@ -57,7 +66,8 @@ class ClienteCuentaSecurityTest {
 
     @Test
     void rutasApiNoPermitenAccesoSinSesion() throws Exception {
-        for (String route : List.of("/api/clientes", "/api/clientes/1", "/api/cuentas", "/api/cuentas/CTA-123")) {
+        for (String route : List.of("/api/clientes", "/api/clientes/1", "/api/cuentas", "/api/cuentas/CTA-123",
+                "/api/cuentas/mias", "/api/cuentas/CTA-0123456789ABCDEF0123/saldo")) {
             mvc.perform(get(route)).andExpect(status().isUnauthorized());
         }
         verifyNoInteractions(clientes, cuentas, registro);
@@ -76,7 +86,7 @@ class ClienteCuentaSecurityTest {
                 "/correo?correo=uno@example.com", "/cuenta/CTA-123")) {
             mvc.perform(get("/api/clientes" + suffix).header("Authorization", "Bearer token")).andExpect(status().isForbidden());
         }
-        for (String route : List.of("/api/cuentas/CTA-123", "/api/cuentas/CTA-123/saldo", "/api/cuentas/activas")) {
+        for (String route : List.of("/api/cuentas", "/api/cuentas/activas")) {
             mvc.perform(get(route).header("Authorization", "Bearer token")).andExpect(status().isForbidden());
         }
         verifyNoInteractions(clientes, cuentas, registro);
@@ -92,17 +102,122 @@ class ClienteCuentaSecurityTest {
     }
 
     @Test
+    void cambiarNumeroPorElDeOtraCuentaValidaOEnviarUsuarioNoConcedeAcceso() throws Exception {
+        when(sessions.rolVigente(any(), any())).thenReturn(RolUsuario.CLIENTE);
+        for (String numero : List.of("CTA-0123456789ABCDEF0123", "CTA-FFFFFFFFFFFFFFFFFFFF")) {
+            String ruta = "/api/cuentas/" + numero;
+            when(cuentas.consultarPorNumeroCuenta(numero)).thenThrow(new CuentaNoEncontradaException("No existe la cuenta solicitada"));
+            when(cuentas.consultarSaldo(numero)).thenThrow(new CuentaNoEncontradaException("No existe la cuenta solicitada"));
+            mvc.perform(get(ruta).header("Authorization", "Bearer token").param("usuarioId", UUID.randomUUID().toString()))
+                    .andExpect(status().isNotFound()).andExpect(jsonPath("code").value("ACCOUNT_NOT_FOUND"));
+            mvc.perform(get(ruta + "/saldo").header("Authorization", "Bearer token"))
+                    .andExpect(status().isNotFound()).andExpect(jsonPath("code").value("ACCOUNT_NOT_FOUND"));
+            mvc.perform(patch(ruta).header("Authorization", "Bearer token")
+                            .contentType("application/json").content("{\"activa\":false}"))
+                    .andExpect(status().isForbidden());
+            mvc.perform(delete(ruta).header("Authorization", "Bearer token"))
+                    .andExpect(status().isForbidden());
+            mvc.perform(get("/api/clientes/cuenta/" + numero).header("Authorization", "Bearer token"))
+                    .andExpect(status().isForbidden());
+            verify(cuentas).consultarPorNumeroCuenta(numero);
+            verify(cuentas).consultarSaldo(numero);
+        }
+        verifyNoMoreInteractions(cuentas);
+        verifyNoInteractions(clientes, registro);
+    }
+
+    @Test
+    void clientePuedeLeerCuentaSaldoYListadoPropios() throws Exception {
+        when(sessions.rolVigente(any(), any())).thenReturn(RolUsuario.CLIENTE);
+        String numero = "CTA-0123456789ABCDEF0123";
+        var cuenta = new CuentaResponse(UUID.randomUUID(), numero, BigDecimal.TEN, true);
+        when(cuentas.consultarPorNumeroCuenta(numero)).thenReturn(cuenta);
+        when(cuentas.consultarSaldo(numero)).thenReturn(new SaldoCuentaResponse(numero, BigDecimal.TEN));
+        when(cuentas.consultarPropias(0, 20)).thenReturn(PaginaResponse.desde(new org.springframework.data.domain.PageImpl<>(List.of(cuenta))));
+        mvc.perform(get("/api/cuentas/" + numero).header("Authorization", "Bearer token"))
+                .andExpect(status().isOk()).andExpect(jsonPath("numeroCuenta").value(numero));
+        mvc.perform(get("/api/cuentas/" + numero + "/saldo").header("Authorization", "Bearer token"))
+                .andExpect(status().isOk()).andExpect(jsonPath("saldo").value(10));
+        mvc.perform(get("/api/cuentas/mias").header("Authorization", "Bearer token"))
+                .andExpect(status().isOk()).andExpect(jsonPath("contenido[0].numeroCuenta").value(numero));
+        verify(cuentas).consultarPropias(0, 20);
+    }
+
+    @Test
+    void listadoPersonalValidaPaginacionYNoAbreOperacionesDeEscritura() throws Exception {
+        when(sessions.rolVigente(any(), any())).thenReturn(RolUsuario.CLIENTE);
+        mvc.perform(get("/api/cuentas/mias").header("Authorization", "Bearer token")
+                        .param("pagina", "-1").param("tamanio", "101"))
+                .andExpect(status().isBadRequest());
+        for (HttpMethod method : List.of(HttpMethod.POST, HttpMethod.PUT, HttpMethod.PATCH, HttpMethod.DELETE)) {
+            mvc.perform(request(method, "/api/cuentas/mias").header("Authorization", "Bearer token"))
+                    .andExpect(status().isForbidden());
+        }
+        when(sessions.rolVigente(any(), any())).thenReturn(RolUsuario.EJECUTIVO);
+        mvc.perform(get("/api/cuentas/mias").header("Authorization", "Bearer token"))
+                .andExpect(status().isForbidden());
+        mvc.perform(get("/api/cuentas/activas").header("Authorization", "Bearer token"))
+                .andExpect(status().isOk());
+        verify(cuentas).consultarActivas(0, 20);
+        verifyNoMoreInteractions(cuentas);
+    }
+
+    @Test
+    void filtroJwtYServicioRealIgnoranIdentificadoresDePropietarioEnviadosPorCliente() throws Exception {
+        when(sessions.rolVigente(any(), any())).thenReturn(RolUsuario.CLIENTE);
+        CuentaRepository repository = mock(CuentaRepository.class);
+        var service = new CuentaServiceImpl(repository, new CuentaProperties(), new ClienteResponseMapper());
+        MockMvc mvcReal = MockMvcBuilders.standaloneSetup(new CuentaController(service))
+                .setControllerAdvice(new GlobalApiExceptionHandler())
+                .addFilters(context.getBean("springSecurityFilterChain", Filter.class)).build();
+        String numero = "CTA-FFFFFFFFFFFFFFFFFFFF";
+        String usuarioAjeno = UUID.randomUUID().toString();
+        for (String suffix : List.of("", "/saldo")) {
+            mvcReal.perform(get("/api/cuentas/" + numero + suffix).header("Authorization", "Bearer token")
+                            .param("usuarioId", usuarioAjeno).param("clienteId", "999"))
+                    .andExpect(status().isNotFound()).andExpect(jsonPath("code").value("ACCOUNT_NOT_FOUND"));
+        }
+        when(repository.consultarCuentasPropias(eq(usuario.userId()), any()))
+                .thenReturn(new org.springframework.data.domain.PageImpl<>(List.of()));
+        mvcReal.perform(get("/api/cuentas/mias").header("Authorization", "Bearer token")
+                        .param("usuarioId", usuarioAjeno).param("clienteId", "999"))
+                .andExpect(status().isOk()).andExpect(jsonPath("contenido").isEmpty());
+        verify(repository).consultarCuentaPropia(numero, usuario.userId());
+        verify(repository).consultarSaldoPropio(numero, usuario.userId());
+        verify(repository).consultarCuentasPropias(eq(usuario.userId()), any());
+        verifyNoMoreInteractions(repository);
+    }
+
+    @Test
+    void patchRequiereSesionYRolEjecutivoAntesDeAccederAlServicio() throws Exception {
+        String ruta = "/api/cuentas/CTA-0123456789ABCDEF0123";
+        mvc.perform(patch(ruta).contentType("application/json").content("{\"activa\":false}"))
+                .andExpect(status().isUnauthorized()).andExpect(jsonPath("fieldErrors").isMap());
+        when(sessions.rolVigente(any(), any())).thenReturn(RolUsuario.CLIENTE);
+        mvc.perform(patch(ruta).header("Authorization", "Bearer token")
+                        .contentType("application/json").content("{\"activa\":false}"))
+                .andExpect(status().isForbidden()).andExpect(jsonPath("code").value("AUTH_FORBIDDEN"));
+        verifyNoInteractions(cuentas);
+        when(sessions.rolVigente(any(), any())).thenReturn(RolUsuario.EJECUTIVO);
+        mvc.perform(patch(ruta).header("Authorization", "Bearer token")
+                        .contentType("application/json").content("{\"activa\":false}"))
+                .andExpect(status().isOk());
+        verify(cuentas).actualizarEstado("CTA-0123456789ABCDEF0123",
+                new com.proyecto.servicios.model.cliente.ActualizarEstadoCuentaRequest(false));
+    }
+
+    @Test
     void ejecutivoPuedeConsultarYCrearSoloConPayloadValido() throws Exception {
         when(sessions.rolVigente(any(), any())).thenReturn(RolUsuario.EJECUTIVO);
         mvc.perform(get("/api/clientes").header("Authorization", "Bearer token")).andExpect(status().isOk());
         mvc.perform(post("/api/clientes").header("Authorization", "Bearer token")
                 .contentType("application/json").content("{}"))
                 .andExpect(status().isBadRequest()).andExpect(jsonPath("code").value("INVALID_CLIENT_DATA"));
-        mvc.perform(get("/api/cuentas/CTA-123").header("Authorization", "Bearer token")).andExpect(status().isOk());
-        mvc.perform(delete("/api/cuentas/CTA-123").header("Authorization", "Bearer token")).andExpect(status().isOk());
+        mvc.perform(get("/api/cuentas/CTA-0123456789ABCDEF0123").header("Authorization", "Bearer token")).andExpect(status().isOk());
+        mvc.perform(delete("/api/cuentas/CTA-0123456789ABCDEF0123").header("Authorization", "Bearer token")).andExpect(status().isOk());
         verify(clientes).consultarTodos(0, 20, null, null, null);
-        verify(cuentas).consultarPorNumeroCuenta("CTA-123");
-        verify(cuentas).desactivar("CTA-123");
+        verify(cuentas).consultarPorNumeroCuenta("CTA-0123456789ABCDEF0123");
+        verify(cuentas).desactivar("CTA-0123456789ABCDEF0123");
         verifyNoInteractions(registro);
     }
 

@@ -6,6 +6,7 @@ import com.proyecto.servicios.config.CuentaProperties;
 import com.proyecto.servicios.config.ExecutiveBootstrapProperties;
 import com.proyecto.servicios.entity.sf.*;
 import com.proyecto.servicios.exception.cliente.ClientePersistenceException;
+import com.proyecto.servicios.exception.cliente.CuentaPersistenceException;
 import com.proyecto.servicios.exception.auth.InvalidCredentialsException;
 import com.proyecto.servicios.exception.auth.AuthPersistenceException;
 import com.proyecto.servicios.exception.auth.ContrasenaInvalidaException;
@@ -14,6 +15,7 @@ import com.proyecto.servicios.model.auth.LoginRequest;
 import com.proyecto.servicios.model.auth.CambiarContrasenaRequest;
 import com.proyecto.servicios.model.cliente.ActualizarDomicilioRequest;
 import com.proyecto.servicios.model.cliente.RegistrarClienteRequest;
+import com.proyecto.servicios.model.cliente.ActualizarEstadoCuentaRequest;
 import com.proyecto.servicios.repositorys.sf.*;
 import com.proyecto.servicios.service.ClienteRegistroService;
 import com.proyecto.servicios.service.AuthService;
@@ -106,6 +108,7 @@ class ClienteUsuarioTransactionTest {
 
     @AfterEach
     void tearDown() throws Exception {
+        org.springframework.security.core.context.SecurityContextHolder.clearContext();
         if (factory != null) factory.close();
         if (postgresSchema != null) {
             // Nombre generado aqui, no recibido del usuario; solo borrar nuestro schema temporal.
@@ -287,7 +290,51 @@ class ClienteUsuarioTransactionTest {
                 mock(ActiveSessionService.class)), AuthService.class);
         assertThat(auth.login(new LoginRequest(usuario.getEmail(), request().contrasena())).accessToken())
                 .isEqualTo("token-de-prueba");
+        org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(
+                org.springframework.security.authentication.UsernamePasswordAuthenticationToken.authenticated(
+                        new com.proyecto.servicios.model.auth.AuthenticatedUser(usuario.getId(), sesion,
+                                usuario.getEmail(), usuario.getIdentifier()), null,
+                        java.util.List.of(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_CLIENTE"))));
         assertThat(servicioCuentas.consultarPorNumeroCuenta(cuenta.getNumeroCuenta()).activa()).isFalse();
+    }
+
+    @Test
+    void patchPersistidoSoloCambiaEstadoYRepetirloNoIncrementaVersion() {
+        var cliente = registro(usuarios).registrar(request());
+        var cuenta = cuentas.findAllByClienteId(cliente.id()).get(0);
+        var servicio = proxy(new CuentaServiceImpl(cuentas, new CuentaProperties(),
+                new ClienteResponseMapper()), CuentaService.class);
+        servicio.actualizarEstado(cuenta.getNumeroCuenta(), new ActualizarEstadoCuentaRequest(false));
+        var despues = cuentas.findByNumeroCuenta(cuenta.getNumeroCuenta());
+        assertThat(despues.isActiva()).isFalse();
+        assertThat(despues.getId()).isEqualTo(cuenta.getId());
+        assertThat(despues.getSaldo()).isEqualByComparingTo(cuenta.getSaldo());
+        assertThat(despues.getCliente().getId()).isEqualTo(cliente.id());
+        assertThat(despues.getFechaCreacion()).isEqualTo(cuenta.getFechaCreacion());
+        assertThat(despues.getVersion()).isEqualTo(cuenta.getVersion() + 1);
+        servicio.actualizarEstado(cuenta.getNumeroCuenta(), new ActualizarEstadoCuentaRequest(false));
+        var repetida = cuentas.findByNumeroCuenta(cuenta.getNumeroCuenta());
+        assertThat(repetida.getVersion()).isEqualTo(despues.getVersion());
+        assertThat(repetida.getFechaActualizacion()).isEqualTo(despues.getFechaActualizacion());
+        assertThat(clientes.findClienteById(cliente.id()).isActivo()).isTrue();
+    }
+
+    @Test
+    void falloAlGuardarPatchRevierteEstadoFechaVersionYConservaSaldo() {
+        var cliente = registro(usuarios).registrar(request());
+        var cuenta = cuentas.findAllByClienteId(cliente.id()).get(0);
+        CuentaRepository repositorioFallido = mock(CuentaRepository.class, delegatesTo(cuentas));
+        doThrow(new DataAccessResourceFailureException("error interno simulado"))
+                .when(repositorioFallido).saveAndFlush(any(CuentaEntity.class));
+        var servicio = proxy(new CuentaServiceImpl(repositorioFallido, new CuentaProperties(),
+                new ClienteResponseMapper()), CuentaService.class);
+        assertThatThrownBy(() -> servicio.actualizarEstado(cuenta.getNumeroCuenta(),
+                new ActualizarEstadoCuentaRequest(false))).isInstanceOf(CuentaPersistenceException.class);
+        var despues = cuentas.findByNumeroCuenta(cuenta.getNumeroCuenta());
+        assertThat(despues.isActiva()).isTrue();
+        assertThat(despues.getSaldo()).isEqualByComparingTo(cuenta.getSaldo());
+        assertThat(despues.getFechaActualizacion()).isEqualTo(cuenta.getFechaActualizacion());
+        assertThat(despues.getVersion()).isEqualTo(cuenta.getVersion());
     }
 
     @Test

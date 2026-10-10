@@ -3,6 +3,7 @@ package com.proyecto.servicios.service;
 import com.proyecto.servicios.model.auth.AuthenticatedUser;
 import com.proyecto.servicios.model.auth.CachedUser;
 import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.JwtParser;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.MalformedJwtException;
 import io.jsonwebtoken.security.Keys;
@@ -25,6 +26,7 @@ import java.util.UUID;
 public class JwtTokenService {
 
     private final SecretKey signingKey;
+    private final JwtParser parser;
     private final String issuer;
     private final Duration expiration;
 
@@ -37,6 +39,8 @@ public class JwtTokenService {
         this.signingKey = createSigningKey(configuredSecret);
         this.issuer = issuer;
         this.expiration = expiration;
+        // El parser construido es inmutable y seguro para reutilizar entre peticiones.
+        this.parser = Jwts.parser().verifyWith(signingKey).requireIssuer(issuer).build();
     }
 
     public TokenResult generate(CachedUser user, UUID sessionId) {
@@ -56,12 +60,7 @@ public class JwtTokenService {
     }
 
     public AuthenticatedUser validate(String token) {
-        Claims claims = Jwts.parser()
-                .verifyWith(signingKey)
-                .requireIssuer(issuer)
-                .build()
-                .parseSignedClaims(token)
-                .getPayload();
+        Claims claims = parser.parseSignedClaims(token).getPayload();
         if (claims.getExpiration() == null || claims.getIssuedAt() == null
                 || !claims.getExpiration().after(claims.getIssuedAt())
                 || !StringUtils.hasText(claims.get("email", String.class))

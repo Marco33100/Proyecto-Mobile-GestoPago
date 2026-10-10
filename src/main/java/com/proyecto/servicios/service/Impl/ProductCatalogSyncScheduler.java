@@ -70,12 +70,13 @@ public class ProductCatalogSyncScheduler {
             );
         } catch (ProductIntegrationException exception) {
             log.error(
-                    "Falló la sincronización diaria del catálogo: codigo={}, mensaje={}",
+                    "Fallo la sincronizacion diaria del catalogo: codigo={}, tipo={}",
                     exception.getErrorType().getCode(),
-                    exception.getMessage()
+                    exception.getClass().getSimpleName()
             );
         } catch (Exception exception) {
-            log.error("Falló inesperadamente la sincronización diaria del catálogo", exception);
+            log.error("Fallo inesperado en la sincronizacion diaria del catalogo: tipo={}",
+                    exception.getClass().getSimpleName());
         } finally {
             snapshotFileService.deleteSnapshot(snapshot);
             log.info("Finaliza sincronización diaria del catálogo Gestopago");
