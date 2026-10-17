@@ -1,7 +1,7 @@
 package com.proyecto.servicios.controller;
 
 import com.proyecto.servicios.model.product.ProductListResponse;
-import com.proyecto.servicios.model.ApiErrorResponse;
+import com.proyecto.servicios.model.GenericResponse;
 import com.proyecto.servicios.service.ProductCatalogService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -33,16 +33,19 @@ public class ProductCatalogController {
             @ApiResponse(responseCode = "200", description = "Catálogo recuperado correctamente"),
             @ApiResponse(
                     responseCode = "500",
-                    description = "PRODUCT_DATABASE_ERROR: error de persistencia, deserialización o procesamiento local",
-                    content = @Content(schema = @Schema(implementation = ApiErrorResponse.class))
+                    description = "No fue posible procesar el catalogo de productos",
+                    content = @Content(schema = @Schema(implementation = GenericResponse.class))
             ),
             @ApiResponse(
                     responseCode = "502",
-                    description = "GESTOPAGO_UNAVAILABLE: Gestopago no disponible, conexión rechazada o timeout",
-                    content = @Content(schema = @Schema(implementation = ApiErrorResponse.class))
+                    description = "El proveedor de productos no esta disponible",
+                    content = @Content(schema = @Schema(implementation = GenericResponse.class))
             )
     })
-    public ResponseEntity<ProductListResponse> obtenerProductos() {
-        return ResponseEntity.ok(productCatalogService.obtenerProductos());
+    public ResponseEntity<GenericResponse<ProductListResponse>> obtenerProductos() {
+        var resultado = productCatalogService.obtenerProductos();
+        boolean hayProductos = resultado.getProductos() != null && resultado.getProductos().getProductos() != null
+                && !resultado.getProductos().getProductos().isEmpty();
+        return ResponseEntity.ok(GenericResponse.consulta("Catalogo consultado correctamente", resultado, hayProductos));
     }
 }

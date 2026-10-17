@@ -55,7 +55,7 @@ class ClienteRegistroServiceImplTest {
     @BeforeEach
     void setUp() {
         service = new ClienteRegistroServiceImpl(
-                clienteRepository, domicilioRepository, cuentaService, new ClienteResponseMapper(),
+                clienteRepository, domicilioRepository, cuentaService, org.mapstruct.factory.Mappers.getMapper(ClienteResponseMapper.class),
                 userRepository, passwordEncoder
         );
     }
@@ -144,8 +144,7 @@ class ClienteRegistroServiceImplTest {
         verify(clienteRepository, never()).saveAndFlush(any(ClienteEntity.class));
         verify(userRepository, never()).saveAndFlush(any(UserEntity.class));
         verify(userRepository).existsByEmailOrIdentifier("marco@example.com");
-        verify(userRepository, never()).existsByEmail(any());
-        verify(userRepository, never()).existsByIdentifier(any());
+        org.mockito.Mockito.verifyNoMoreInteractions(userRepository);
     }
 
     @Test

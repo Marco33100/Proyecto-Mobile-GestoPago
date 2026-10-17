@@ -2,7 +2,6 @@ package com.proyecto.servicios.service.Impl;
 
 import static com.proyecto.servicios.support.ClienteDatos.normalizarTexto;
 import static com.proyecto.servicios.support.ClienteDatos.normalizarOpcional;
-import static com.proyecto.servicios.support.ClienteDatos.normalizarMayusculas;
 import static com.proyecto.servicios.support.ClienteDatos.normalizarCorreo;
 import static com.proyecto.servicios.support.ClienteDatos.validarMayoriaDeEdad;
 import static com.proyecto.servicios.support.ClienteDatos.validarNombres;
@@ -26,10 +25,12 @@ import com.proyecto.servicios.model.cliente.ActualizarClienteRequest;
 import com.proyecto.servicios.model.cliente.ActualizarDomicilioRequest;
 import com.proyecto.servicios.model.cliente.ClienteResponse;
 import com.proyecto.servicios.model.cliente.PaginaResponse;
+import com.proyecto.servicios.model.cliente.ConsultaClientesRequest;
 import com.proyecto.servicios.repositorys.sf.ClienteRepository;
 import com.proyecto.servicios.repositorys.sf.CuentaRepository;
 import com.proyecto.servicios.repositorys.sf.DomicilioRepository;
 import com.proyecto.servicios.service.ClienteService;
+import com.proyecto.servicios.specification.ClienteSpecification;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -50,7 +51,6 @@ import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
-import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -88,48 +88,56 @@ public class ClienteServiceImpl implements ClienteService {
     }
 
     @Override
-    public PaginaResponse<ClienteResponse> consultarTodos(int pagina, int tamanio) {
-        return consultarTodos(pagina, tamanio, null, null, null);
+    public PaginaResponse<ClienteResponse> consultar(ConsultaClientesRequest request) {
+        if (request.getId() != null) validarId(request.getId());
+        String correo = request.getCorreo() == null ? null : normalizarCorreo(request.getCorreo());
+        String numero = request.getNumeroCuenta() == null ? null
+                : com.proyecto.servicios.support.CuentaDatos.normalizarNumeroCuenta(request.getNumeroCuenta());
+        return buscar(request.getPagina(), request.getTamanio(), request.getNombre(), request.getRfc(),
+                request.getCurp(), request.getActivo(), request.getDesde(), request.getHasta(),
+                request.getId(), correo, numero);
     }
 
-    @Override
-    public ClienteResponse consultarPorId(Long id) {
-        validarId(id);
-        return consultarUno(() -> clienteRepository.findClienteById(id), "ID " + id);
-    }
-
-    @Override
-    public PaginaResponse<ClienteResponse> consultarTodos(int pagina, int tamanio, Boolean activo,
-                                                         LocalDate desde, LocalDate hasta) {
+    private PaginaResponse<ClienteResponse> buscar(int pagina, int tamanio, String nombre, String rfc, String curp,
+            Boolean activo, LocalDate desde, LocalDate hasta, Long id, String correo, String numeroCuenta) {
+        nombre = textoBusqueda(nombre, 50);
+        rfc = textoBusqueda(rfc, 13);
+        curp = textoBusqueda(curp, 18);
         if (desde != null && hasta != null && desde.isAfter(hasta)) {
             throw new ClienteValidationException("La fecha desde no puede ser posterior a hasta");
         }
         PaginacionDatos.validar(pagina, tamanio);
-        Specification<ClienteEntity> filtro = (root, query, builder) -> builder.conjunction();
-        if (activo != null) {
-            filtro = filtro.and((root, query, builder) -> builder.equal(root.get("activo"), activo));
-        }
-        if (desde != null) {
-            Instant inicio = desde.atStartOfDay(ZoneOffset.UTC).toInstant();
-            filtro = filtro.and((root, query, builder) ->
-                    builder.greaterThanOrEqualTo(root.get("fechaCreacion"), inicio));
-        }
+        Instant inicio = desde == null ? null : desde.atStartOfDay(ZoneOffset.UTC).toInstant();
+        Instant finExclusivo = null;
         if (hasta != null) {
-            Instant finExclusivo;
             try {
                 finExclusivo = hasta.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant();
             } catch (DateTimeException exception) {
                 throw new ClienteValidationException("La fecha hasta no permite calcular el limite del rango");
             }
-            filtro = filtro.and((root, query, builder) ->
-                    builder.lessThan(root.get("fechaCreacion"), finExclusivo));
         }
+        var filtro = ClienteSpecification.filtrosExactos(id, correo, numeroCuenta, activo, inicio, finExclusivo);
         try {
             PageRequest paginacion = PageRequest.of(pagina, tamanio,
                     Sort.by("fechaCreacion", "id").descending());
-            Page<ClienteEntity> clientes = activo == null && desde == null && hasta == null
-                    ? clienteRepository.findAll(paginacion)
-                    : clienteRepository.findAll(filtro, paginacion);
+            boolean identificadorExacto = id != null || correo != null || numeroCuenta != null;
+            boolean sinFiltros = !identificadorExacto && activo == null && desde == null && hasta == null;
+            Specification<ClienteEntity> coincidencias = ClienteSpecification.coincidencias(nombre, rfc, curp);
+            Page<ClienteEntity> clientes;
+            if (coincidencias == null) {
+                clientes = sinFiltros ? clienteRepository.findAll(paginacion)
+                        : clienteRepository.findAll(filtro, paginacion);
+            } else {
+                clientes = clienteRepository.findAll(filtro.and(coincidencias), paginacion);
+                // No confundir una pagina vacia fuera de rango con ausencia total de coincidencias.
+                if (clientes.getTotalElements() == 0) {
+                    clientes = sinFiltros ? clienteRepository.findAll(paginacion)
+                            : clienteRepository.findAll(filtro, paginacion);
+                }
+            }
+            if (identificadorExacto && clientes.getTotalElements() == 0) {
+                throw new ClienteNoEncontradoException("No existe el cliente solicitado");
+            }
             return mapearPagina(clientes);
         } catch (OptimisticLockingFailureException exception) {
             throw exception;
@@ -139,31 +147,12 @@ public class ClienteServiceImpl implements ClienteService {
         }
     }
 
-    @Override
-    public ClienteResponse consultarPorCorreo(String correo) {
-        String correoNormalizado = normalizarCorreo(correo);
-        return consultarUno(() -> clienteRepository.findByCorreo(correoNormalizado), "el correo solicitado");
-    }
-
-    @Override
-    public ClienteResponse consultarPorCurp(String curp) {
-        String curpNormalizada = normalizarMayusculas(curp);
-        return consultarUno(() -> clienteRepository.findByCurp(curpNormalizada), "CURP " + curpNormalizada);
-    }
-
-    @Override
-    public ClienteResponse consultarPorRfc(String rfc) {
-        String rfcNormalizado = normalizarMayusculas(rfc);
-        return consultarUno(() -> clienteRepository.findByRfc(rfcNormalizado), "RFC " + rfcNormalizado);
-    }
-
-    @Override
-    public ClienteResponse consultarPorNumeroCuenta(String numeroCuenta) {
-        String cuentaNormalizada = com.proyecto.servicios.support.CuentaDatos.normalizarNumeroCuenta(numeroCuenta);
-        return consultarUno(() -> {
-            CuentaEntity cuenta = cuentaRepository.findByNumeroCuenta(cuentaNormalizada);
-            return cuenta == null ? null : cuenta.getCliente();
-        }, "numero de cuenta " + cuentaNormalizada);
+    private String textoBusqueda(String texto, int maximo) {
+        if (texto == null) return null;
+        if (texto.length() > maximo) {
+            throw new ClienteValidationException("El texto de busqueda supera la longitud permitida");
+        }
+        return texto.isBlank() ? null : texto.trim();
     }
 
     @Override
@@ -226,21 +215,6 @@ public class ClienteServiceImpl implements ClienteService {
         } catch (DataAccessException exception) {
             log.error("Error de base de datos al desactivar el cliente {}: {}", id, exception.getClass().getSimpleName());
             throw new ClientePersistenceException("No fue posible desactivar el cliente", exception);
-        }
-    }
-
-    private ClienteResponse consultarUno(Supplier<ClienteEntity> consulta, String criterio) {
-        try {
-            ClienteEntity cliente = consulta.get();
-            if (cliente == null) {
-                throw new ClienteNoEncontradoException("No existe un cliente con " + criterio);
-            }
-            return cargarRespuesta(cliente);
-        } catch (OptimisticLockingFailureException exception) {
-            throw exception;
-        } catch (DataAccessException exception) {
-            log.error("Error de base de datos al consultar cliente: {}", exception.getClass().getSimpleName());
-            throw new ClientePersistenceException("No fue posible consultar el cliente", exception);
         }
     }
 

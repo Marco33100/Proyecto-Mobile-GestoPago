@@ -12,7 +12,10 @@ import com.proyecto.servicios.exception.auth.AuthPersistenceException;
 import com.proyecto.servicios.exception.auth.ContrasenaInvalidaException;
 import com.proyecto.servicios.mapper.ClienteResponseMapper;
 import com.proyecto.servicios.model.auth.LoginRequest;
+import com.proyecto.servicios.model.auth.UsuarioConsultaRequest;
+import com.proyecto.servicios.model.auth.UsuarioBusquedaRequest;
 import com.proyecto.servicios.model.auth.CambiarContrasenaRequest;
+import com.proyecto.servicios.model.auth.ModificarContrasenaRequest;
 import com.proyecto.servicios.model.cliente.ActualizarDomicilioRequest;
 import com.proyecto.servicios.model.cliente.RegistrarClienteRequest;
 import com.proyecto.servicios.model.cliente.ActualizarEstadoCuentaRequest;
@@ -163,7 +166,7 @@ class ClienteUsuarioTransactionTest {
         properties.setPassword("OtraSegura456!");
         bootstrap.crearSiSeSolicita();
         assertThat(usuarios.count()).isEqualTo(1);
-        assertThat(usuarios.findUserById(ejecutivo.getId()).getPasswordHash()).isEqualTo(hashOriginal);
+        assertThat(usuarios.findById(ejecutivo.getId()).orElseThrow().getPasswordHash()).isEqualTo(hashOriginal);
         UUID sesion = crearSesion(ejecutivo.getId());
         RolUsuario rolVigente = new TransactionTemplate(transactionManager).execute(status ->
                 sesiones.encontrarRolVigente(ejecutivo.getId(), sesion, Instant.now()));
@@ -225,8 +228,8 @@ class ClienteUsuarioTransactionTest {
         UUID sesion = crearSesion(usuario.getId());
         assertThat(sesionValida(usuario.getId(), sesion)).isTrue();
 
-        gestionUsuarios(sesiones).cambiarContrasena(usuario.getId(), usuario.getId(),
-                new CambiarContrasenaRequest(request().contrasena(), "Nueva456!"));
+        gestionUsuarios(sesiones).cambiarContrasena(new ModificarContrasenaRequest(usuario.getFullName(), usuario.getEmail(),
+                new CambiarContrasenaRequest(request().contrasena(), "Nueva456!")), usuario.getId());
 
         UserEntity actualizado = usuarios.findByEmail(usuario.getEmail()).orElseThrow();
         assertThat(encoder.matches("Nueva456!", actualizado.getPasswordHash())).isTrue();
@@ -247,8 +250,8 @@ class ClienteUsuarioTransactionTest {
             throw new DataAccessResourceFailureException("fallo despues del delete");
         }).when(falla).deleteById(usuario.getId());
 
-        assertThatThrownBy(() -> gestionUsuarios(falla).cambiarContrasena(usuario.getId(), usuario.getId(),
-                new CambiarContrasenaRequest(request().contrasena(), "Nueva456!")))
+        assertThatThrownBy(() -> gestionUsuarios(falla).cambiarContrasena(new ModificarContrasenaRequest(usuario.getFullName(), usuario.getEmail(),
+                new CambiarContrasenaRequest(request().contrasena(), "Nueva456!")), usuario.getId()))
                 .isInstanceOf(AuthPersistenceException.class);
         assertThat(usuarios.findByEmail(usuario.getEmail()).orElseThrow().getPasswordHash())
                 .isEqualTo(usuario.getPasswordHash());
@@ -260,8 +263,8 @@ class ClienteUsuarioTransactionTest {
         registro(usuarios).registrar(request());
         UserEntity usuario = usuarios.findByEmail("marco@example.com").orElseThrow();
         UUID sesion = crearSesion(usuario.getId());
-        assertThatThrownBy(() -> gestionUsuarios(sesiones).cambiarContrasena(usuario.getId(), usuario.getId(),
-                new CambiarContrasenaRequest("Incorrecta123!", "Nueva456!")))
+        assertThatThrownBy(() -> gestionUsuarios(sesiones).cambiarContrasena(new ModificarContrasenaRequest(usuario.getFullName(), usuario.getEmail(),
+                new CambiarContrasenaRequest("Incorrecta123!", "Nueva456!")), usuario.getId()))
                 .isInstanceOf(ContrasenaInvalidaException.class);
         assertThat(usuarios.findByEmail(usuario.getEmail()).orElseThrow().getPasswordHash())
                 .isEqualTo(usuario.getPasswordHash());
@@ -274,15 +277,15 @@ class ClienteUsuarioTransactionTest {
         UserEntity usuario = usuarios.findByEmail("marco@example.com").orElseThrow();
         UUID sesion = crearSesion(usuario.getId());
         var servicioCuentas = proxy(new CuentaServiceImpl(cuentas, new CuentaProperties(),
-                new ClienteResponseMapper()), CuentaService.class);
+                org.mapstruct.factory.Mappers.getMapper(ClienteResponseMapper.class)), CuentaService.class);
         var cuenta = cuentas.findAllByClienteId(cliente.id()).get(0);
         var response = servicioCuentas.desactivar(cuenta.getNumeroCuenta());
         assertThat(response.activa()).isFalse();
         assertThat(response.saldo()).isEqualByComparingTo(cuenta.getSaldo());
         assertThat(clientes.findClienteById(cliente.id()).isActivo()).isTrue();
-        assertThat(usuarios.findUserById(usuario.getId()).isEnabled()).isTrue();
+        assertThat(usuarios.findById(usuario.getId()).orElseThrow().isEnabled()).isTrue();
         assertThat(sesionValida(usuario.getId(), sesion)).isTrue();
-        assertThat(gestionUsuarios(sesiones).consultar(usuario.getId(), usuario.getId())).isNotNull();
+        assertThat(gestionUsuarios(sesiones).consultar(new UsuarioConsultaRequest(usuario.getFullName(), usuario.getEmail()), usuario.getId())).isNotNull();
         JwtTokenService jwt = mock(JwtTokenService.class);
         when(jwt.generate(any(), any())).thenReturn(new JwtTokenService.TokenResult(
                 "token-de-prueba", Instant.now().plusSeconds(300)));
@@ -303,7 +306,7 @@ class ClienteUsuarioTransactionTest {
         var cliente = registro(usuarios).registrar(request());
         var cuenta = cuentas.findAllByClienteId(cliente.id()).get(0);
         var servicio = proxy(new CuentaServiceImpl(cuentas, new CuentaProperties(),
-                new ClienteResponseMapper()), CuentaService.class);
+                org.mapstruct.factory.Mappers.getMapper(ClienteResponseMapper.class)), CuentaService.class);
         servicio.actualizarEstado(cuenta.getNumeroCuenta(), new ActualizarEstadoCuentaRequest(false));
         var despues = cuentas.findByNumeroCuenta(cuenta.getNumeroCuenta());
         assertThat(despues.isActiva()).isFalse();
@@ -327,7 +330,7 @@ class ClienteUsuarioTransactionTest {
         doThrow(new DataAccessResourceFailureException("error interno simulado"))
                 .when(repositorioFallido).saveAndFlush(any(CuentaEntity.class));
         var servicio = proxy(new CuentaServiceImpl(repositorioFallido, new CuentaProperties(),
-                new ClienteResponseMapper()), CuentaService.class);
+                org.mapstruct.factory.Mappers.getMapper(ClienteResponseMapper.class)), CuentaService.class);
         assertThatThrownBy(() -> servicio.actualizarEstado(cuenta.getNumeroCuenta(),
                 new ActualizarEstadoCuentaRequest(false))).isInstanceOf(CuentaPersistenceException.class);
         var despues = cuentas.findByNumeroCuenta(cuenta.getNumeroCuenta());
@@ -362,7 +365,7 @@ class ClienteUsuarioTransactionTest {
         UserEntity usuario = usuarios.findByEmail("marco@example.com").orElseThrow();
         UUID sesion = crearSesion(usuario.getId());
         new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
-            usuarios.findUserById(usuario.getId()).desactivar();
+            usuarios.findById(usuario.getId()).orElseThrow().desactivar();
             usuarios.flush();
         });
         assertThat(sesionValida(usuario.getId(), sesion)).isFalse();
@@ -435,7 +438,6 @@ class ClienteUsuarioTransactionTest {
         assertThat(usuarios.existsByEmailOrIdentifier("legado@example.com")).isTrue();
         assertThat(usuarios.existsByEmailOrIdentifier("alias-legado")).isTrue();
         assertThat(usuarios.existsByEmailOrIdentifier("ausente@example.com")).isFalse();
-        assertThat(usuarios.existsByEmail("legado@example.com")).isTrue();
         assertThat(usuarios.findByEmail("legado@example.com")).isPresent();
         assertThat(usuarios.findByEmail("ausente@example.com")).isEmpty();
 
@@ -443,6 +445,155 @@ class ClienteUsuarioTransactionTest {
         assertThat(clientes.existsByCorreoAndIdNot("marco@example.com", cliente.id())).isFalse();
         assertThat(clientes.existsByCorreoAndIdNot("marco@example.com", cliente.id() + 1)).isTrue();
         assertThat(clientes.existsByCorreoAndIdNot("ausente@example.com", cliente.id())).isFalse();
+    }
+
+    @Test
+    void consultaPorNombreYCorreoUsaAmbosCriteriosExactosYElUsuarioAutenticadoSinEscribir() {
+        UserEntity primero = new UserEntity(UUID.randomUUID(), "uno@example.com", "uno@example.com",
+                encoder.encode("Segura123!"), "Marco Martinez", true, Instant.now());
+        UserEntity homonimo = new UserEntity(UUID.randomUUID(), "dos@example.com", "dos@example.com",
+                encoder.encode("Segura123!"), "Marco Martinez", true, Instant.now());
+        UserEntity tercero = new UserEntity(UUID.randomUUID(), "tres@example.com", "tres@example.com",
+                encoder.encode("Segura123!"), "Maria Perez", true, Instant.now());
+        new TransactionTemplate(transactionManager).executeWithoutResult(status ->
+                usuarios.saveAllAndFlush(java.util.List.of(primero, homonimo, tercero)));
+        var servicio = gestionUsuarios(sesiones);
+        factory.getStatistics().setStatisticsEnabled(true);
+        factory.getStatistics().clear();
+
+        var respuesta = servicio.consultar(new UsuarioConsultaRequest("MARCO MARTINEZ", "UNO@EXAMPLE.COM"), primero.getId());
+        assertThat(respuesta.id()).isEqualTo(primero.getId());
+        assertThat(factory.getStatistics().getPrepareStatementCount()).isEqualTo(1);
+        assertThat(servicio.consultar(new UsuarioConsultaRequest("Marco Martinez", "dos@example.com"), homonimo.getId()).id())
+                .isEqualTo(homonimo.getId());
+        for (var selector : java.util.List.of(new UsuarioConsultaRequest("Marco", "uno@example.com"),
+                new UsuarioConsultaRequest("Maria Perez", "uno@example.com"),
+                new UsuarioConsultaRequest("Marco Martinez", "tres@example.com"),
+                new UsuarioConsultaRequest("Marco Martinez", "dos@example.com"),
+                new UsuarioConsultaRequest("Marco%", "uno@example.com"),
+                new UsuarioConsultaRequest("' OR 1=1 --", "uno@example.com"))) {
+            assertThatThrownBy(() -> servicio.consultar(selector, primero.getId()))
+                    .isInstanceOf(com.proyecto.servicios.exception.auth.UsuarioNoEncontradoException.class);
+        }
+        assertThat(factory.getStatistics().getEntityInsertCount()).isZero();
+        assertThat(factory.getStatistics().getEntityUpdateCount()).isZero();
+        assertThat(factory.getStatistics().getEntityDeleteCount()).isZero();
+    }
+
+    @Test
+    void busquedaDinamicaCombinaFiltrosEnSqlYPaginaSinNMasUnoNiEscrituras() {
+        Instant fecha = Instant.parse("2026-01-01T00:00:00Z");
+        var primero = clienteDeBusqueda("Juan", "uno@example.com", "5511111111", 1, fecha);
+        var segundo = clienteDeBusqueda("Juana", "dos@example.com", "5522222222", 2, fecha);
+        var tercero = clienteDeBusqueda("Maria", "tres@example.com", "5533333333", 3, fecha);
+        new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
+            clientes.saveAllAndFlush(java.util.List.of(primero, segundo, tercero));
+            var uno = new UserEntity(UUID.randomUUID(), primero.getCorreo(), "hash", primero.getNombreCompleto(), primero, fecha);
+            var dos = new UserEntity(UUID.randomUUID(), segundo.getCorreo(), "hash", segundo.getNombreCompleto(), segundo, fecha.plusSeconds(1));
+            dos.desactivar();
+            var tres = new UserEntity(UUID.randomUUID(), tercero.getCorreo(), "hash", tercero.getNombreCompleto(), tercero, fecha.plusSeconds(2));
+            usuarios.saveAllAndFlush(java.util.List.of(uno, dos, tres,
+                    UserEntity.crearEjecutivo("admin@example.com", "hash", fecha.plusSeconds(3))));
+        });
+        var servicio = gestionUsuarios(sesiones);
+        var estadisticas = factory.getStatistics();
+        estadisticas.setStatisticsEnabled(true);
+        estadisticas.clear();
+
+        var paginaUno = servicio.buscar(busqueda(request -> request.setTamanio(2)));
+        assertThat(paginaUno.totalElementos()).isEqualTo(4);
+        assertThat(paginaUno.totalPaginas()).isEqualTo(2);
+        assertThat(paginaUno.contenido()).extracting(com.proyecto.servicios.model.auth.UsuarioResponse::correo)
+                .containsExactly("admin@example.com", "tres@example.com");
+        assertThat(paginaUno.contenido().get(0).telefono()).isNull();
+        assertThat(paginaUno.contenido().get(1).telefono()).isEqualTo("5533333333");
+        assertThat(estadisticas.getPrepareStatementCount()).isEqualTo(2); // pagina + count, sin consulta por usuario
+
+        estadisticas.clear();
+        var paginaDos = servicio.buscar(busqueda(request -> { request.setTamanio(2); request.setPagina(1); }));
+        assertThat(paginaDos.totalElementos()).isEqualTo(4);
+        assertThat(paginaDos.contenido()).extracting(com.proyecto.servicios.model.auth.UsuarioResponse::correo)
+                .containsExactly("dos@example.com", "uno@example.com");
+        assertThat(estadisticas.getPrepareStatementCount()).isEqualTo(2);
+
+        assertThat(servicio.buscar(busqueda(request -> request.setNombre("jUaN"))).contenido())
+                .extracting(com.proyecto.servicios.model.auth.UsuarioResponse::correo)
+                .containsExactly("dos@example.com", "uno@example.com");
+        assertThat(servicio.buscar(busqueda(request -> { request.setNombre("jUaN"); request.setActivo(true); })).contenido())
+                .extracting(com.proyecto.servicios.model.auth.UsuarioResponse::correo).containsExactly("uno@example.com");
+        assertThat(servicio.buscar(busqueda(request -> request.setCorreo("DOS@EXAMPLE.COM"))).contenido())
+                .extracting(com.proyecto.servicios.model.auth.UsuarioResponse::correo).containsExactly("dos@example.com");
+        assertThat(servicio.buscar(busqueda(request -> request.setTelefono("5533333333"))).contenido())
+                .extracting(com.proyecto.servicios.model.auth.UsuarioResponse::nombre).containsExactly(tercero.getNombreCompleto());
+        assertThat(servicio.buscar(busqueda(request -> request.setActivo(false))).contenido())
+                .extracting(com.proyecto.servicios.model.auth.UsuarioResponse::correo).containsExactly("dos@example.com");
+        assertThat(servicio.buscar(busqueda(request -> {
+            request.setNombre("jUaN"); request.setCorreo("UNO@EXAMPLE.COM");
+            request.setTelefono("5511111111"); request.setActivo(true);
+        })).contenido()).hasSize(1);
+
+        estadisticas.clear();
+        assertThat(servicio.buscar(busqueda(request -> {
+            request.setNombre("Juan"); request.setTelefono("5533333333");
+        })).totalElementos()).isZero();
+        assertThat(estadisticas.getPrepareStatementCount()).isEqualTo(1); // sin fallback ni count innecesario
+        for (String literal : java.util.List.of("%", "_", "\\", "' OR 1=1 --")) {
+            assertThat(servicio.buscar(busqueda(request -> request.setNombre(literal))).contenido()).isEmpty();
+        }
+        assertThat(estadisticas.getEntityInsertCount()).isZero();
+        assertThat(estadisticas.getEntityUpdateCount()).isZero();
+        assertThat(estadisticas.getEntityDeleteCount()).isZero();
+    }
+
+    @Test
+    void cambioDeContrasenaExigeNombreYCorreoExactosDelActorYSoloRevocaSuSesion() {
+        String hash = encoder.encode("Actual123!");
+        var propio = new UserEntity(UUID.randomUUID(), "propio@example.com", "propio@example.com", hash,
+                "Marco Martinez", true, Instant.now());
+        var homonimo = new UserEntity(UUID.randomUUID(), "ajeno@example.com", "ajeno@example.com", hash,
+                "Marco Martinez", true, Instant.now());
+        new TransactionTemplate(transactionManager).executeWithoutResult(status ->
+                usuarios.saveAllAndFlush(java.util.List.of(propio, homonimo)));
+        UUID sesionPropia = crearSesion(propio.getId());
+        UUID sesionAjena = crearSesion(homonimo.getId());
+        var servicio = gestionUsuarios(sesiones);
+        var credenciales = new CambiarContrasenaRequest("Actual123!", "Nueva456!");
+        for (var selector : java.util.List.of(
+                new ModificarContrasenaRequest("Marco", propio.getEmail(), credenciales),
+                new ModificarContrasenaRequest("Maria Perez", propio.getEmail(), credenciales),
+                new ModificarContrasenaRequest(propio.getFullName(), homonimo.getEmail(), credenciales),
+                new ModificarContrasenaRequest("Marco%", propio.getEmail(), credenciales),
+                new ModificarContrasenaRequest("' OR 1=1 --", propio.getEmail(), credenciales))) {
+            assertThatThrownBy(() -> servicio.cambiarContrasena(selector, propio.getId()))
+                    .isInstanceOf(com.proyecto.servicios.exception.auth.UsuarioNoEncontradoException.class);
+        }
+        assertThatThrownBy(() -> servicio.cambiarContrasena(new ModificarContrasenaRequest(
+                propio.getFullName(), propio.getEmail(), credenciales), homonimo.getId()))
+                .isInstanceOf(com.proyecto.servicios.exception.auth.UsuarioNoEncontradoException.class);
+        assertThat(usuarios.findById(propio.getId()).orElseThrow().getPasswordHash()).isEqualTo(hash);
+        assertThat(usuarios.findById(homonimo.getId()).orElseThrow().getPasswordHash()).isEqualTo(hash);
+        assertThat(sesionValida(propio.getId(), sesionPropia)).isTrue();
+        assertThat(sesionValida(homonimo.getId(), sesionAjena)).isTrue();
+
+        servicio.cambiarContrasena(new ModificarContrasenaRequest(" MARCO MARTINEZ ", "PROPIO@EXAMPLE.COM",
+                credenciales), propio.getId());
+        assertThat(encoder.matches("Nueva456!", usuarios.findById(propio.getId()).orElseThrow().getPasswordHash())).isTrue();
+        assertThat(usuarios.findById(homonimo.getId()).orElseThrow().getPasswordHash()).isEqualTo(hash);
+        assertThat(sesionValida(propio.getId(), sesionPropia)).isFalse();
+        assertThat(sesionValida(homonimo.getId(), sesionAjena)).isTrue();
+    }
+
+    private UsuarioBusquedaRequest busqueda(java.util.function.Consumer<UsuarioBusquedaRequest> filtros) {
+        var request = new UsuarioBusquedaRequest();
+        filtros.accept(request);
+        return request;
+    }
+
+    private ClienteEntity clienteDeBusqueda(String nombre, String correo, String telefono, int consecutivo, Instant fecha) {
+        return new ClienteEntity(nombre, null, "Lopez", "Perez", LocalDate.of(1990, 1, 1),
+                "LOPE900101HDFRRR0" + consecutivo, "LOPE900101AB" + consecutivo,
+                Sexo.MASCULINO, "Mexicana", EstadoCivil.SOLTERO, null, correo, telefono,
+                null, "Ingeniero", "Empresa", new BigDecimal("1000.00"), fecha);
     }
 
     private UsuarioService gestionUsuarios(UserSessionRepository sessionRepository) {
@@ -459,13 +610,13 @@ class ClienteUsuarioTransactionTest {
 
     private boolean sesionValida(UUID id, UUID sesion) {
         return new TransactionTemplate(transactionManager).execute(
-                status -> sesiones.existeSesionValida(id, sesion, Instant.now()));
+                status -> sesiones.encontrarRolVigente(id, sesion, Instant.now()) != null);
     }
 
     private ClienteRegistroService registro(UserRepository userRepository) {
         var service = new ClienteRegistroServiceImpl(clientes, domicilios,
-                new CuentaServiceImpl(cuentas, new CuentaProperties(), new ClienteResponseMapper()),
-                new ClienteResponseMapper(), userRepository, encoder);
+                new CuentaServiceImpl(cuentas, new CuentaProperties(), org.mapstruct.factory.Mappers.getMapper(ClienteResponseMapper.class)),
+                org.mapstruct.factory.Mappers.getMapper(ClienteResponseMapper.class), userRepository, encoder);
         return proxy(service, ClienteRegistroService.class);
     }
 

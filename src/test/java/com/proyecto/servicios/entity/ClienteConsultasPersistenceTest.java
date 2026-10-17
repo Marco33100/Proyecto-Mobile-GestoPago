@@ -13,6 +13,8 @@ import com.proyecto.servicios.repositorys.sf.UserSessionRepository;
 import org.springframework.context.ApplicationEventPublisher;
 import static org.mockito.Mockito.mock;
 import com.proyecto.servicios.mapper.ClienteResponseMapper;
+import com.proyecto.servicios.model.cliente.ConsultaClientesRequest;
+import java.util.function.Consumer;
 import com.proyecto.servicios.repositorys.sf.ClienteRepository;
 import com.proyecto.servicios.repositorys.sf.CuentaRepository;
 import com.proyecto.servicios.repositorys.sf.DomicilioRepository;
@@ -87,15 +89,17 @@ class ClienteConsultasPersistenceTest {
             CuentaRepository cuentas = repositories.getRepository(CuentaRepository.class);
             ClienteServiceImpl clientes = new ClienteServiceImpl(
                     repositories.getRepository(ClienteRepository.class),
-                    repositories.getRepository(DomicilioRepository.class), cuentas, new ClienteResponseMapper(),
+                    repositories.getRepository(DomicilioRepository.class), cuentas, org.mapstruct.factory.Mappers.getMapper(ClienteResponseMapper.class),
                     repositories.getRepository(UserRepository.class),
                     repositories.getRepository(UserSessionRepository.class), mock(ApplicationEventPublisher.class));
             CuentaServiceImpl cuentasService = new CuentaServiceImpl(cuentas, new CuentaProperties(),
-                    new ClienteResponseMapper());
+                    org.mapstruct.factory.Mappers.getMapper(ClienteResponseMapper.class));
 
             factory.getStatistics().clear();
-            var rango = clientes.consultarTodos(0, 20, null,
-                    LocalDate.of(2026, 10, 1), LocalDate.of(2026, 10, 3));
+            var rango = clientes.consultar(consulta(r -> {
+                r.setDesde(LocalDate.of(2026, 10, 1));
+                r.setHasta(LocalDate.of(2026, 10, 3));
+            }));
             assertThat(rango.contenido()).extracting(response -> response.correo())
                     .containsExactly("dos@example.com", "uno@example.com");
             // Pagina, conteo (si es necesario) y dos cargas por lotes; no una consulta por cliente.
@@ -103,20 +107,27 @@ class ClienteConsultasPersistenceTest {
 
             session.clear();
             factory.getStatistics().clear();
-            var todos = clientes.consultarTodos(0, 20);
+            var todos = clientes.consultar(new ConsultaClientesRequest());
             assertThat(todos.contenido()).hasSize(3);
             assertThat(factory.getStatistics().getPrepareStatementCount()).isLessThanOrEqualTo(4);
             assertThat(factory.getStatistics().getEntityInsertCount()).isZero();
             assertThat(factory.getStatistics().getEntityUpdateCount()).isZero();
             assertThat(factory.getStatistics().getEntityDeleteCount()).isZero();
 
-            assertThat(clientes.consultarTodos(0, 20, true, null, null).totalElementos()).isEqualTo(2);
-            assertThat(clientes.consultarTodos(0, 20, false, null, null).totalElementos()).isEqualTo(1);
-            assertThat(clientes.consultarTodos(0, 1, null, LocalDate.of(2026, 10, 1), null).contenido())
+            assertThat(clientes.consultar(consulta(r -> r.setActivo(true))).totalElementos()).isEqualTo(2);
+            assertThat(clientes.consultar(consulta(r -> r.setActivo(false))).totalElementos()).isEqualTo(1);
+            assertThat(clientes.consultar(consulta(r -> {
+                r.setTamanio(1);
+                r.setDesde(LocalDate.of(2026, 10, 1));
+            })).contenido())
                     .hasSize(1);
-            assertThat(clientes.consultarTodos(0, 20, true, null, LocalDate.of(2026, 10, 3))
+            assertThat(clientes.consultar(consulta(r -> {
+                r.setActivo(true);
+                r.setHasta(LocalDate.of(2026, 10, 3));
+            }))
                     .totalElementos()).isEqualTo(1);
-            assertThat(clientes.consultarPorCorreo(" UNO@EXAMPLE.COM ").id()).isEqualTo(primero.getId());
+            assertThat(clientes.consultar(consulta(r -> r.setCorreo(" UNO@EXAMPLE.COM "))).contenido())
+                    .extracting(response -> response.id()).containsExactly(primero.getId());
             assertThat(cuentasService.consultarActivas(0, 20).contenido())
                     .extracting(response -> response.numeroCuenta()).containsExactly("CTA-0123456789ABCDEF0123");
             assertThat(cuentasService.consultarPorNumeroCuenta("cta-0123456789abcdef0123").saldo())
@@ -131,6 +142,96 @@ class ClienteConsultasPersistenceTest {
                     .isEqualByComparingTo("25.50");
             assertThat(factory.getStatistics().getPrepareStatementCount()).isEqualTo(1);
             assertThat(factory.getStatistics().getEntityLoadCount()).isZero();
+            session.clear();
+            factory.getStatistics().clear();
+            var parciales = clientes.consultar(consulta(r -> {
+                r.setTamanio(2);
+                r.setNombre(" mAr ");
+            }));
+            assertThat(parciales.totalElementos()).isEqualTo(3);
+            assertThat(parciales.contenido()).hasSize(2);
+            assertThat(factory.getStatistics().getPrepareStatementCount()).isLessThanOrEqualTo(4);
+            assertThat(clientes.consultar(consulta(r -> {
+                r.setNombre("noexiste");
+                r.setRfc("pElA");
+                r.setCurp("mOmA");
+            })).contenido())
+                    .extracting(response -> response.correo())
+                    .containsExactly("tres@example.com", "dos@example.com", "uno@example.com");
+            assertThat(clientes.consultar(consulta(r -> {
+                r.setNombre("noexiste");
+                r.setRfc("pElA");
+            })).totalElementos()).isEqualTo(2);
+            assertThat(clientes.consultar(consulta(r -> r.setCurp("mOmA"))).totalElementos()).isEqualTo(1);
+            assertThat(clientes.consultar(consulta(r -> {
+                r.setNombre("mAr");
+                r.setRfc("pElA");
+                r.setActivo(false);
+            })).contenido())
+                    .extracting(response -> response.correo()).containsExactly("dos@example.com");
+            assertThat(clientes.consultar(consulta(r -> {
+                r.setTamanio(1);
+                r.setNombre("ninguno");
+                r.setActivo(false);
+            })).contenido())
+                    .extracting(response -> response.correo()).containsExactly("dos@example.com");
+            var paginaSinCoincidencias = clientes.consultar(consulta(r -> {
+                r.setTamanio(1);
+                r.setNombre("ninguno");
+            }));
+            assertThat(paginaSinCoincidencias.totalElementos()).isEqualTo(3);
+            assertThat(paginaSinCoincidencias.contenido()).hasSize(1);
+            var fueraDeRango = clientes.consultar(consulta(r -> {
+                r.setPagina(3);
+                r.setTamanio(1);
+                r.setRfc("pElA");
+            }));
+            assertThat(fueraDeRango.totalElementos()).isEqualTo(2);
+            assertThat(fueraDeRango.contenido()).isEmpty();
+            assertThat(clientes.consultar(consulta(r -> {
+                r.setNombre("   ");
+                r.setRfc("");
+            })).totalElementos()).isEqualTo(3);
+            session.clear();
+            factory.getStatistics().clear();
+            // % se busca literalmente: primero no hay coincidencias y luego se ejecuta el fallback vigente.
+            assertThat(clientes.consultar(consulta(r -> r.setNombre("%"))).totalElementos()).isEqualTo(3);
+            assertThat(factory.getStatistics().getPrepareStatementCount()).isEqualTo(4);
+            var consulta = new com.proyecto.servicios.model.cliente.ConsultaClientesRequest();
+            consulta.setId(primero.getId());
+            consulta.setCorreo(" UNO@EXAMPLE.COM ");
+            consulta.setNumeroCuenta("cta-0123456789abcdef0123");
+            consulta.setNombre("Marco");
+            session.clear();
+            factory.getStatistics().clear();
+            assertThat(clientes.consultar(consulta).contenido()).extracting(response -> response.id())
+                    .containsExactly(primero.getId());
+            assertThat(factory.getStatistics().getPrepareStatementCount()).isLessThanOrEqualTo(4);
+            // La combinacion de identificadores es AND: no permite devolver el registro de otro criterio.
+            consulta.setCorreo("dos@example.com");
+            org.assertj.core.api.Assertions.assertThatThrownBy(() -> clientes.consultar(consulta))
+                    .isInstanceOf(com.proyecto.servicios.exception.cliente.ClienteNoEncontradoException.class);
+            consulta.setCorreo(null);
+            consulta.setNombre("noexiste");
+            // El fallback del texto nunca elimina el identificador exacto.
+            assertThat(clientes.consultar(consulta).contenido()).extracting(response -> response.id())
+                    .containsExactly(primero.getId());
+            consulta.setPagina(1);
+            consulta.setTamanio(1);
+            assertThat(clientes.consultar(consulta).contenido()).isEmpty();
+            assertThat(clientes.consultar(consulta).totalElementos()).isEqualTo(1);
+            consulta.setPagina(0);
+            consulta.setId(null);
+            consulta.setNombre(null);
+            assertThat(clientes.consultar(consulta).contenido()).extracting(response -> response.id())
+                    .containsExactly(primero.getId());
+            consulta.setNumeroCuenta("CTA-AAAAAAAAAAAAAAAAAAAA");
+            org.assertj.core.api.Assertions.assertThatThrownBy(() -> clientes.consultar(consulta))
+                    .isInstanceOf(com.proyecto.servicios.exception.cliente.ClienteNoEncontradoException.class);
+            session.flush();
+            assertThat(factory.getStatistics().getEntityInsertCount()).isZero();
+            assertThat(factory.getStatistics().getEntityUpdateCount()).isZero();
+            assertThat(factory.getStatistics().getEntityDeleteCount()).isZero();
             transaction.rollback();
         }
     }
@@ -141,4 +242,10 @@ class ClienteConsultasPersistenceTest {
                 correo, "5512345678", null, "Ingeniero", "Empresa", new BigDecimal("1000.00"),
                 Instant.parse(fecha));
     }
+    private ConsultaClientesRequest consulta(Consumer<ConsultaClientesRequest> filtros) {
+        var request = new ConsultaClientesRequest();
+        filtros.accept(request);
+        return request;
+    }
+
 }

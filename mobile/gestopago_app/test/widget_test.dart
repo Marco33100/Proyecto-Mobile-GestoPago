@@ -330,7 +330,10 @@ void main() {
       expect(payload!.containsKey('numeroCuenta'), isFalse);
       expect(payload!.containsKey('saldo'), isFalse);
       response.complete(
-        http.Response('{"cuentas":[{"numeroCuenta":"CTA-123"}]}', 201),
+        http.Response(
+          '{"codigo":1,"mensaje":"Cliente registrado correctamente","datos":{"cuentas":[{"numeroCuenta":"CTA-123"}]}}',
+          201,
+        ),
       );
       await tester.pumpAndSettle();
       expect(find.text('Bienvenido, Ejecutivo'), findsOneWidget);

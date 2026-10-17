@@ -6,7 +6,4 @@ public class ClienteConflictException extends RuntimeException {
         super(message);
     }
 
-    public String getCode() {
-        return "CLIENT_DATA_CONFLICT";
-    }
 }

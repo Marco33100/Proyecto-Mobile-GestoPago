@@ -1,5 +1,6 @@
 package com.proyecto.servicios.service;
 
+import com.proyecto.servicios.entity.sf.RolUsuario;
 import com.proyecto.servicios.repositorys.sf.UserSessionRepository;
 import com.proyecto.servicios.service.Impl.ActiveSessionService;
 import com.proyecto.servicios.service.Impl.AuthCacheStore;
@@ -47,7 +48,7 @@ class ActiveSessionServiceTest {
         when(sessionRepository.encontrarRolVigente(eq(userId), eq(oldSession), any(Instant.class)))
                 .thenReturn(null);
 
-        assertThat(service.isActive(userId, oldSession)).isFalse();
+        assertThat(service.rolVigente(userId, oldSession)).isNull();
         verifyNoInteractions(authCacheStore);
     }
 
@@ -57,7 +58,18 @@ class ActiveSessionServiceTest {
         UUID sessionId = UUID.randomUUID();
         when(sessionRepository.encontrarRolVigente(eq(userId), eq(sessionId), any(Instant.class)))
                 .thenThrow(new DataAccessResourceFailureException("database offline"));
-        assertThatThrownBy(() -> service.isActive(userId, sessionId)).isInstanceOf(AuthPersistenceException.class);
+        assertThatThrownBy(() -> service.rolVigente(userId, sessionId)).isInstanceOf(AuthPersistenceException.class);
+        verifyNoInteractions(authCacheStore);
+    }
+
+    @Test
+    void devuelveElRolVigenteDePostgresSinConsultarRedis() {
+        UUID userId = UUID.randomUUID();
+        UUID sessionId = UUID.randomUUID();
+        when(sessionRepository.encontrarRolVigente(eq(userId), eq(sessionId), any(Instant.class)))
+                .thenReturn(RolUsuario.CLIENTE);
+
+        assertThat(service.rolVigente(userId, sessionId)).isEqualTo(RolUsuario.CLIENTE);
         verifyNoInteractions(authCacheStore);
     }
 

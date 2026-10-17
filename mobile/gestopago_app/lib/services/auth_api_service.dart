@@ -83,7 +83,17 @@ class AuthApiService {
           .timeout(timeout);
 
       if (successStatuses.contains(response.statusCode)) {
-        return parse(emptySuccess ? const {} : _decodeBody(response.body));
+        if (emptySuccess) return parse(const {});
+        final body = _decodeBody(response.body);
+        if (body.containsKey('codigo')) {
+          final data = body['datos'];
+          if (body['codigo'] != 1 || data is! Map<String, dynamic>) {
+            throw _invalidResponse;
+          }
+          return parse(data);
+        }
+        // Compatibilidad con la version publicada antes de la envoltura codigo/mensaje/datos.
+        return parse(body);
       }
       // Un proxy puede responder HTML: conservamos el estado HTTP real.
       Map<String, dynamic> body;
@@ -94,7 +104,11 @@ class AuthApiService {
       }
       throw ApiException(
         statusCode: response.statusCode,
-        code: body['code'] is String ? body['code'] as String : 'UNKNOWN_ERROR',
+        code: body['code'] is String
+            ? body['code'] as String
+            : body['codigo'] is int
+            ? body['codigo'].toString()
+            : 'UNKNOWN_ERROR',
         message: _friendlyMessage(response.statusCode, body),
       );
     } on TimeoutException {
@@ -134,6 +148,14 @@ class AuthApiService {
   }
 
   String _friendlyMessage(int statusCode, Map<String, dynamic> body) {
+    final publicMessage = body['mensaje'];
+    if (body['codigo'] is int &&
+        publicMessage is String &&
+        publicMessage.trim().isNotEmpty) {
+      return statusCode >= 500
+          ? 'El servicio no esta disponible por el momento.'
+          : publicMessage;
+    }
     final fieldErrors = body['fieldErrors'] ?? body['validationErrors'];
     if (statusCode == 400 && fieldErrors is Map && fieldErrors.isNotEmpty) {
       return fieldErrors.values.first.toString();
