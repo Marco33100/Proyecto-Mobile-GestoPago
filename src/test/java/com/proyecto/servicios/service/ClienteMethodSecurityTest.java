@@ -2,6 +2,8 @@ package com.proyecto.servicios.service;
 
 import com.proyecto.servicios.exception.cliente.ClienteNoEncontradoException;
 import com.proyecto.servicios.mapper.ClienteResponseMapper;
+import com.proyecto.servicios.entity.sf.ClienteEntity;
+import com.proyecto.servicios.model.cliente.ConsultaClientesRequest;
 import com.proyecto.servicios.repositorys.sf.ClienteRepository;
 import com.proyecto.servicios.repositorys.sf.CuentaRepository;
 import com.proyecto.servicios.repositorys.sf.DomicilioRepository;
@@ -22,6 +24,9 @@ import org.springframework.security.config.annotation.method.configuration.Enabl
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
 import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.*;
@@ -42,7 +47,7 @@ class ClienteMethodSecurityTest {
             .withBean(UserRepository.class, () -> usuarios)
             .withBean(UserSessionRepository.class, () -> sesiones)
             .withBean(CuentaService.class, () -> servicioCuentas)
-            .withBean(ClienteResponseMapper.class, ClienteResponseMapper::new)
+            .withBean(ClienteResponseMapper.class, () -> org.mapstruct.factory.Mappers.getMapper(ClienteResponseMapper.class))
             .withBean(PasswordEncoder.class, () -> mock(PasswordEncoder.class))
             .withBean(ApplicationEventPublisher.class, () -> mock(ApplicationEventPublisher.class));
 
@@ -74,9 +79,12 @@ class ClienteMethodSecurityTest {
     @Test
     void ejecutivoLlegaAlRepositorioYRecibeElErrorDeNegocioSiNoExisteElCliente() {
         autenticar("ROLE_EJECUTIVO");
+        when(clientes.findAll(org.mockito.ArgumentMatchers.<Specification<ClienteEntity>>any(), any(Pageable.class))).thenReturn(Page.empty());
+        var request = new ConsultaClientesRequest();
+        request.setId(1L);
         runner.run(context -> assertThrows(ClienteNoEncontradoException.class,
-                () -> context.getBean(ClienteService.class).consultarPorId(1L)));
-        verify(clientes).findClienteById(1L);
+                () -> context.getBean(ClienteService.class).consultar(request)));
+        verify(clientes).findAll(org.mockito.ArgumentMatchers.<Specification<ClienteEntity>>any(), any(Pageable.class));
         verifyNoMoreInteractions(clientes);
         verifyNoInteractions(cuentas, domicilios, usuarios, sesiones);
     }
@@ -87,13 +95,20 @@ class ClienteMethodSecurityTest {
     }
 
     private List<Runnable> llamadas(ClienteService servicio, ClienteRegistroService registro) {
-        return List.of(() -> servicio.consultarPorId(1L), () -> servicio.consultarPorId(2L),
-                () -> servicio.consultarPorNumeroCuenta("CTA-FFFFFFFFFFFFFFFFFFFF"),
-                () -> servicio.consultarPorCorreo("otro@example.com"),
-                () -> servicio.consultarPorCurp("MOMA900101HDFRRR01"),
-                () -> servicio.consultarPorRfc("MOMA900101AB1"),
-                () -> servicio.consultarTodos(0, 10),
-                () -> servicio.consultarTodos(0, 10, true, null, null),
+        var identificador = new ConsultaClientesRequest();
+        identificador.setId(1L);
+        var cuenta = new ConsultaClientesRequest();
+        cuenta.setNumeroCuenta("CTA-FFFFFFFFFFFFFFFFFFFF");
+        var correo = new ConsultaClientesRequest();
+        correo.setCorreo("otro@example.com");
+        var filtros = new ConsultaClientesRequest();
+        filtros.setNombre("Marco");
+        filtros.setRfc("MOMA");
+        filtros.setCurp("MOMA");
+        filtros.setActivo(true);
+        return List.of(() -> servicio.consultar(identificador), () -> servicio.consultar(cuenta),
+                () -> servicio.consultar(correo), () -> servicio.consultar(filtros),
+                () -> servicio.consultar(new ConsultaClientesRequest()),
                 () -> servicio.actualizar(2L, null), () -> servicio.desactivar(2L),
                 () -> registro.registrar(null));
     }

@@ -1,5 +1,7 @@
 package com.proyecto.servicios.model.cliente;
 
+import com.proyecto.servicios.model.SolicitudJson;
+
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
@@ -14,5 +16,5 @@ public record ActualizarDomicilioRequest(
         @NotBlank @Pattern(regexp = "^[0-9]{5}$", message = "debe contener exactamente 5 digitos")
         String codigoPostal,
         @NotBlank @Size(max = 60) String pais
-) {
+) implements SolicitudJson {
 }

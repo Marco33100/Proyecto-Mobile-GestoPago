@@ -5,8 +5,4 @@ public class CurpDuplicadaException extends ClienteConflictException {
         super("La CURP ya esta registrada");
     }
 
-    @Override
-    public String getCode() {
-        return "DUPLICATE_CURP";
-    }
 }

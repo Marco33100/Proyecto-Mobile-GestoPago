@@ -53,7 +53,7 @@ class CuentaServiceImplTest {
         CuentaProperties properties = new CuentaProperties();
         properties.setSaldoInicial(new BigDecimal("100.00"));
         cuentaService = new CuentaServiceImpl(cuentaRepository, properties,
-                new ClienteResponseMapper());
+                org.mapstruct.factory.Mappers.getMapper(ClienteResponseMapper.class));
     }
 
     @AfterEach

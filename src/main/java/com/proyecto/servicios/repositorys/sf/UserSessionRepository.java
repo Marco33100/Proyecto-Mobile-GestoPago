@@ -21,7 +21,4 @@ public interface UserSessionRepository extends JpaRepository<UserSessionEntity, 
     RolUsuario encontrarRolVigente(@Param("userId") UUID userId, @Param("sessionId") UUID sessionId,
                                @Param("ahora") Instant ahora);
 
-    default boolean existeSesionValida(UUID userId, UUID sessionId, Instant ahora) {
-        return encontrarRolVigente(userId, sessionId, ahora) != null;
-    }
 }

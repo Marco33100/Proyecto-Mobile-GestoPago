@@ -1,5 +1,7 @@
 package com.proyecto.servicios.model.auth;
 
+import com.proyecto.servicios.model.SolicitudJson;
+
 import com.proyecto.servicios.model.cliente.ContrasenaSegura;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
@@ -10,7 +12,7 @@ public record CambiarContrasenaRequest(
         @Schema(accessMode = Schema.AccessMode.WRITE_ONLY) String contrasenaActual,
         @NotBlank @ContrasenaSegura
         @Schema(accessMode = Schema.AccessMode.WRITE_ONLY) String nuevaContrasena
-) {
+) implements SolicitudJson {
     @Override
     public String toString() {
         return "CambiarContrasenaRequest[credenciales protegidas]";

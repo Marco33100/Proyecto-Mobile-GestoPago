@@ -3,6 +3,7 @@ package com.proyecto.servicios.controller;
 import com.proyecto.servicios.model.auth.LoginRequest;
 import com.proyecto.servicios.model.auth.LoginResponse;
 import com.proyecto.servicios.model.auth.AuthenticatedUser;
+import com.proyecto.servicios.model.GenericResponse;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import com.proyecto.servicios.service.AuthService;
@@ -34,11 +35,11 @@ public class AuthController {
 
     @PostMapping("/login")
     @Operation(summary = "Valida credenciales y devuelve una sesion JWT")
-    public ResponseEntity<LoginResponse> login(@Valid @RequestBody LoginRequest request) {
+    public ResponseEntity<GenericResponse<LoginResponse>> login(@Valid @RequestBody LoginRequest request) {
         loginAttemptLimiter.checkAccount(request.email());
         LoginResponse result = authService.login(request);
         loginAttemptLimiter.loginSucceeded(request.email());
-        return ResponseEntity.ok(result);
+        return ResponseEntity.ok(GenericResponse.exito("Inicio de sesion correcto", result));
     }
 
     @PostMapping("/logout")

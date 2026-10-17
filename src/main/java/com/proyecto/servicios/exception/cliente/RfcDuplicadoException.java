@@ -5,8 +5,4 @@ public class RfcDuplicadoException extends ClienteConflictException {
         super("El RFC ya esta registrado");
     }
 
-    @Override
-    public String getCode() {
-        return "DUPLICATE_RFC";
-    }
 }

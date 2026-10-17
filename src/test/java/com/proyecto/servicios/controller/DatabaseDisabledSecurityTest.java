@@ -30,9 +30,9 @@ class DatabaseDisabledSecurityTest {
             context.refresh();
             var mvc = MockMvcBuilders.standaloneSetup(new HealthController())
                     .addFilters(context.getBean("springSecurityFilterChain", Filter.class)).build();
-            for (String ruta : new String[]{"/api/products", "/api/clientes", "/api/usuarios/1", "/api/cuentas/123"}) {
+            for (String ruta : new String[]{"/api/products", "/api/clientes", "/api/usuarios/detalle?id=1", "/api/cuentas/detalle?numeroCuenta=123"}) {
                 mvc.perform(get(ruta)).andExpect(status().isServiceUnavailable())
-                        .andExpect(jsonPath("code").value("AUTH_DATABASE_ERROR"));
+                        .andExpect(jsonPath("codigo").value(2));
             }
             mvc.perform(post("/api/auth/login")).andExpect(status().isServiceUnavailable());
             mvc.perform(get("/actuator/health")).andExpect(status().isOk());

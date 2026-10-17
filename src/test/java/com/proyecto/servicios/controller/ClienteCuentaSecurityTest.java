@@ -27,6 +27,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.support.AnnotationConfigWebApplicationContext;
 import org.springframework.web.servlet.config.annotation.EnableWebMvc;
 import java.util.List;
+import static com.proyecto.servicios.controller.ApiTestRequests.*;
 import java.util.Map;
 import java.util.UUID;
 import static org.mockito.Mockito.*;
@@ -57,8 +58,11 @@ class ClienteCuentaSecurityTest {
         clientes = mock(ClienteService.class);
         cuentas = mock(CuentaService.class);
         registro = mock(ClienteRegistroService.class);
+        when(clientes.consultar(any())).thenReturn(new PaginaResponse<>(List.of(), 0, 20, 0, 0, true));
+        when(cuentas.consultarActivas(anyInt(), anyInt())).thenReturn(new PaginaResponse<>(List.of(), 0, 20, 0, 0, true));
+        when(cuentas.consultarPropias(anyInt(), anyInt())).thenReturn(new PaginaResponse<>(List.of(), 0, 20, 0, 0, true));
         mvc = MockMvcBuilders.standaloneSetup(new ClienteController(clientes, registro), new CuentaController(cuentas))
-                .setControllerAdvice(new GlobalApiExceptionHandler())
+                .setControllerAdvice(new ValidadorCampos(), new com.proyecto.servicios.controller.GlobalApiExceptionHandler())
                 .addFilters(context.getBean("springSecurityFilterChain", Filter.class)).build();
     }
 
@@ -66,58 +70,56 @@ class ClienteCuentaSecurityTest {
 
     @Test
     void rutasApiNoPermitenAccesoSinSesion() throws Exception {
-        for (String route : List.of("/api/clientes", "/api/clientes/1", "/api/cuentas", "/api/cuentas/CTA-123",
-                "/api/cuentas/mias", "/api/cuentas/CTA-0123456789ABCDEF0123/saldo")) {
-            mvc.perform(get(route)).andExpect(status().isUnauthorized());
+for (String route : List.of("/api/clientes/consulta", "/api/cuentas/consulta",
+                "/api/cuentas/mias/consulta", "/api/cuentas/activas/consulta", "/api/cuentas/saldo/consulta")) {
+            mvc.perform(postJson(route, Map.of())).andExpect(status().isUnauthorized())
+                    .andExpect(jsonPath("codigo").value(2)).andExpect(jsonPath("$").value(org.hamcrest.Matchers.aMapWithSize(2)));
         }
         verifyNoInteractions(clientes, cuentas, registro);
     }
 
     @Test
     void clienteNoAdministraClientesNiCuentasEnNingunaRuta() throws Exception {
-        when(sessions.rolVigente(any(), any())).thenReturn(RolUsuario.CLIENTE);
+when(sessions.rolVigente(any(), any())).thenReturn(RolUsuario.CLIENTE);
         for (HttpMethod method : List.of(HttpMethod.GET, HttpMethod.POST, HttpMethod.PUT, HttpMethod.DELETE)) {
-            String route = method == HttpMethod.PUT || method == HttpMethod.DELETE ? "/api/clientes/1" : "/api/clientes";
-            mvc.perform(request(method, route).header("Authorization", "Bearer token"))
-                    .andExpect(status().isForbidden()).andExpect(jsonPath("code").value("AUTH_FORBIDDEN"))
-                    .andExpect(jsonPath("path").value(route));
+            mvc.perform(request(method, "/api/clientes").header("Authorization", "Bearer token")
+                            .contentType("application/json").content("{}"))
+                    .andExpect(status().isForbidden()).andExpect(jsonPath("codigo").value(2));
         }
-        for (String suffix : List.of("/1", "/curp/MALM900101HDFRPR01", "/rfc/MALM900101AB1",
-                "/correo?correo=uno@example.com", "/cuenta/CTA-123")) {
-            mvc.perform(get("/api/clientes" + suffix).header("Authorization", "Bearer token")).andExpect(status().isForbidden());
+        for (Map<String, Object> filtro : List.<Map<String, Object>>of(Map.of("id", 1), Map.of("rfc", "MALM"),
+                Map.of("curp", "MALM"), Map.of("nombre", "Marco"), Map.of("correo", "uno@example.com"),
+                Map.of("numeroCuenta", "CTA-0123456789ABCDEF0123"), Map.of())) {
+            mvc.perform(postJson("/api/clientes/consulta", filtro).header("Authorization", "Bearer token"))
+                    .andExpect(status().isForbidden());
         }
-        for (String route : List.of("/api/cuentas", "/api/cuentas/activas")) {
-            mvc.perform(get(route).header("Authorization", "Bearer token")).andExpect(status().isForbidden());
-        }
+        mvc.perform(postJson("/api/cuentas/activas/consulta", Map.of()).header("Authorization", "Bearer token"))
+                .andExpect(status().isForbidden());
         verifyNoInteractions(clientes, cuentas, registro);
     }
 
     @Test
     void soloEjecutivoPuedeDesactivarUnaCuenta() throws Exception {
-        mvc.perform(delete("/api/cuentas/CTA-123")).andExpect(status().isUnauthorized());
+        mvc.perform(bajaCuenta("CTA-123")).andExpect(status().isUnauthorized());
         when(sessions.rolVigente(any(), any())).thenReturn(RolUsuario.CLIENTE);
-        mvc.perform(delete("/api/cuentas/CTA-123").header("Authorization", "Bearer token"))
+        mvc.perform(bajaCuenta("CTA-123").header("Authorization", "Bearer token"))
                 .andExpect(status().isForbidden());
         verifyNoInteractions(cuentas);
     }
 
     @Test
     void cambiarNumeroPorElDeOtraCuentaValidaOEnviarUsuarioNoConcedeAcceso() throws Exception {
-        when(sessions.rolVigente(any(), any())).thenReturn(RolUsuario.CLIENTE);
+when(sessions.rolVigente(any(), any())).thenReturn(RolUsuario.CLIENTE);
         for (String numero : List.of("CTA-0123456789ABCDEF0123", "CTA-FFFFFFFFFFFFFFFFFFFF")) {
-            String ruta = "/api/cuentas/" + numero;
             when(cuentas.consultarPorNumeroCuenta(numero)).thenThrow(new CuentaNoEncontradaException("No existe la cuenta solicitada"));
             when(cuentas.consultarSaldo(numero)).thenThrow(new CuentaNoEncontradaException("No existe la cuenta solicitada"));
-            mvc.perform(get(ruta).header("Authorization", "Bearer token").param("usuarioId", UUID.randomUUID().toString()))
-                    .andExpect(status().isNotFound()).andExpect(jsonPath("code").value("ACCOUNT_NOT_FOUND"));
-            mvc.perform(get(ruta + "/saldo").header("Authorization", "Bearer token"))
-                    .andExpect(status().isNotFound()).andExpect(jsonPath("code").value("ACCOUNT_NOT_FOUND"));
-            mvc.perform(patch(ruta).header("Authorization", "Bearer token")
-                            .contentType("application/json").content("{\"activa\":false}"))
+            mvc.perform(cuentaConsulta(numero).header("Authorization", "Bearer token").param("usuarioId", UUID.randomUUID().toString()))
+                    .andExpect(status().isNotFound()).andExpect(jsonPath("codigo").value(2));
+            mvc.perform(saldoConsulta(numero).header("Authorization", "Bearer token"))
+                    .andExpect(status().isNotFound()).andExpect(jsonPath("codigo").value(2));
+            mvc.perform(parcheCuenta(numero, "{\"activa\":false}").header("Authorization", "Bearer token"))
                     .andExpect(status().isForbidden());
-            mvc.perform(delete(ruta).header("Authorization", "Bearer token"))
-                    .andExpect(status().isForbidden());
-            mvc.perform(get("/api/clientes/cuenta/" + numero).header("Authorization", "Bearer token"))
+            mvc.perform(bajaCuenta(numero).header("Authorization", "Bearer token")).andExpect(status().isForbidden());
+            mvc.perform(postJson("/api/clientes/consulta", Map.of("numeroCuenta", numero)).header("Authorization", "Bearer token"))
                     .andExpect(status().isForbidden());
             verify(cuentas).consultarPorNumeroCuenta(numero);
             verify(cuentas).consultarSaldo(numero);
@@ -134,29 +136,29 @@ class ClienteCuentaSecurityTest {
         when(cuentas.consultarPorNumeroCuenta(numero)).thenReturn(cuenta);
         when(cuentas.consultarSaldo(numero)).thenReturn(new SaldoCuentaResponse(numero, BigDecimal.TEN));
         when(cuentas.consultarPropias(0, 20)).thenReturn(PaginaResponse.desde(new org.springframework.data.domain.PageImpl<>(List.of(cuenta))));
-        mvc.perform(get("/api/cuentas/" + numero).header("Authorization", "Bearer token"))
-                .andExpect(status().isOk()).andExpect(jsonPath("numeroCuenta").value(numero));
-        mvc.perform(get("/api/cuentas/" + numero + "/saldo").header("Authorization", "Bearer token"))
-                .andExpect(status().isOk()).andExpect(jsonPath("saldo").value(10));
-        mvc.perform(get("/api/cuentas/mias").header("Authorization", "Bearer token"))
-                .andExpect(status().isOk()).andExpect(jsonPath("contenido[0].numeroCuenta").value(numero));
+        mvc.perform(cuentaConsulta(numero).header("Authorization", "Bearer token"))
+                .andExpect(status().isOk()).andExpect(jsonPath("datos.numeroCuenta").value(numero));
+        mvc.perform(saldoConsulta(numero).header("Authorization", "Bearer token"))
+                .andExpect(status().isOk()).andExpect(jsonPath("datos.saldo").value(10));
+        mvc.perform(postJson("/api/cuentas/mias/consulta", Map.of()).header("Authorization", "Bearer token"))
+                .andExpect(status().isOk()).andExpect(jsonPath("datos.contenido[0].numeroCuenta").value(numero));
         verify(cuentas).consultarPropias(0, 20);
     }
 
     @Test
     void listadoPersonalValidaPaginacionYNoAbreOperacionesDeEscritura() throws Exception {
-        when(sessions.rolVigente(any(), any())).thenReturn(RolUsuario.CLIENTE);
-        mvc.perform(get("/api/cuentas/mias").header("Authorization", "Bearer token")
-                        .param("pagina", "-1").param("tamanio", "101"))
+when(sessions.rolVigente(any(), any())).thenReturn(RolUsuario.CLIENTE);
+        mvc.perform(postJson("/api/cuentas/mias/consulta", Map.of("pagina", -1, "tamanio", 101))
+                        .header("Authorization", "Bearer token"))
                 .andExpect(status().isBadRequest());
-        for (HttpMethod method : List.of(HttpMethod.POST, HttpMethod.PUT, HttpMethod.PATCH, HttpMethod.DELETE)) {
-            mvc.perform(request(method, "/api/cuentas/mias").header("Authorization", "Bearer token"))
+        for (HttpMethod method : List.of(HttpMethod.GET, HttpMethod.PUT, HttpMethod.PATCH, HttpMethod.DELETE)) {
+            mvc.perform(request(method, "/api/cuentas/mias/consulta").header("Authorization", "Bearer token"))
                     .andExpect(status().isForbidden());
         }
         when(sessions.rolVigente(any(), any())).thenReturn(RolUsuario.EJECUTIVO);
-        mvc.perform(get("/api/cuentas/mias").header("Authorization", "Bearer token"))
+        mvc.perform(postJson("/api/cuentas/mias/consulta", Map.of()).header("Authorization", "Bearer token"))
                 .andExpect(status().isForbidden());
-        mvc.perform(get("/api/cuentas/activas").header("Authorization", "Bearer token"))
+        mvc.perform(postJson("/api/cuentas/activas/consulta", Map.of()).header("Authorization", "Bearer token"))
                 .andExpect(status().isOk());
         verify(cuentas).consultarActivas(0, 20);
         verifyNoMoreInteractions(cuentas);
@@ -166,22 +168,23 @@ class ClienteCuentaSecurityTest {
     void filtroJwtYServicioRealIgnoranIdentificadoresDePropietarioEnviadosPorCliente() throws Exception {
         when(sessions.rolVigente(any(), any())).thenReturn(RolUsuario.CLIENTE);
         CuentaRepository repository = mock(CuentaRepository.class);
-        var service = new CuentaServiceImpl(repository, new CuentaProperties(), new ClienteResponseMapper());
+        var service = new CuentaServiceImpl(repository, new CuentaProperties(), org.mapstruct.factory.Mappers.getMapper(ClienteResponseMapper.class));
         MockMvc mvcReal = MockMvcBuilders.standaloneSetup(new CuentaController(service))
-                .setControllerAdvice(new GlobalApiExceptionHandler())
+                .setControllerAdvice(new ValidadorCampos(), new com.proyecto.servicios.controller.GlobalApiExceptionHandler())
                 .addFilters(context.getBean("springSecurityFilterChain", Filter.class)).build();
         String numero = "CTA-FFFFFFFFFFFFFFFFFFFF";
         String usuarioAjeno = UUID.randomUUID().toString();
-        for (String suffix : List.of("", "/saldo")) {
-            mvcReal.perform(get("/api/cuentas/" + numero + suffix).header("Authorization", "Bearer token")
+        for (String suffix : List.of("/consulta", "/saldo/consulta")) {
+            mvcReal.perform(postJson("/api/cuentas" + suffix, Map.of("numeroCuenta", numero)).header("Authorization", "Bearer token")
                             .param("usuarioId", usuarioAjeno).param("clienteId", "999"))
-                    .andExpect(status().isNotFound()).andExpect(jsonPath("code").value("ACCOUNT_NOT_FOUND"));
+                    .andExpect(status().isNotFound()).andExpect(jsonPath("codigo").value(2));
         }
         when(repository.consultarCuentasPropias(eq(usuario.userId()), any()))
                 .thenReturn(new org.springframework.data.domain.PageImpl<>(List.of()));
-        mvcReal.perform(get("/api/cuentas/mias").header("Authorization", "Bearer token")
+        mvcReal.perform(postJson("/api/cuentas/mias/consulta", Map.of()).header("Authorization", "Bearer token")
                         .param("usuarioId", usuarioAjeno).param("clienteId", "999"))
-                .andExpect(status().isOk()).andExpect(jsonPath("contenido").isEmpty());
+                .andExpect(status().isOk()).andExpect(jsonPath("codigo").value(0))
+                .andExpect(jsonPath("datos").doesNotExist());
         verify(repository).consultarCuentaPropia(numero, usuario.userId());
         verify(repository).consultarSaldoPropio(numero, usuario.userId());
         verify(repository).consultarCuentasPropias(eq(usuario.userId()), any());
@@ -190,32 +193,29 @@ class ClienteCuentaSecurityTest {
 
     @Test
     void patchRequiereSesionYRolEjecutivoAntesDeAccederAlServicio() throws Exception {
-        String ruta = "/api/cuentas/CTA-0123456789ABCDEF0123";
-        mvc.perform(patch(ruta).contentType("application/json").content("{\"activa\":false}"))
-                .andExpect(status().isUnauthorized()).andExpect(jsonPath("fieldErrors").isMap());
+String numero = "CTA-0123456789ABCDEF0123";
+        mvc.perform(parcheCuenta(numero, "{\"activa\":false}")).andExpect(status().isUnauthorized());
         when(sessions.rolVigente(any(), any())).thenReturn(RolUsuario.CLIENTE);
-        mvc.perform(patch(ruta).header("Authorization", "Bearer token")
-                        .contentType("application/json").content("{\"activa\":false}"))
-                .andExpect(status().isForbidden()).andExpect(jsonPath("code").value("AUTH_FORBIDDEN"));
+        mvc.perform(parcheCuenta(numero, "{\"activa\":false}").header("Authorization", "Bearer token"))
+                .andExpect(status().isForbidden()).andExpect(jsonPath("codigo").value(2));
         verifyNoInteractions(cuentas);
         when(sessions.rolVigente(any(), any())).thenReturn(RolUsuario.EJECUTIVO);
-        mvc.perform(patch(ruta).header("Authorization", "Bearer token")
-                        .contentType("application/json").content("{\"activa\":false}"))
+        mvc.perform(parcheCuenta(numero, "{\"activa\":false}").header("Authorization", "Bearer token"))
                 .andExpect(status().isOk());
-        verify(cuentas).actualizarEstado("CTA-0123456789ABCDEF0123",
-                new com.proyecto.servicios.model.cliente.ActualizarEstadoCuentaRequest(false));
+        verify(cuentas).actualizarEstado(numero, new com.proyecto.servicios.model.cliente.ActualizarEstadoCuentaRequest(false));
     }
 
     @Test
     void ejecutivoPuedeConsultarYCrearSoloConPayloadValido() throws Exception {
         when(sessions.rolVigente(any(), any())).thenReturn(RolUsuario.EJECUTIVO);
-        mvc.perform(get("/api/clientes").header("Authorization", "Bearer token")).andExpect(status().isOk());
+        mvc.perform(postJson("/api/clientes/consulta", Map.of()).header("Authorization", "Bearer token")).andExpect(status().isOk());
         mvc.perform(post("/api/clientes").header("Authorization", "Bearer token")
                 .contentType("application/json").content("{}"))
-                .andExpect(status().isBadRequest()).andExpect(jsonPath("code").value("INVALID_CLIENT_DATA"));
-        mvc.perform(get("/api/cuentas/CTA-0123456789ABCDEF0123").header("Authorization", "Bearer token")).andExpect(status().isOk());
-        mvc.perform(delete("/api/cuentas/CTA-0123456789ABCDEF0123").header("Authorization", "Bearer token")).andExpect(status().isOk());
-        verify(clientes).consultarTodos(0, 20, null, null, null);
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("codigo").value(2))
+                .andExpect(jsonPath("mensaje").isString());
+        mvc.perform(cuentaConsulta("CTA-0123456789ABCDEF0123").header("Authorization", "Bearer token")).andExpect(status().isOk());
+        mvc.perform(bajaCuenta("CTA-0123456789ABCDEF0123").header("Authorization", "Bearer token")).andExpect(status().isOk());
+        verify(clientes).consultar(argThat(request -> request.getPagina() == 0 && request.getTamanio() == 20));
         verify(cuentas).consultarPorNumeroCuenta("CTA-0123456789ABCDEF0123");
         verify(cuentas).desactivar("CTA-0123456789ABCDEF0123");
         verifyNoInteractions(registro);
@@ -254,9 +254,9 @@ class ClienteCuentaSecurityTest {
     @Test
     void retirarRolBloqueaElMismoTokenEnLaSiguientePeticion() throws Exception {
         when(sessions.rolVigente(any(), any())).thenReturn(RolUsuario.EJECUTIVO, RolUsuario.CLIENTE);
-        mvc.perform(get("/api/clientes").header("Authorization", "Bearer token")).andExpect(status().isOk());
-        mvc.perform(get("/api/clientes").header("Authorization", "Bearer token")).andExpect(status().isForbidden());
-        verify(clientes).consultarTodos(0, 20, null, null, null);
+        mvc.perform(postJson("/api/clientes/consulta", Map.of()).header("Authorization", "Bearer token")).andExpect(status().isOk());
+        mvc.perform(postJson("/api/clientes/consulta", Map.of()).header("Authorization", "Bearer token")).andExpect(status().isForbidden());
+        verify(clientes).consultar(argThat(request -> request.getPagina() == 0 && request.getTamanio() == 20));
     }
 
     @Configuration @EnableWebSecurity @EnableWebMvc

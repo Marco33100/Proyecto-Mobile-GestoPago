@@ -1,5 +1,7 @@
 package com.proyecto.servicios.model.cliente;
 
+import com.proyecto.servicios.model.SolicitudJson;
+
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import com.proyecto.servicios.entity.sf.EstadoCivil;
 import com.proyecto.servicios.entity.sf.Sexo;
@@ -17,7 +19,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 
 public record ActualizarClienteRequest(
-        @NotBlank @Size(min = 2, max = 50)
+        @NotBlank(message = "El nombre es obligatorio y no puede contener solo espacios.") @Size(min = 2, max = 50)
         @Pattern(regexp = "^ *[\\p{L}]+(?: +[\\p{L}]+)* *$", message = "solo puede contener letras y espacios")
         String nombre,
         @Size(max = 50)
@@ -36,8 +38,11 @@ public record ActualizarClienteRequest(
         @NotBlank @Size(max = 60) String nacionalidad,
         @NotNull EstadoCivil estadoCivil,
         @Size(max = 255) String referenciaReconocimientoFacial,
-        @NotBlank @Email @Size(max = 100) String correo,
-        @NotBlank @Pattern(regexp = "^[0-9]{10}$", message = "debe contener exactamente 10 digitos")
+        @NotBlank(message = "El correo electrónico es obligatorio.")
+        @Email(message = "El correo electrónico no tiene un formato válido.")
+        @Size(max = 100) String correo,
+        @NotBlank(message = "El teléfono es obligatorio.")
+        @Pattern(regexp = "^[0-9]{10}$", message = "El teléfono debe contener exactamente 10 dígitos.")
         String telefonoMovil,
         @Pattern(regexp = "^\\s*$|^[0-9]{10}$", message = "debe estar vacio o contener exactamente 10 digitos")
         String telefonoAlternativo,
@@ -45,5 +50,5 @@ public record ActualizarClienteRequest(
         @NotBlank @Size(max = 150) String empresa,
         @NotNull @DecimalMin(value = "0.01") @Digits(integer = 17, fraction = 2) BigDecimal ingresoMensual,
         @NotNull @Valid ActualizarDomicilioRequest domicilio
-) {
+) implements SolicitudJson {
 }

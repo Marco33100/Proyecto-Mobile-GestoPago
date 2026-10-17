@@ -22,12 +22,6 @@ public interface ClienteRepository extends JpaRepository<ClienteEntity, Long>, J
 
     ClienteEntity findClienteById(Long id);
 
-    ClienteEntity findByCurp(String curp);
-
-    ClienteEntity findByRfc(String rfc);
-
-    ClienteEntity findByCorreo(String correo);
-
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select c from ClienteEntity c where c.id = :id")
     ClienteEntity findByIdForUpdate(@Param("id") Long id);

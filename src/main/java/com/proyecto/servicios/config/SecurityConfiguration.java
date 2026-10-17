@@ -51,10 +51,11 @@ public class SecurityConfiguration {
                                 "/actuator/health", "/error"
                         ).permitAll()
                         .requestMatchers("/api/auth/register").denyAll()
-                        .requestMatchers("/api/cuentas/activas").hasRole("EJECUTIVO")
-                        .requestMatchers(HttpMethod.GET, "/api/cuentas/mias").hasRole("CLIENTE")
-                        .requestMatchers(HttpMethod.GET, "/api/cuentas/{numeroCuenta}",
-                                "/api/cuentas/{numeroCuenta}/saldo").hasAnyRole("EJECUTIVO", "CLIENTE")
+                        .requestMatchers("/api/usuarios/busqueda").hasRole("EJECUTIVO")
+                        .requestMatchers("/api/cuentas/activas/consulta").hasRole("EJECUTIVO")
+                        .requestMatchers(HttpMethod.POST, "/api/cuentas/mias/consulta").hasRole("CLIENTE")
+                        .requestMatchers(HttpMethod.POST, "/api/cuentas/consulta",
+                                "/api/cuentas/saldo/consulta").hasAnyRole("EJECUTIVO", "CLIENTE")
                         .requestMatchers("/api/clientes", "/api/clientes/**",
                                 "/api/cuentas", "/api/cuentas/**").hasRole("EJECUTIVO")
                         .requestMatchers("/api/**").authenticated()

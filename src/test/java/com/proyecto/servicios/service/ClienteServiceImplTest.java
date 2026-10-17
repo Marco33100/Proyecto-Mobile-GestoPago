@@ -7,7 +7,7 @@ import com.proyecto.servicios.entity.sf.EstadoCivil;
 import com.proyecto.servicios.entity.sf.Sexo;
 import com.proyecto.servicios.entity.sf.UserEntity;
 import com.proyecto.servicios.controller.ClienteController;
-import com.proyecto.servicios.controller.GlobalApiExceptionHandler;
+import com.proyecto.servicios.controller.ValidadorCampos;
 import com.proyecto.servicios.model.cliente.UsuarioClienteModificadoEvent;
 import com.proyecto.servicios.exception.cliente.ClienteNoEncontradoException;
 import com.proyecto.servicios.exception.cliente.ClienteValidationException;
@@ -16,6 +16,8 @@ import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
 import com.proyecto.servicios.mapper.ClienteResponseMapper;
+import com.proyecto.servicios.model.cliente.ConsultaClientesRequest;
+import java.util.function.Consumer;
 import com.proyecto.servicios.model.cliente.ActualizarClienteRequest;
 import com.proyecto.servicios.model.cliente.ActualizarDomicilioRequest;
 import com.proyecto.servicios.model.cliente.ClienteResponse;
@@ -49,7 +51,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.mock;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import org.mockito.InOrder;
@@ -77,7 +79,7 @@ class ClienteServiceImplTest {
                 clienteRepository,
                 domicilioRepository,
                 cuentaRepository,
-                new ClienteResponseMapper(), userRepository, sessionRepository, eventPublisher
+                org.mapstruct.factory.Mappers.getMapper(ClienteResponseMapper.class), userRepository, sessionRepository, eventPublisher
         );
     }
 
@@ -110,7 +112,6 @@ class ClienteServiceImplTest {
         verify(sessionRepository).deleteById(usuario.getId());
         verify(eventPublisher).publishEvent(any(UsuarioClienteModificadoEvent.class));
         verify(clienteRepository).existsByCorreoAndIdNot("nuevo@correo.com", cliente.getId());
-        verify(clienteRepository, org.mockito.Mockito.never()).findByCorreo("nuevo@correo.com");
     }
 
     @Test
@@ -124,11 +125,13 @@ class ClienteServiceImplTest {
                 BigDecimal.ZERO,
                 Instant.now()
         );
-        when(cuentaRepository.findByNumeroCuenta(cuenta.getNumeroCuenta())).thenReturn(cuenta);
-        when(domicilioRepository.findByClienteId(cliente.getId())).thenReturn(domicilio);
-        when(cuentaRepository.findAllByClienteId(cliente.getId())).thenReturn(List.of(cuenta));
+        when(clienteRepository.findAll(org.mockito.ArgumentMatchers.<Specification<ClienteEntity>>any(), any(Pageable.class)))
+                .thenReturn(new org.springframework.data.domain.PageImpl<>(List.of(cliente)));
+        when(domicilioRepository.findAllByClienteIdIn(List.of(cliente.getId()))).thenReturn(List.of(domicilio));
+        when(cuentaRepository.findAllByClienteIdIn(List.of(cliente.getId()))).thenReturn(List.of(cuenta));
 
-        ClienteResponse response = clienteService.consultarPorNumeroCuenta(cuenta.getNumeroCuenta());
+        ClienteResponse response = clienteService.consultar(consulta(r -> r.setNumeroCuenta(cuenta.getNumeroCuenta())))
+                .contenido().get(0);
 
         assertEquals(cliente.getId(), response.id());
         assertEquals(cuenta.getNumeroCuenta(), response.cuentas().get(0).numeroCuenta());
@@ -138,9 +141,12 @@ class ClienteServiceImplTest {
     @Test
     void debeResponderNoEncontradoCuandoNoExisteElCliente() {
         Long id = 999L;
-        when(clienteRepository.findClienteById(id)).thenReturn(null);
+        when(clienteRepository.findAll(org.mockito.ArgumentMatchers.<Specification<ClienteEntity>>any(), any(Pageable.class)))
+                .thenReturn(org.springframework.data.domain.Page.empty());
 
-        assertThrows(ClienteNoEncontradoException.class, () -> clienteService.consultarPorId(id));
+        assertThrows(ClienteNoEncontradoException.class,
+                () -> clienteService.consultar(consulta(r -> r.setId(id))));
+        verifyNoInteractions(domicilioRepository, cuentaRepository);
     }
 
     @Test
@@ -193,17 +199,23 @@ class ClienteServiceImplTest {
     @Test
     void consultaPorCorreoNormalizado() {
         ClienteEntity cliente = cliente();
-        when(clienteRepository.findByCorreo("marco@correo.com")).thenReturn(cliente);
-        when(cuentaRepository.findAllByClienteId(cliente.getId())).thenReturn(List.of());
+        when(clienteRepository.findAll(org.mockito.ArgumentMatchers.<Specification<ClienteEntity>>any(), any(Pageable.class)))
+                .thenReturn(new org.springframework.data.domain.PageImpl<>(List.of(cliente)));
+        when(domicilioRepository.findAllByClienteIdIn(List.of(cliente.getId()))).thenReturn(List.of());
+        when(cuentaRepository.findAllByClienteIdIn(List.of(cliente.getId()))).thenReturn(List.of());
 
-        assertEquals(cliente.getId(), clienteService.consultarPorCorreo(" MARCO@CORREO.COM ").id());
+        assertEquals(cliente.getId(), clienteService.consultar(consulta(r -> r.setCorreo(" MARCO@CORREO.COM ")))
+                .contenido().get(0).id());
     }
 
     @Test
     void rechazaRangoDeFechasInvertido() {
         assertThrows(ClienteValidationException.class,
-                () -> clienteService.consultarTodos(0, 20, true,
-                        LocalDate.of(2026, 10, 3), LocalDate.of(2026, 10, 1)));
+                () -> clienteService.consultar(consulta(r -> {
+                    r.setActivo(true);
+                    r.setDesde(LocalDate.of(2026, 10, 3));
+                    r.setHasta(LocalDate.of(2026, 10, 1));
+                })));
         verifyNoInteractions(clienteRepository, domicilioRepository, cuentaRepository);
     }
 
@@ -211,15 +223,15 @@ class ClienteServiceImplTest {
     void fechaHastaQueDesbordaElRangoDevuelve400SinConsultarLaBase() throws Exception {
         var mvc = MockMvcBuilders.standaloneSetup(
                         new ClienteController(clienteService, mock(ClienteRegistroService.class)))
-                .setControllerAdvice(new GlobalApiExceptionHandler()).build();
+                .setControllerAdvice(new ValidadorCampos(), new com.proyecto.servicios.controller.GlobalApiExceptionHandler()).build();
 
-        mvc.perform(get("/api/clientes")
-                        .param("hasta", LocalDate.MAX.toString()))
+        mvc.perform(post("/api/clientes/consulta").contentType("application/json")
+                        .content("{\"hasta\":\"" + LocalDate.MAX + "\"}"))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("code").value("INVALID_CLIENT_DATA"));
+                .andExpect(jsonPath("codigo").value(2));
 
         assertThrows(ClienteValidationException.class,
-                () -> clienteService.consultarTodos(0, 20, null, null, LocalDate.MAX));
+                () -> clienteService.consultar(consulta(r -> r.setHasta(LocalDate.MAX))));
         verifyNoInteractions(clienteRepository, domicilioRepository, cuentaRepository, userRepository, sessionRepository);
     }
 
@@ -229,7 +241,7 @@ class ClienteServiceImplTest {
                 any(Pageable.class)))
                 .thenThrow(new DataAccessResourceFailureException("fallo"));
         assertThrows(ClientePersistenceException.class,
-                () -> clienteService.consultarTodos(0, 20, true, null, null));
+                () -> clienteService.consultar(consulta(r -> r.setActivo(true))));
     }
 
     @Test
@@ -244,7 +256,7 @@ class ClienteServiceImplTest {
                 .thenReturn(List.of(domicilio(primero), domicilio(segundo)));
         when(cuentaRepository.findAllByClienteIdIn(List.of(1L, 2L))).thenReturn(List.of());
 
-        var respuesta = clienteService.consultarTodos(0, 20);
+        var respuesta = clienteService.consultar(new ConsultaClientesRequest());
 
         assertEquals(2, respuesta.totalElementos());
         verify(domicilioRepository).findAllByClienteIdIn(List.of(1L, 2L));
@@ -263,7 +275,61 @@ class ClienteServiceImplTest {
         assertThrows(com.proyecto.servicios.exception.cliente.ClienteYaRegistradoException.class,
                 () -> clienteService.actualizar(cliente.getId(), requestActualizacion()));
         verifyNoInteractions(domicilioRepository, cuentaRepository, userRepository);
-        verify(clienteRepository, org.mockito.Mockito.never()).findByCorreo(any());
+        verify(clienteRepository).findClienteById(cliente.getId());
+        verify(clienteRepository).existsByCorreoAndIdNot("nuevo@correo.com", cliente.getId());
+        org.mockito.Mockito.verifyNoMoreInteractions(clienteRepository);
+    }
+
+    @Test
+    void sinCoincidenciasDevuelveLaPaginaGeneralNoTodosLosRegistrosEnMemoria() {
+        var pageable = org.springframework.data.domain.PageRequest.of(0, 2);
+        when(clienteRepository.findAll(org.mockito.ArgumentMatchers.<Specification<ClienteEntity>>any(), any(Pageable.class)))
+                .thenReturn(org.springframework.data.domain.Page.empty(pageable));
+        when(clienteRepository.findAll(any(Pageable.class)))
+                .thenReturn(org.springframework.data.domain.Page.empty(pageable));
+        assertEquals(0, clienteService.consultar(consulta(r -> {
+            r.setTamanio(2);
+            r.setNombre(" nadie ");
+        })).totalElementos());
+        verify(clienteRepository).findAll(org.mockito.ArgumentMatchers.<Specification<ClienteEntity>>any(), any(Pageable.class));
+        verify(clienteRepository).findAll(any(Pageable.class));
+        verifyNoInteractions(domicilioRepository, cuentaRepository);
+    }
+
+    @Test
+    void paginaFueraDeRangoNoEliminaLaBusqueda() {
+        var pageable = org.springframework.data.domain.PageRequest.of(4, 2);
+        when(clienteRepository.findAll(org.mockito.ArgumentMatchers.<Specification<ClienteEntity>>any(), any(Pageable.class)))
+                .thenReturn(new org.springframework.data.domain.PageImpl<>(List.of(), pageable, 3));
+        var result = clienteService.consultar(consulta(r -> {
+            r.setPagina(4);
+            r.setTamanio(2);
+            r.setNombre("Marco");
+        }));
+        assertEquals(3, result.totalElementos());
+        assertTrue(result.contenido().isEmpty());
+        verify(clienteRepository, org.mockito.Mockito.never()).findAll(any(Pageable.class));
+        verifyNoInteractions(domicilioRepository, cuentaRepository);
+    }
+
+    @Test
+    void falloDeBusquedaNoSeDisfrazaComoListadoGeneral() {
+        when(clienteRepository.findAll(org.mockito.ArgumentMatchers.<Specification<ClienteEntity>>any(), any(Pageable.class)))
+                .thenThrow(new DataAccessResourceFailureException("sql privado"));
+        assertThrows(ClientePersistenceException.class,
+                () -> clienteService.consultar(consulta(r -> r.setRfc("MOMA"))));
+        verify(clienteRepository, org.mockito.Mockito.never()).findAll(any(Pageable.class));
+    }
+
+    @Test
+    void busquedaInvalidaDirectaNoConsultaRepositorio() {
+        assertThrows(ClienteValidationException.class,
+                () -> clienteService.consultar(consulta(r -> r.setNombre("a".repeat(51)))));
+        assertThrows(ClienteValidationException.class,
+                () -> clienteService.consultar(consulta(r -> r.setRfc("a".repeat(14)))));
+        assertThrows(ClienteValidationException.class,
+                () -> clienteService.consultar(consulta(r -> r.setCurp("a".repeat(19)))));
+        verifyNoInteractions(clienteRepository, domicilioRepository, cuentaRepository);
     }
 
     private DomicilioEntity domicilio(ClienteEntity cliente) {
@@ -311,4 +377,10 @@ class ClienteServiceImplTest {
                 )
         );
     }
+    private ConsultaClientesRequest consulta(Consumer<ConsultaClientesRequest> filtros) {
+        var request = new ConsultaClientesRequest();
+        filtros.accept(request);
+        return request;
+    }
+
 }

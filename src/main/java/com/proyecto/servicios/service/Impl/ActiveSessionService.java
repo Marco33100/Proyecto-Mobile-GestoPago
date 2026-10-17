@@ -63,11 +63,6 @@ public class ActiveSessionService {
     }
 
     @Transactional(transactionManager = "sfTransactionManager", readOnly = true)
-    public boolean isActive(UUID userId, UUID sessionId) {
-        return rolVigente(userId, sessionId) != null;
-    }
-
-    @Transactional(transactionManager = "sfTransactionManager", readOnly = true)
     public RolUsuario rolVigente(UUID userId, UUID sessionId) {
         // Redis nunca sustituye la comprobacion de usuario, cliente y sesion en PostgreSQL.
         try {

@@ -9,7 +9,6 @@ import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.security.authentication.BadCredentialsException;
 
-import java.time.Instant;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -33,8 +32,6 @@ class RestAuthenticationEntryPointTest {
             default -> throw new AssertionError("Estado no contemplado en la prueba");
         }
 
-        var codes = Map.of(401, "AUTH_INVALID_SESSION", 403, "AUTH_FORBIDDEN",
-                429, "AUTH_TOO_MANY_ATTEMPTS", 503, "AUTH_DATABASE_ERROR");
         var messages = Map.of(
                 401, "La sesion es invalida, expiro o fue reemplazada por un nuevo inicio de sesion",
                 403, "No tienes permisos para realizar esta operacion",
@@ -45,14 +42,9 @@ class RestAuthenticationEntryPointTest {
         assertThat(response.getContentType()).isEqualTo(MediaType.APPLICATION_JSON_VALUE);
         assertThat(response.getHeader("Cache-Control")).isEqualTo("no-store");
         assertThat(response.getHeader("Retry-After")).isEqualTo(status == 429 ? "30" : null);
-        assertThat(body.size()).isEqualTo(6);
-        assertThat(body.path("status").asInt()).isEqualTo(status);
-        assertThat(body.path("code").asText()).isEqualTo(codes.get(status));
-        assertThat(body.path("message").asText()).isEqualTo(messages.get(status));
-        assertThat(body.path("path").asText()).isEqualTo(request.getRequestURI());
-        assertThat(body.path("fieldErrors").isObject()).isTrue();
-        assertThat(body.path("fieldErrors").size()).isZero();
-        assertThat(Instant.parse(body.path("timestamp").asText())).isNotNull();
+        assertThat(body.size()).isEqualTo(2);
+        assertThat(body.path("codigo").asInt()).isEqualTo(2);
+        assertThat(body.path("mensaje").asText()).isEqualTo(messages.get(status));
         assertThat(response.getContentAsString()).doesNotContain("fixture-secret", "BadCredentialsException");
     }
 }

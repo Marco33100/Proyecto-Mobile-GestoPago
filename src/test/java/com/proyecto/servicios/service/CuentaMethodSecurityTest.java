@@ -40,7 +40,7 @@ class CuentaMethodSecurityTest {
             .withUserConfiguration(SecurityConfig.class)
             .withBean(CuentaRepository.class, () -> repository)
             .withBean(CuentaProperties.class, CuentaProperties::new)
-            .withBean(ClienteResponseMapper.class, ClienteResponseMapper::new);
+            .withBean(ClienteResponseMapper.class, () -> org.mapstruct.factory.Mappers.getMapper(ClienteResponseMapper.class));
 
     @AfterEach void limpiar() { SecurityContextHolder.clearContext(); }
 

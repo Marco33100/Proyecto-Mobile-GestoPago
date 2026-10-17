@@ -6,68 +6,28 @@ import com.proyecto.servicios.entity.sf.DomicilioEntity;
 import com.proyecto.servicios.model.cliente.ClienteResponse;
 import com.proyecto.servicios.model.cliente.CuentaResponse;
 import com.proyecto.servicios.model.cliente.DomicilioResponse;
-import org.springframework.stereotype.Component;
+import org.mapstruct.Mapper;
+import org.mapstruct.Mapping;
+import org.mapstruct.ReportingPolicy;
 
 import java.util.List;
 
-@Component
-public class ClienteResponseMapper {
+@Mapper(componentModel = "spring", unmappedTargetPolicy = ReportingPolicy.ERROR)
+public interface ClienteResponseMapper {
 
-    public ClienteResponse toResponse(
+    @Mapping(target = ".", source = "cliente")
+    @Mapping(target = "id", source = "cliente.id")
+    @Mapping(target = "fechaCreacion", source = "cliente.fechaCreacion")
+    @Mapping(target = "fechaActualizacion", source = "cliente.fechaActualizacion")
+    @Mapping(target = "domicilio", source = "domicilio")
+    @Mapping(target = "cuentas", source = "cuentas")
+    ClienteResponse toResponse(
             ClienteEntity cliente,
             DomicilioEntity domicilio,
             List<CuentaEntity> cuentas
-    ) {
-        return new ClienteResponse(
-                cliente.getId(),
-                cliente.getNombre(),
-                cliente.getSegundoNombre(),
-                cliente.getApellidoPaterno(),
-                cliente.getApellidoMaterno(),
-                cliente.getFechaNacimiento(),
-                cliente.getCurp(),
-                cliente.getRfc(),
-                cliente.getSexo(),
-                cliente.getNacionalidad(),
-                cliente.getEstadoCivil(),
-                cliente.getReferenciaReconocimientoFacial(),
-                cliente.getCorreo(),
-                cliente.getTelefonoMovil(),
-                cliente.getTelefonoAlternativo(),
-                cliente.getOcupacion(),
-                cliente.getEmpresa(),
-                cliente.getIngresoMensual(),
-                cliente.isActivo(),
-                toDomicilioResponse(domicilio),
-                cuentas.stream().map(this::toCuentaResponse).toList(),
-                cliente.getFechaCreacion(),
-                cliente.getFechaActualizacion()
-        );
-    }
+    );
 
-    private DomicilioResponse toDomicilioResponse(DomicilioEntity domicilio) {
-        if (domicilio == null) {
-            return null;
-        }
-        return new DomicilioResponse(
-                domicilio.getId(),
-                domicilio.getCalle(),
-                domicilio.getNumeroExterior(),
-                domicilio.getNumeroInterior(),
-                domicilio.getColonia(),
-                domicilio.getMunicipio(),
-                domicilio.getEstado(),
-                domicilio.getCodigoPostal(),
-                domicilio.getPais()
-        );
-    }
+    DomicilioResponse toDomicilioResponse(DomicilioEntity domicilio);
 
-    public CuentaResponse toCuentaResponse(CuentaEntity cuenta) {
-        return new CuentaResponse(
-                cuenta.getId(),
-                cuenta.getNumeroCuenta(),
-                cuenta.getSaldo(),
-                cuenta.isActiva()
-        );
-    }
+    CuentaResponse toCuentaResponse(CuentaEntity cuenta);
 }

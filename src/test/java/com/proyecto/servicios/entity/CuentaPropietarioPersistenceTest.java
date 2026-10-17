@@ -68,7 +68,7 @@ class CuentaPropietarioPersistenceTest {
         session.flush();
         session.clear();
         CuentaRepository repository = new JpaRepositoryFactory(session).getRepository(CuentaRepository.class);
-        service = new CuentaServiceImpl(repository, new CuentaProperties(), new ClienteResponseMapper());
+        service = new CuentaServiceImpl(repository, new CuentaProperties(), org.mapstruct.factory.Mappers.getMapper(ClienteResponseMapper.class));
         autenticar(primero);
         factory.getStatistics().clear();
     }

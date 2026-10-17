@@ -54,7 +54,7 @@ class ClienteIdentityPersistenceTest {
             assertThat(session.find(CuentaEntity.class, cuenta.getId()).getCliente().getId()).isEqualTo(1L);
             assertThat(session.find(ClienteEntity.class, 1L).getCorreo()).isEqualTo("uno@example.com");
 
-            var response = new ClienteResponseMapper().toResponse(primero, null, List.of());
+            var response = org.mapstruct.factory.Mappers.getMapper(ClienteResponseMapper.class).toResponse(primero, null, List.of());
             var json = new ObjectMapper().findAndRegisterModules().valueToTree(response);
             assertThat(json.get("id").isIntegralNumber()).isTrue();
             assertThat(json.get("id").asLong()).isEqualTo(1L);

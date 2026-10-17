@@ -5,8 +5,4 @@ public class ClienteYaRegistradoException extends ClienteConflictException {
         super("El correo ya pertenece a un cliente registrado");
     }
 
-    @Override
-    public String getCode() {
-        return "CLIENT_ALREADY_REGISTERED";
-    }
 }
