@@ -65,22 +65,23 @@ class DatabaseSchemaMigrationTest {
 
     private Flyway flyway(String target) {
         return Flyway.configure().dataSource(url, username, password)
-                .schemas(schema).defaultSchema(schema).target(target).load();
+                .schemas(schema).defaultSchema(schema).locations("classpath:db/migration", "classpath:db/payments").target(target).load();
     }
 
     private Flyway initialFlyway() {
         return Flyway.configure().dataSource(url, username, password)
-                .schemas(schema).defaultSchema(schema).locations("classpath:db/initial")
+                .schemas(schema).defaultSchema(schema).locations("classpath:db/initial", "classpath:db/payments")
                 .baselineOnMigrate(false).load();
     }
 
     @ParameterizedTest
     @ValueSource(booleans = {false, true})
     void tiposLongitudesNulabilidadYPrecisionDeEntidadesCoincidenConPostgres(boolean consolidado) throws Exception {
-        (consolidado ? initialFlyway() : flyway("16")).migrate();
+        (consolidado ? initialFlyway() : flyway("23")).migrate();
         var entities = List.of(ClienteEntity.class, DomicilioEntity.class, CuentaEntity.class,
                 UserEntity.class, UserSessionEntity.class,
-                ProductEntity.class, GestoPagoToken.class);
+                ProductEntity.class, GestoPagoToken.class,
+                PagoEntity.class, SegundoFactorEntity.class, PagoEvidenciaEntity.class, ConciliacionPagoEntity.class);
         int checked = 0;
         for (Class<?> entity : entities) {
             String table = entity.getAnnotation(Table.class).name();
@@ -148,23 +149,78 @@ class DatabaseSchemaMigrationTest {
         if (type == LocalDateTime.class) return "timestamp without time zone";
         throw new IllegalArgumentException("Tipo de entidad sin verificar: " + type);
     }
+    @Test
+    void indiceDeOperacionesAbiertasImpideDuplicadosSinBloquearComprasTerminadas() throws Exception {
+        initialFlyway().migrate(); seed();
+        sql("""
+                INSERT INTO payment_orders(id,usuario_id,cuenta_id,numero_cuenta,huella,huella_clave,upc,concepto,monto,
+                    payload_cifrado,reto,estado,creado_en,vence_en,huella_operacion,huella_catalogo)
+                SELECT md5('payment-' || n)::uuid,md5('usuario')::uuid,md5('cuenta')::uuid,'CTA-00000000000000000001',
+                    repeat('a',64),repeat('b',64),'TEST00000' || n,'Prueba',20,'cifrado-fixture','reto-fixture',
+                    'PREPARADO',now(),now() + interval '5 minutes',repeat('c',64),repeat('d',64)
+                FROM generate_series(1,2) n
+                """);
+        sql("UPDATE payment_orders SET estado='ENVIADO' WHERE upc='TEST000001'");
+        assertThatExceptionOfType(SQLException.class)
+                .isThrownBy(() -> sql("UPDATE payment_orders SET estado='ENVIADO' WHERE upc='TEST000002'"))
+                .satisfies(error -> assertThat(error.getSQLState()).isEqualTo("23505"));
+        sql("UPDATE payment_orders SET estado='APLICADO' WHERE upc='TEST000001'");
+        sql("UPDATE payment_orders SET estado='ENVIADO' WHERE upc='TEST000002'");
+        assertThat(scalar("SELECT count(*) FROM payment_orders")).isEqualTo("2");
+    }
+    @Test
+    void migracionConservaDuplicadoAnteriorComoPendienteSinCambiarSaldo() throws Exception {
+        flyway("17").migrate(); seed();
+        sql("""
+                INSERT INTO payment_orders(id,usuario_id,cuenta_id,numero_cuenta,huella,huella_clave,upc,concepto,monto,
+                    payload_cifrado,reto,estado,creado_en,vence_en,codigo_proveedor)
+                VALUES(md5('legacy-payment')::uuid,md5('usuario')::uuid,md5('cuenta')::uuid,'CTA-00000000000000000001',
+                    repeat('a',64),repeat('b',64),'LEGACY0001','Prueba',20,'cifrado-fixture','reto-fixture',
+                    'PENDIENTE',now(),now() + interval '5 minutes','06')
+                """);
+        String saldoAnterior = scalar("SELECT saldo::text FROM cuentas");
+        flyway("18").migrate();
+        assertThat(scalar("SELECT duplicado_proveedor::text FROM payment_orders")).isEqualTo("true");
+        assertThat(scalar("SELECT estado FROM payment_orders")).isEqualTo("PENDIENTE");
+        assertThat(scalar("SELECT saldo::text FROM cuentas")).isEqualTo(saldoAnterior);
+    }
+
+    @Test
+    void v23ExpiraSoloPreparacionesYConservaRetencionesYEnvios() throws Exception {
+        flyway("22").migrate(); seed();
+        sql("UPDATE cuentas SET saldo_retenido=20");
+        sql("""
+                INSERT INTO payment_orders(id,usuario_id,cuenta_id,numero_cuenta,huella,huella_clave,upc,concepto,monto,
+                    payload_cifrado,reto,estado,creado_en,vence_en,huella_operacion,huella_catalogo)
+                SELECT md5('rules-' || n)::uuid,md5('usuario')::uuid,md5('cuenta')::uuid,'CTA-00000000000000000001',
+                    repeat('a',64),repeat('b',64),'RULES0000' || n,'Prueba',20,'cifrado','reto',
+                    CASE WHEN n=1 THEN 'PREPARADO' ELSE 'PENDIENTE' END,now(),now() + interval '5 minutes',
+                    repeat(CASE WHEN n=1 THEN 'c' ELSE 'd' END,64),repeat('e',64)
+                FROM generate_series(1,2) n
+                """);
+        String saldo = scalar("SELECT saldo::text || '/' || saldo_retenido::text FROM cuentas");
+        flyway("23").migrate();
+        assertThat(scalar("SELECT estado FROM payment_orders WHERE upc='RULES00001'")).isEqualTo("EXPIRADO");
+        assertThat(scalar("SELECT estado FROM payment_orders WHERE upc='RULES00002'")).isEqualTo("PENDIENTE");
+        assertThat(scalar("SELECT saldo::text || '/' || saldo_retenido::text FROM cuentas")).isEqualTo(saldo);
+    }
 
     @Test
     void v1ConsolidadaReproduceElSchemaFinalYEsCompatibleConFlyway() throws Exception {
-        flyway("16").migrate();
+        flyway("23").migrate();
         String expected = schemaStructure();
         if (!schema.matches("schema_test_[a-f0-9]{32}")) throw new IllegalStateException("Schema invalido");
         sql("DROP SCHEMA " + schema + " CASCADE");
         // Flyway crea exclusivamente nuestro schema desechable, nunca public.
-        assertThat(initialFlyway().migrate().migrationsExecuted).isEqualTo(1);
+        assertThat(initialFlyway().migrate().migrationsExecuted).isEqualTo(8);
         sql("SET search_path TO " + schema);
         assertThat(schemaStructure()).isEqualTo(expected);
         initialFlyway().validate();
         assertThat(initialFlyway().migrate().migrationsExecuted).isZero();
         assertThat(scalar("SELECT count(*) FROM flyway_schema_history WHERE version IS NOT NULL"))
-                .isEqualTo("1");
-        assertThat(scalar("SELECT version FROM flyway_schema_history WHERE version IS NOT NULL"))
-                .isEqualTo("1");
+                .isEqualTo("8");
+        assertThat(scalar("SELECT max(version::int) FROM flyway_schema_history WHERE version IS NOT NULL"))
+                .isEqualTo("23");
         assertThat(scalar("SELECT count(*) FROM clientes")).isEqualTo("0");
         assertThat(scalar("SELECT count(*) FROM app_users")).isEqualTo("0");
         assertThat(scalar("SELECT count(*) FROM gestopago_tokens")).isEqualTo("0");
@@ -173,6 +229,66 @@ class DatabaseSchemaMigrationTest {
                 .satisfies(error -> assertThat(error.getSQLState()).isEqualTo("23514"));
         sql("UPDATE cuentas SET activa=false");
         sql("UPDATE clientes SET activo=false");
+    }
+
+    @Test
+    void migracionInvalidaTextoPlanoYConservaTokensCifrados() throws Exception {
+        flyway("19").migrate();
+        sql("""
+                INSERT INTO gestopago_tokens(id_distribuidor,codigo_dispositivo,token)
+                VALUES(123,'legacy','fixture-plaintext'),(123,'protected','gp-token:v1:fixture:ciphertext')
+                """);
+        flyway("21").migrate();
+        assertThat(scalar("SELECT token FROM gestopago_tokens WHERE codigo_dispositivo='legacy'"))
+                .isEqualTo("REAUTHENTICATION_REQUIRED");
+        assertThat(scalar("SELECT activo::text FROM gestopago_tokens WHERE codigo_dispositivo='legacy'"))
+                .isEqualTo("false");
+        assertThat(scalar("SELECT token FROM gestopago_tokens WHERE codigo_dispositivo='protected'"))
+                .isEqualTo("gp-token:v1:fixture:ciphertext");
+        assertThatExceptionOfType(SQLException.class).isThrownBy(() ->
+                sql("UPDATE gestopago_tokens SET activo=true WHERE codigo_dispositivo='legacy'"))
+                .satisfies(error -> assertThat(error.getSQLState()).isEqualTo("23514"));
+    }
+
+    @Test
+    void migracionTotpExpiraSoloPreparadosSinModificarSaldoNiOperacionesEnviadas() throws Exception {
+        flyway("20").migrate(); seed();
+        sql("UPDATE cuentas SET saldo_retenido=20");
+        sql("""
+                INSERT INTO payment_orders(id,usuario_id,cuenta_id,numero_cuenta,huella,huella_clave,upc,concepto,monto,
+                    payload_cifrado,reto,estado,creado_en,vence_en)
+                SELECT md5('totp-migration-' || n)::uuid,md5('usuario')::uuid,md5('cuenta')::uuid,'CTA-00000000000000000001',
+                    repeat('a',64),repeat('b',64),'TOTP00000' || n,'Prueba',20,'fixture-cifrado','fixture-reto',
+                    CASE WHEN n=1 THEN 'PREPARADO' ELSE 'ENVIADO' END,now(),now() + interval '5 minutes'
+                FROM generate_series(1,2) n
+                """);
+        String saldo = scalar("SELECT saldo::text || '/' || saldo_retenido::text FROM cuentas");
+        flyway("21").migrate();
+        assertThat(scalar("SELECT estado FROM payment_orders WHERE upc='TOTP000001'")).isEqualTo("EXPIRADO");
+        assertThat(scalar("SELECT estado FROM payment_orders WHERE upc='TOTP000002'")).isEqualTo("ENVIADO");
+        assertThat(scalar("SELECT saldo::text || '/' || saldo_retenido::text FROM cuentas")).isEqualTo(saldo);
+        assertThat(scalar("SELECT count(*) FROM payment_second_factors")).isEqualTo("0");
+    }
+
+    @Test
+    void migracionReferenciaConservaSaldoYEnviosYExpiraConsultaNoVerificada() throws Exception {
+        flyway("21").migrate(); seed();
+        sql("UPDATE cuentas SET saldo_retenido=20");
+        sql("""
+                INSERT INTO payment_orders(id,usuario_id,cuenta_id,numero_cuenta,huella,huella_clave,upc,concepto,monto,
+                    payload_cifrado,reto,estado,creado_en,vence_en,referencia_validada)
+                SELECT md5('reference-migration-' || n)::uuid,md5('usuario')::uuid,md5('cuenta')::uuid,'CTA-00000000000000000001',
+                    repeat('a',64),repeat('b',64),'REF000000' || n,'Prueba',20,'fixture-cifrado','TOTP-v1',
+                    CASE WHEN n=1 THEN 'PREPARADO' ELSE 'ENVIADO' END,now(),now() + interval '5 minutes',false
+                FROM generate_series(1,2) n
+                """);
+        String saldo = scalar("SELECT saldo::text || '/' || saldo_retenido::text FROM cuentas");
+        flyway("22").migrate();
+        assertThat(scalar("SELECT estado FROM payment_orders WHERE upc='REF0000001'")).isEqualTo("EXPIRADO");
+        assertThat(scalar("SELECT estado FROM payment_orders WHERE upc='REF0000002'")).isEqualTo("ENVIADO");
+        assertThat(scalar("SELECT saldo::text || '/' || saldo_retenido::text FROM cuentas")).isEqualTo(saldo);
+        assertThat(scalar("SELECT count(*) FROM payment_orders WHERE consulta_referencia_cifrada IS NOT NULL")).isEqualTo("0");
+        assertThat(flyway("22").migrate().migrationsExecuted).isZero();
     }
 
     @Test

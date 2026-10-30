@@ -33,12 +33,12 @@ public interface CuentaRepository extends JpaRepository<CuentaEntity, UUID> {
             + "(select u.cliente.id from UserEntity u where u.id = :usuarioId)")
     Page<CuentaEntity> consultarCuentasPropias(@Param("usuarioId") UUID usuarioId, Pageable pageable);
 
-    @Query("select new com.proyecto.servicios.model.cliente.SaldoCuentaResponse(c.numeroCuenta, c.saldo) "
+    @Query("select new com.proyecto.servicios.model.cliente.SaldoCuentaResponse(c.numeroCuenta, c.saldo, c.saldo-c.saldoRetenido, c.saldoRetenido) "
             + "from CuentaEntity c where c.numeroCuenta = :numeroCuenta")
     SaldoCuentaResponse consultarSaldo(
             @Param("numeroCuenta") String numeroCuenta);
 
-    @Query("select new com.proyecto.servicios.model.cliente.SaldoCuentaResponse(c.numeroCuenta, c.saldo) "
+    @Query("select new com.proyecto.servicios.model.cliente.SaldoCuentaResponse(c.numeroCuenta, c.saldo, c.saldo-c.saldoRetenido, c.saldoRetenido) "
             + "from CuentaEntity c where c.numeroCuenta = :numeroCuenta and c.cliente.id in "
             + "(select u.cliente.id from UserEntity u where u.id = :usuarioId)")
     SaldoCuentaResponse consultarSaldoPropio(@Param("numeroCuenta") String numeroCuenta,

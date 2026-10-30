@@ -49,6 +49,7 @@ public class RestAuthenticationEntryPoint implements AuthenticationEntryPoint {
         response.setStatus(status);
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);
         response.setHeader("Cache-Control", "no-store");
-        objectMapper.writeValue(response.getOutputStream(), GenericResponse.error(message));
+        objectMapper.writeValue(response.getOutputStream(), (request.getRequestURI().equals("/api/pagos") || request.getRequestURI().startsWith("/api/pagos/"))
+                ? com.proyecto.servicios.model.pago.PagoDtos.Resultado.error() : GenericResponse.error(message));
     }
 }

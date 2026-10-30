@@ -52,6 +52,8 @@ public class SecurityConfiguration {
                         ).permitAll()
                         .requestMatchers("/api/auth/register").denyAll()
                         .requestMatchers("/api/usuarios/busqueda").hasRole("EJECUTIVO")
+                        .requestMatchers("/api/pagos/conciliacion", "/api/pagos/conciliacion/**").hasRole("EJECUTIVO")
+                        .requestMatchers("/api/pagos", "/api/pagos/**").hasRole("CLIENTE")
                         .requestMatchers("/api/cuentas/activas/consulta").hasRole("EJECUTIVO")
                         .requestMatchers(HttpMethod.POST, "/api/cuentas/mias/consulta").hasRole("CLIENTE")
                         .requestMatchers(HttpMethod.POST, "/api/cuentas/consulta",

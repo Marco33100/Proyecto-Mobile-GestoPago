@@ -7,6 +7,9 @@ import com.proyecto.servicios.mapper.GestoPagoTokenMapper;
 import com.proyecto.servicios.repositorys.gestopago.GestoPagoTokenRepository;
 import com.proyecto.servicios.service.Impl.GestoPagoAccessTokenProvider;
 import com.proyecto.servicios.service.Impl.GestoPagoTokenServiceImpl;
+import com.proyecto.servicios.service.Impl.GestoPagoTokenCipher;
+import com.proyecto.servicios.service.Impl.GestoPagoTokenCoordinator;
+import com.proyecto.servicios.entity.gestopago.GestoPagoToken;
 import com.proyecto.servicios.service.Impl.GestopagoProductGateway;
 import feign.Client;
 import feign.Response;
@@ -117,7 +120,27 @@ class GestoPagoAutomaticAuthenticationTest {
             properties.setBearerToken("fixture-fixed-token");
             return properties;
         }
-        @Bean GestoPagoTokenRepository repository() { return mock(GestoPagoTokenRepository.class); }
+        @Bean GestoPagoTokenCipher tokenCipher() {
+            return new GestoPagoTokenCipher(java.util.Base64.getEncoder().encodeToString(new byte[32]), "");
+        }
+        @Bean GestoPagoTokenCoordinator coordinator() {
+            var coordinator = mock(GestoPagoTokenCoordinator.class);
+            when(coordinator.execute(anyInt(), anyString(), any())).thenAnswer(call ->
+                    ((java.util.function.Supplier<?>) call.getArgument(2)).get());
+            return coordinator;
+        }
+        @Bean GestoPagoTokenRepository repository() {
+            var repository = mock(GestoPagoTokenRepository.class);
+            var stored = new java.util.concurrent.atomic.AtomicReference<GestoPagoToken>();
+            when(repository.findByIdDistribuidorAndCodigoDispositivo(anyInt(), anyString()))
+                    .thenAnswer(call -> java.util.Optional.ofNullable(stored.get()));
+            when(repository.saveAndFlush(any())).thenAnswer(call -> {
+                GestoPagoToken entity = call.getArgument(0);
+                stored.set(entity);
+                return entity;
+            });
+            return repository;
+        }
         @Bean GestoPagoTokenMapper mapper() { return Mappers.getMapper(GestoPagoTokenMapper.class); }
         @Bean Transport transport() { return new Transport(); }
         @Bean Client client(Transport transport) { return transport.client(); }

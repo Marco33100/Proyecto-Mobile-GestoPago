@@ -30,6 +30,9 @@ public class CuentaEntity {
     @Column(nullable = false, precision = 19, scale = 2)
     private BigDecimal saldo;
 
+    @Column(name = "saldo_retenido", nullable = false, precision = 19, scale = 2)
+    private BigDecimal saldoRetenido = BigDecimal.ZERO;
+
     @Column(nullable = false)
     private boolean activa;
 
@@ -73,6 +76,25 @@ public class CuentaEntity {
     public ClienteEntity getCliente() { return cliente; }
     public String getNumeroCuenta() { return numeroCuenta; }
     public BigDecimal getSaldo() { return saldo; }
+    public BigDecimal getSaldoRetenido() { return saldoRetenido; }
+    public BigDecimal getSaldoDisponible() { return saldo.subtract(saldoRetenido); }
+
+    public void retener(BigDecimal importe, Instant ahora) {
+        if (!activa || importe == null || importe.signum() <= 0 || getSaldoDisponible().compareTo(importe) < 0) {
+            throw new IllegalStateException("Cuenta sin disponibilidad para la retencion");
+        }
+        saldoRetenido = saldoRetenido.add(importe);
+        fechaActualizacion = ahora;
+    }
+
+    public void resolverRetencion(BigDecimal importe, boolean aplicar, Instant ahora) {
+        if (importe == null || importe.signum() <= 0 || saldoRetenido.compareTo(importe) < 0) {
+            throw new IllegalStateException("Retencion inconsistente");
+        }
+        saldoRetenido = saldoRetenido.subtract(importe);
+        if (aplicar) saldo = saldo.subtract(importe);
+        fechaActualizacion = ahora;
+    }
     public boolean isActiva() { return activa; }
     public Instant getFechaCreacion() { return fechaCreacion; }
     public Instant getFechaActualizacion() { return fechaActualizacion; }

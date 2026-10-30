@@ -18,7 +18,7 @@ import java.util.TreeMap;
 
 /** Solo validaciones; los errores de negocio y protocolo permanecen en el advice global. */
 @RestControllerAdvice
-@Order(Ordered.HIGHEST_PRECEDENCE)
+@Order(Ordered.HIGHEST_PRECEDENCE + 10)
 public class ValidadorCampos {
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<GenericResponse<Void>> dtoValidation(MethodArgumentNotValidException exception) {

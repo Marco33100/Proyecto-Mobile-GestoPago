@@ -37,7 +37,8 @@ public class FlywayConfig {
         log.info("Iniciando migraciones Flyway en schema '{}'", schema);
         Flyway flyway = Flyway.configure()
                 .dataSource(dataSource)
-                .locations(locations)
+                .locations(java.util.stream.Stream.concat(java.util.Arrays.stream(locations),
+                        java.util.stream.Stream.of("classpath:db/payments")).distinct().toArray(String[]::new))
                 .table(historyTable)
                 .schemas(schema)
                 .baselineOnMigrate(baselineOnMigrate)

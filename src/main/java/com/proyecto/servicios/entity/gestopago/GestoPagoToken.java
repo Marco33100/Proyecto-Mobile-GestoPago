@@ -22,6 +22,7 @@ public class GestoPagoToken {
     @Column(name = "codigo_dispositivo", nullable = false, length = 100)
     private String codigoDispositivo;
 
+    @com.fasterxml.jackson.annotation.JsonIgnore
     @Column(name = "token", nullable = false, columnDefinition = "TEXT")
     private String token;
 
@@ -42,12 +43,8 @@ public class GestoPagoToken {
 
     @PrePersist
     void onCreate() {
-        fechaCreacion = LocalDateTime.now();
-        fechaActualizacion = LocalDateTime.now();
-    }
-
-    @PreUpdate
-    void onUpdate() {
-        fechaActualizacion = LocalDateTime.now();
+        if (fechaCreacion == null) { fechaCreacion = LocalDateTime.now(); }
+        if (fechaActualizacion == null) { fechaActualizacion = LocalDateTime.now(); }
+        // La emision se actualiza al autenticar; recifrar no prolonga la vigencia.
     }
 }

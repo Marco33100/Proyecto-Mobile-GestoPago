@@ -17,6 +17,9 @@ import java.util.Optional;
 import java.util.UUID;
 
 public interface UserRepository extends JpaRepository<UserEntity, UUID>, JpaSpecificationExecutor<UserEntity> {
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select u from UserEntity u where u.id = :sesionUsuarioId")
+    Optional<UserEntity> bloquearUsuarioDeSesion(@Param("sesionUsuarioId") UUID sesionUsuarioId);
     @Override
     @EntityGraph(attributePaths = "cliente")
     Page<UserEntity> findAll(Specification<UserEntity> specification, Pageable pageable);

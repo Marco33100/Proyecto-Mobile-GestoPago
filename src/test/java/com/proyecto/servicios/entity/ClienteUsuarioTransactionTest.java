@@ -88,7 +88,7 @@ class ClienteUsuarioTransactionTest {
             postgresPassword = System.getenv().getOrDefault("ONBOARDING_TEST_DB_PASSWORD", "");
             Flyway.configure().dataSource(postgresUrl, postgresUser, postgresPassword)
                     .schemas(postgresSchema).defaultSchema(postgresSchema)
-                    .locations("classpath:db/initial").baselineOnMigrate(false).load().migrate();
+                    .locations("classpath:db/initial", "classpath:db/payments").baselineOnMigrate(false).load().migrate();
             configuration.setProperty("hibernate.connection.driver_class", "org.postgresql.Driver");
             configuration.setProperty("hibernate.connection.url", postgresUrl);
             configuration.setProperty("hibernate.connection.username", postgresUser);
