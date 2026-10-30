@@ -11,6 +11,7 @@ import org.mapstruct.NullValuePropertyMappingStrategy;
 @Mapper(componentModel = "spring")
 public interface GestoPagoTokenMapper {
 
+    @Mapping(target = "token", ignore = true)
     @Mapping(target = "id", ignore = true)
     @Mapping(target = "idDistribuidor", ignore = true)
     @Mapping(target = "codigoDispositivo", ignore = true)
@@ -20,6 +21,7 @@ public interface GestoPagoTokenMapper {
     GestoPagoToken toEntity(GestoPagoAuthResponse response);
 
     @BeanMapping(nullValuePropertyMappingStrategy = NullValuePropertyMappingStrategy.IGNORE)
+    @Mapping(target = "token", ignore = true)
     @Mapping(target = "id", ignore = true)
     @Mapping(target = "idDistribuidor", ignore = true)
     @Mapping(target = "codigoDispositivo", ignore = true)

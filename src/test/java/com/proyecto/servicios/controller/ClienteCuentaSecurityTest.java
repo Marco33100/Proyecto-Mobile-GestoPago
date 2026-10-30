@@ -41,6 +41,7 @@ class ClienteCuentaSecurityTest {
     private ClienteService clientes;
     private CuentaService cuentas;
     private ClienteRegistroService registro;
+    private ConciliacionPagoService conciliacion;
     private AuthenticatedUser usuario;
 
     @BeforeEach
@@ -61,12 +62,33 @@ class ClienteCuentaSecurityTest {
         when(clientes.consultar(any())).thenReturn(new PaginaResponse<>(List.of(), 0, 20, 0, 0, true));
         when(cuentas.consultarActivas(anyInt(), anyInt())).thenReturn(new PaginaResponse<>(List.of(), 0, 20, 0, 0, true));
         when(cuentas.consultarPropias(anyInt(), anyInt())).thenReturn(new PaginaResponse<>(List.of(), 0, 20, 0, 0, true));
-        mvc = MockMvcBuilders.standaloneSetup(new ClienteController(clientes, registro), new CuentaController(cuentas))
-                .setControllerAdvice(new ValidadorCampos(), new com.proyecto.servicios.controller.GlobalApiExceptionHandler())
+        conciliacion = mock(ConciliacionPagoService.class);
+        mvc = MockMvcBuilders.standaloneSetup(new ClienteController(clientes, registro), new CuentaController(cuentas), new ConciliacionPagoController(conciliacion))
+                .setControllerAdvice(new ValidadorCampos(), new PagoExceptionHandler(), new com.proyecto.servicios.controller.GlobalApiExceptionHandler())
                 .addFilters(context.getBean("springSecurityFilterChain", Filter.class)).build();
     }
 
     @AfterEach void tearDown() { context.close(); }
+
+    @Test void conciliacionRechazaClientesYExigeDtoValidoAlEjecutivo() throws Exception {
+        for (String sufijo : List.of("pendientes", "propuestas", "propuestas/consulta", "propuestas/aprobar", "propuestas/rechazar")) {
+            String ruta = "/api/pagos/conciliacion/" + sufijo;
+            mvc.perform(postJson(ruta, Map.of())).andExpect(status().isUnauthorized());
+            when(sessions.rolVigente(any(), any())).thenReturn(RolUsuario.CLIENTE);
+            mvc.perform(postJson(ruta, Map.of()).header("Authorization", "Bearer token")).andExpect(status().isForbidden());
+        }
+        verifyNoInteractions(conciliacion);
+        when(sessions.rolVigente(any(), any())).thenReturn(RolUsuario.EJECUTIVO);
+        mvc.perform(postJson("/api/pagos/conciliacion/propuestas", Map.of()).header("Authorization", "Bearer token"))
+                .andExpect(status().isBadRequest());
+        mvc.perform(postJson("/api/pagos/conciliacion/propuestas/aprobar", Map.of("propuestaId", UUID.randomUUID(), "observacion", " "))
+                .header("Authorization", "Bearer token")).andExpect(status().isBadRequest());
+        when(conciliacion.pendientes(any())).thenReturn(new PaginaResponse<>(List.of(), 0, 20, 0, 0, true));
+        mvc.perform(postJson("/api/pagos/conciliacion/pendientes", Map.of()).header("Authorization", "Bearer token"))
+                .andExpect(status().isOk()).andExpect(header().string("Cache-Control", "no-store"));
+        verify(conciliacion).pendientes(any());
+        verifyNoMoreInteractions(conciliacion);
+    }
 
     @Test
     void rutasApiNoPermitenAccesoSinSesion() throws Exception {

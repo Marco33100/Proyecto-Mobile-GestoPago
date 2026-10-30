@@ -18,6 +18,8 @@ import org.springframework.util.StringUtils;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDateTime;
+import java.util.function.Supplier;
 import java.util.Optional;
 
 @Service
@@ -33,23 +35,24 @@ public class GestoPagoTokenServiceImpl implements GestoPagoTokenService {
     private final String codigoDispositivo;
     private final String password;
     private final Clock clock;
-    // Acceso bajo el monitor: una sola autenticacion por instancia ante consultas concurrentes.
-    private String cachedToken;
-    private Instant usableUntil = Instant.MIN;
-    private boolean storedTokenLoaded;
+    private final GestoPagoTokenCipher cipher;
+    private final GestoPagoTokenCoordinator coordinator;
 
     @Autowired
     public GestoPagoTokenServiceImpl(GestoPagoAuthClient client, GestoPagoTokenRepository repository,
                                     GestoPagoTokenMapper mapper,
                                     @Value("${gestopago.auth.id-distribuidor}") Integer idDistribuidor,
                                     @Value("${gestopago.auth.codigo-dispositivo}") String codigoDispositivo,
-                                    @Value("${gestopago.auth.password}") String password) {
-        this(client, repository, mapper, idDistribuidor, codigoDispositivo, password, Clock.systemDefaultZone());
+                                    @Value("${gestopago.auth.password}") String password,
+                                    GestoPagoTokenCipher cipher, GestoPagoTokenCoordinator coordinator) {
+        this(client, repository, mapper, idDistribuidor, codigoDispositivo, password, Clock.systemUTC(),
+                cipher, coordinator);
     }
 
     public GestoPagoTokenServiceImpl(GestoPagoAuthClient client, GestoPagoTokenRepository repository,
                                     GestoPagoTokenMapper mapper, Integer idDistribuidor,
-                                    String codigoDispositivo, String password, Clock clock) {
+                                    String codigoDispositivo, String password, Clock clock,
+                                    GestoPagoTokenCipher cipher, GestoPagoTokenCoordinator coordinator) {
         if (idDistribuidor == null || idDistribuidor <= 0 || !StringUtils.hasText(codigoDispositivo)
                 || !StringUtils.hasText(password)) {
             throw new IllegalStateException("Configurar GESTOPAGO_AUTH_ID_DISTRIBUIDOR, "
@@ -62,45 +65,35 @@ public class GestoPagoTokenServiceImpl implements GestoPagoTokenService {
         this.codigoDispositivo = codigoDispositivo;
         this.password = password;
         this.clock = clock;
+        this.cipher = cipher;
+        this.coordinator = coordinator;
     }
 
     @Override
-    public synchronized String obtenerTokenVigente() {
+    public String obtenerTokenVigente() {
         try {
-            if (!storedTokenLoaded) {
-                loadStoredToken();
-                storedTokenLoaded = true;
-            }
-            return isUsable() ? cachedToken : authenticate();
+            // Lecturas concurrentes sin bloqueo; solo renovaciones y rotaciones se serializan.
+            return storedToken(false).orElseGet(() -> coordinator.execute(idDistribuidor, codigoDispositivo,
+                    () -> storedToken(true).orElseGet(this::authenticate)));
         } catch (Exception exception) {
             throw safeFailure(exception);
         }
     }
 
     @Override
-    public synchronized String renovarTokenRechazado(String tokenRechazado) {
-        // Otra consulta puede haber renovado ya el token utilizado por esta solicitud.
-        if (isUsable() && !cachedToken.equals(tokenRechazado)) {
-            return cachedToken;
-        }
-        storedTokenLoaded = true;
-        cachedToken = null;
-        usableUntil = Instant.MIN;
-        try {
-            return authenticate();
-        } catch (Exception exception) {
-            throw safeFailure(exception);
-        }
+    public String renovarTokenRechazado(String tokenRechazado) {
+        // Releer tambien entre replicas: una renovacion ajena invalida cualquier cache local.
+        return coordinated(() -> storedToken(true).filter(token -> !token.equals(tokenRechazado))
+                .orElseGet(this::authenticate));
     }
 
     @Override
-    public synchronized void renovarToken() {
+    public void renovarToken() {
         // Operacion administrativa existente; no hay cron horario que incumpla el contrato diario.
         try {
-            authenticate();
-            storedTokenLoaded = true;
+            coordinated(this::authenticate);
         } catch (Exception exception) {
-            safeFailure(exception);
+            // coordinated ya sanea y registra el fallo sin mensajes del proveedor.
         }
     }
 
@@ -110,20 +103,34 @@ public class GestoPagoTokenServiceImpl implements GestoPagoTokenService {
                 .filter(token -> Boolean.TRUE.equals(token.getActivo()));
     }
 
-    private boolean isUsable() {
-        return cachedToken != null && clock.instant().isBefore(usableUntil);
+    private <T> T coordinated(Supplier<T> work) {
+        try {
+            return coordinator.execute(idDistribuidor, codigoDispositivo, work);
+        } catch (Exception exception) {
+            throw safeFailure(exception);
+        }
     }
 
-    private void loadStoredToken() {
-        obtenerTokenActivo(idDistribuidor, codigoDispositivo).filter(token ->
+    private Optional<String> storedToken(boolean rotate) {
+        return obtenerTokenActivo(idDistribuidor, codigoDispositivo).filter(token ->
                 StringUtils.hasText(token.getToken()) && token.getFechaActualizacion() != null
                         && token.getExpiresIn() != null && token.getExpiresIn() > 0
                         && (token.getTokenType() == null || "Bearer".equalsIgnoreCase(token.getTokenType())))
-                .ifPresent(token -> {
+                .filter(token -> {
                     Instant issuedAt = token.getFechaActualizacion().atZone(clock.getZone()).toInstant();
-                    if (!issuedAt.isAfter(clock.instant())) {
-                        cache(token.getToken(), issuedAt, token.getExpiresIn());
+                    long lifetime = Math.min(token.getExpiresIn(), PROVIDER_LIFETIME.toSeconds());
+                    Duration margin = EXPIRY_MARGIN.compareTo(Duration.ofSeconds(lifetime).dividedBy(10)) < 0
+                            ? EXPIRY_MARGIN : Duration.ofSeconds(lifetime).dividedBy(10);
+                    return !issuedAt.isAfter(clock.instant())
+                            && clock.instant().isBefore(issuedAt.plusSeconds(lifetime).minus(margin));
+                }).filter(token -> rotate || !cipher.needsRotation(token.getToken())).map(token -> {
+                    // Nunca aceptar texto plano ni renovar automaticamente ante una clave de almacenamiento incorrecta.
+                    String plaintext = cipher.decrypt(token.getToken(), idDistribuidor, codigoDispositivo);
+                    if (cipher.needsRotation(token.getToken())) {
+                        token.setToken(cipher.encrypt(plaintext, idDistribuidor, codigoDispositivo));
+                        repository.saveAndFlush(token);
                     }
+                    return plaintext;
                 });
     }
 
@@ -150,18 +157,11 @@ public class GestoPagoTokenServiceImpl implements GestoPagoTokenService {
         entity.setTokenType("Bearer");
         // No conservar una caducidad vieja si la respuesta actual la omite.
         entity.setExpiresIn(lifetime);
-        repository.save(entity);
-        cache(response.getToken(), issuedAt, lifetime);
+        entity.setToken(cipher.encrypt(response.getToken().trim(), idDistribuidor, codigoDispositivo));
+        entity.setFechaActualizacion(LocalDateTime.ofInstant(issuedAt, clock.getZone()));
+        repository.saveAndFlush(entity);
         log.info("Token Gestopago renovado correctamente");
-        return cachedToken;
-    }
-
-    private void cache(String token, Instant issuedAt, long lifetimeSeconds) {
-        long lifetime = Math.min(lifetimeSeconds, PROVIDER_LIFETIME.toSeconds());
-        Duration margin = EXPIRY_MARGIN.compareTo(Duration.ofSeconds(lifetime).dividedBy(10)) < 0
-                ? EXPIRY_MARGIN : Duration.ofSeconds(lifetime).dividedBy(10);
-        cachedToken = token.trim();
-        usableUntil = issuedAt.plusSeconds(lifetime).minus(margin);
+        return response.getToken().trim();
     }
 
     private ProductIntegrationException safeFailure(Exception exception) {

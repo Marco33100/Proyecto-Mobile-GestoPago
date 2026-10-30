@@ -10,6 +10,7 @@ import lombok.ToString;
 public class GestoPagoAuthResponse {
 
     @ToString.Exclude
+    @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
     private String token;
 
     private Boolean success;

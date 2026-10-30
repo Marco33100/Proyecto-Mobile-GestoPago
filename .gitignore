@@ -7,6 +7,9 @@ build/
 data/
 src/main/resources/application-local.properties
 .local-db-backups/
+.env
+.env.*
+!.env.example
 
 ### IntelliJ IDEA ###
 .idea/modules.xml

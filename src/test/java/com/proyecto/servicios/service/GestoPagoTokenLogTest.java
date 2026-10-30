@@ -7,6 +7,8 @@ import com.proyecto.servicios.client.GestoPagoAuthClient;
 import com.proyecto.servicios.mapper.GestoPagoTokenMapper;
 import com.proyecto.servicios.repositorys.gestopago.GestoPagoTokenRepository;
 import com.proyecto.servicios.service.Impl.GestoPagoTokenServiceImpl;
+import com.proyecto.servicios.service.Impl.GestoPagoTokenCipher;
+import com.proyecto.servicios.service.Impl.GestoPagoTokenCoordinator;
 import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
 import static org.assertj.core.api.Assertions.*;
@@ -24,8 +26,12 @@ class GestoPagoTokenLogTest {
         appender.start();
         logger.addAppender(appender);
         try {
+            var coordinator = mock(GestoPagoTokenCoordinator.class);
+            when(coordinator.execute(anyInt(), anyString(), any())).thenAnswer(call ->
+                    ((java.util.function.Supplier<?>) call.getArgument(2)).get());
             new GestoPagoTokenServiceImpl(client, repository, mock(GestoPagoTokenMapper.class),
-                    123, "equipo-prueba", "clave-prueba").renovarToken();
+                    123, "equipo-prueba", "clave-prueba", java.time.Clock.systemUTC(),
+                    mock(GestoPagoTokenCipher.class), coordinator).renovarToken();
             assertThat(appender.list).isNotEmpty();
             appender.list.forEach(event -> {
                 assertThat(event.getFormattedMessage()).doesNotContain("clave-prueba", "token-secreto", "password=");
