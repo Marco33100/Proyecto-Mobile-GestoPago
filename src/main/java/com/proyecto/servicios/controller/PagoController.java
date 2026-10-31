@@ -48,7 +48,7 @@ public class PagoController {
     }
     @PostMapping(value = "/autorizar", consumes = "application/json")
     @Operation(summary = "Verifica y consume el codigo TOTP, retiene el importe y envia sendTx una sola vez",
-            description = "01: aplicado. 02: Servicio no Disponible. Consultar datos.estado y datos.aviso: un pago PENDIENTE o REVISION no debe repetirse.")
+            description = "01: aplicado. 02: consulta el mensaje y datos.estado. Un pago PENDIENTE o REVISION no debe repetirse.")
     public Resultado autorizar(@Valid @RequestBody AutorizarRequest request) { return Resultado.de(pagos.autorizar(request)); }
     @PostMapping(value = "/consulta", consumes = "application/json")
     @Operation(summary = "Consulta un pago propio; no reenvia pagos ni inicia otra retencion")
