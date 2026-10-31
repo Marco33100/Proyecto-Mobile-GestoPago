@@ -251,14 +251,15 @@ class PagoFlowPersistenceTest {
         assertThat(pagos.findById(pago.pago().pagoId()).orElseThrow().getPayloadCifrado()).doesNotContain("REF-123");
         assertThatThrownBy(() -> ledger.preparar(new PrepararRequest(UUID.randomUUID(), "00000000000000000001", 99, 1, 2, new BigDecimal("20"), null, "R"), actor)).isInstanceOf(PagoException.class);
     }
-    @Test void montoVariableSinLimitesOConfiguracionInvalidaNoCreaPagoNiRetiene() {
+    @Test void montoVariableSinLimitesPuedeAutorizarseYConfiguracionInvalidaSeRechaza() {
         properties.getLimitesPorProducto().clear();
-        assertThatThrownBy(() -> ledger.preparar(request("20"), actor)).isInstanceOf(PagoException.class);
+        var pago = ledger.preparar(request("20"), actor).pago();
+        assertThat(ledger.autorizar(codigoPara(pago), actor)).isNotNull();
         properties.getLimitesPorProducto().put(1, new PagoProperties.LimiteMonto(2, new BigDecimal("30"), new BigDecimal("10")));
-        assertThatThrownBy(() -> ledger.preparar(request("20"), actor)).isInstanceOf(PagoException.class);
+        assertThatThrownBy(() -> ledger.preparar(request("20", "OTRA"), actor)).isInstanceOf(PagoException.class);
         properties.getLimitesPorProducto().put(1, new PagoProperties.LimiteMonto(99, new BigDecimal("1"), new BigDecimal("100")));
-        assertThatThrownBy(() -> ledger.preparar(request("20"), actor)).isInstanceOf(PagoException.class);
-        assertThat(pagos.count()).isZero(); saldo("100", "0");
+        assertThatThrownBy(() -> ledger.preparar(request("20", "OTRA"), actor)).isInstanceOf(PagoException.class);
+        assertThat(pagos.count()).isEqualTo(1); saldo("100", "20");
     }
     @Test void rangoDeMontoEsInclusivoYRechazaValoresFueraDeLimites() {
         properties.getLimitesPorProducto().put(1, new PagoProperties.LimiteMonto(2, new BigDecimal("10"), new BigDecimal("30")));
@@ -577,16 +578,24 @@ class PagoFlowPersistenceTest {
     private void regla(PagoProperties.ModalidadReferencia modalidad) {
         properties.getReglasReferenciaPorProducto().put(1, new PagoProperties.ReglaReferencia(2, modalidad));
     }
-    @Test void deudaSeConservaCifradaYNoSeAutorizaSinReglaConfirmada() {
+    @Test void deudaSeConservaCifradaYPermiteImporteHastaElSaldoSinReglaConfigurada() {
+        properties.getLimitesPorProducto().clear();
         var pago = ledger.preparar(requestConDeuda("20"), actor).pago();
         assertThat(pago.autorizacionDisponible()).isFalse();
         var consultada = referencia(pago, "20.00");
         assertThat(consultada.saldoReferencia()).isEqualByComparingTo("20.00");
         assertThat(consultada.consultaReferenciaEn()).isNotNull();
-        assertThat(consultada.reglaImporteReferencia()).isEqualTo("SIN_DEFINIR");
-        assertThat(consultada.autorizacionDisponible()).isFalse();
+        assertThat(consultada.reglaImporteReferencia()).isEqualTo("HASTA_SALDO_SIN_POLITICA");
+        assertThat(consultada.autorizacionDisponible()).isTrue();
         var guardado = pagos.findById(pago.pagoId()).orElseThrow();
         assertThat(guardado.getConsultaReferenciaCifrada()).doesNotContain("fixture", "20.00");
+        assertThat(ledger.autorizar(codigoPara(pago), actor)).isNotNull();
+        saldo("100", "20");
+    }
+    @Test void sinReglaConfiguradaNoPermiteSuperarDeudaConsultada() {
+        properties.getLimitesPorProducto().clear();
+        var pago = ledger.preparar(requestConDeuda("20"), actor).pago();
+        assertThat(referencia(pago, "15").autorizacionDisponible()).isFalse();
         assertThatThrownBy(() -> ledger.autorizar(codigoPara(pago), actor)).isInstanceOf(PagoException.class);
         saldo("100", "0");
     }

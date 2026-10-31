@@ -23,10 +23,10 @@ public class PagoProperties {
     private String zonaHoraria = "America/Mexico_City";
     private Duration autorizacionTtl = Duration.ofMinutes(5);
     private Duration confirmacionIntervalo = Duration.ofMinutes(1);
-    // No invented provider limits: variable-amount products are disabled until configured.
+    // Limites opcionales: se aplican si se configuran para un producto.
     private Map<Integer, LimiteMonto> limitesPorProducto = new HashMap<>();
     public record LimiteMonto(Integer idServicio, BigDecimal minimo, BigDecimal maximo) { }
-    // Sin regla confirmada, tipoFront 4 permite revisar la deuda pero no autorizar el cobro.
+    // Sin regla configurada, tipoFront 4 admite importes positivos hasta la deuda consultada.
     private Map<Integer, ReglaReferencia> reglasReferenciaPorProducto = new HashMap<>();
     public enum ModalidadReferencia { IMPORTE_EXACTO, PARCIAL_HASTA_SALDO }
     public record ReglaReferencia(Integer idServicio, ModalidadReferencia modalidad) { }

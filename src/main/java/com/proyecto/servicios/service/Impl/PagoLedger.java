@@ -306,17 +306,19 @@ public class PagoLedger {
         var payload = leerPayload(pago);
         BigDecimal deuda = saldoReferencia(pago);
         var regla = reglaReferencia(payload);
+        var reglasConfiguradas = properties.getReglasReferenciaPorProducto();
+        boolean reglaInvalida = regla == null && reglasConfiguradas != null
+                && reglasConfiguradas.containsKey(payload.path("idProducto").asInt());
         boolean esTipo4 = Objects.equals(pago.getTipoFront(), 4) || pago.getConsultaReferenciaCifrada() != null
                 || (pago.getTipoFront() == null && payload.has("referencia"));
         boolean reglasVigentes = pago.getHuellaReglas()!=null && pago.getHuellaReglas().equals(PagoCrypto.huella(
                 snapshotReglas(payload.path("idProducto").asInt(),payload.path("idServicio").asInt(),pago.getTipoFront())));
         boolean disponible = pago.getEstado() == PagoEntity.Estado.PREPARADO && Instant.now().isBefore(pago.getVenceEn())
-                && reglasVigentes && pago.isReferenciaValidada() && (!esTipo4 || importeReferenciaPermitido(pago.getMonto(), deuda, regla));
+                && reglasVigentes && pago.isReferenciaValidada() && (!esTipo4 || (!reglaInvalida && importeReferenciaPermitido(pago.getMonto(), deuda, regla)));
         if (pago.getEstado() == PagoEntity.Estado.PREPARADO && esTipo4) {
             if (deuda == null) aviso = "No hay una consulta de deuda verificable. Aun no se ha cobrado.";
             else if (deuda.signum() <= 0) aviso = "La referencia no presenta deuda pendiente. No se habilita el cobro.";
-            else if (regla == null) aviso = "Deuda consultada. Falta confirmar la regla de importe de este producto; no autorices el pago.";
-            else if (!disponible) aviso = "El importe solicitado no cumple la regla confirmada. Cancela y prepara nuevamente; aun no se ha cobrado.";
+            else if (!disponible) aviso = "El importe solicitado no cumple las condiciones de pago. Cancela y prepara nuevamente; aun no se ha cobrado.";
         }
         if (pago.getEstado()==PagoEntity.Estado.PREPARADO && !reglasVigentes)
             aviso="Las condiciones de pago cambiaron; cancela y prepara una nueva solicitud. Aun no se ha cobrado.";
@@ -325,7 +327,7 @@ public class PagoLedger {
         return new PagoResponse(pago.getId(), pago.getEstado().name(), pago.getUpc(), pago.getNumeroCuenta(), pago.getConcepto(),
                 pago.getMonto(), BigDecimal.ZERO,
                 pago.getVenceEn(), pago.getIdTransaccion(), pago.getAutorizacion(), pin, leyenda, aviso, telefono, referencia,
-                deuda, pago.getConsultaReferenciaEn(), esTipo4 ? (regla == null ? "SIN_DEFINIR" : regla.modalidad().name()) : null, disponible);
+                deuda, pago.getConsultaReferenciaEn(), esTipo4 ? (regla == null ? "HASTA_SALDO_SIN_POLITICA" : regla.modalidad().name()) : null, disponible);
     }
     private BigDecimal saldoReferencia(PagoEntity pago) {
         if (pago.getConsultaReferenciaCifrada() == null) return null;
@@ -340,7 +342,8 @@ public class PagoLedger {
                 && Objects.equals(regla.idServicio(), payload.path("idServicio").asInt()) ? regla : null;
     }
     private boolean importeReferenciaPermitido(BigDecimal monto, BigDecimal deuda, PagoProperties.ReglaReferencia regla) {
-        if (regla == null || deuda == null || deuda.signum() <= 0) return false;
+        if (deuda == null || deuda.signum() <= 0) return false;
+        if (regla == null) return monto.signum() > 0 && monto.compareTo(deuda) <= 0;
         return switch (regla.modalidad()) {
             case IMPORTE_EXACTO -> monto.compareTo(deuda) == 0;
             case PARCIAL_HASTA_SALDO -> monto.signum() > 0 && monto.compareTo(deuda) <= 0;
@@ -348,7 +351,9 @@ public class PagoLedger {
     }
     private void validarImporteReferencia(PagoEntity pago, com.fasterxml.jackson.databind.JsonNode payload) {
         var regla = reglaReferencia(payload);
-        if (regla == null) throw error(HttpStatus.SERVICE_UNAVAILABLE, "Falta confirmar la regla de importe del producto");
+        var configuradas = properties.getReglasReferenciaPorProducto();
+        if (regla == null && configuradas != null && configuradas.containsKey(payload.path("idProducto").asInt()))
+            throw error(HttpStatus.SERVICE_UNAVAILABLE, "Regla de referencia invalida");
         if (!importeReferenciaPermitido(pago.getMonto(), saldoReferencia(pago), regla))
             throw error(HttpStatus.CONFLICT, "El importe no corresponde a la deuda y regla confirmadas");
     }
@@ -367,8 +372,8 @@ public class PagoLedger {
     private void validarLimites(com.proyecto.servicios.entity.gestopago.ProductEntity producto, BigDecimal monto) {
         var limites = properties.getLimitesPorProducto();
         var limite = limites == null ? null : limites.get(producto.getProductId());
-        if (limite == null && Objects.equals(producto.getFrontType(), 1)) return;
-        if (limite == null || !Objects.equals(limite.idServicio(), producto.getServiceId())
+        if (limite == null) return;
+        if (!Objects.equals(limite.idServicio(), producto.getServiceId())
                 || !importeConfigurable(limite.minimo()) || !importeConfigurable(limite.maximo())
                 || limite.minimo().compareTo(limite.maximo()) > 0)
             throw error(HttpStatus.SERVICE_UNAVAILABLE, "El producto no tiene limites de monto confirmados");
