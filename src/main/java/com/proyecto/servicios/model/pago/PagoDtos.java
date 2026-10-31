@@ -56,8 +56,18 @@ public final class PagoDtos {
     public record Resultado(String codigo, String mensaje, PagoResponse datos) {
         public static Resultado de(PagoResponse pago) {
             boolean aplicado = "APLICADO".equals(pago.estado());
-            return new Resultado(aplicado ? "01" : "02", aplicado ? "Pago realizado correctamente" : "Servicio no Disponible", pago);
+            String mensaje = switch (pago.estado()) {
+                case "APLICADO" -> "Pago realizado correctamente";
+                case "PREPARADO" -> "Pago preparado. Revisa los datos antes de autorizar.";
+                case "ENVIADO", "PENDIENTE" -> "Estamos verificando tu pago. Consulta su estado antes de intentar nuevamente.";
+                case "REVISION" -> "El pago esta en revision. Consulta su estado; no lo vuelvas a enviar.";
+                case "RECHAZADO" -> "El pago no fue aplicado. Consulta el detalle de la operacion.";
+                case "EXPIRADO" -> "La preparacion del pago vencio. Prepara una nueva solicitud.";
+                default -> "No es posible procesar el pago en este momento.";
+            };
+            return new Resultado(aplicado ? "01" : "02", mensaje, pago);
         }
         public static Resultado error() { return new Resultado("02", "Servicio no Disponible", null); }
+        public static Resultado error(String mensaje) { return new Resultado("02", mensaje, null); }
     }
 }
