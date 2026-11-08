@@ -40,16 +40,23 @@ class UsuarioMethodSecurityTest {
 
     @Test
     void sinSesionNoSePuedeInvocarLaBusquedaDelServicio() {
-        runner.run(context -> assertThatThrownBy(() -> context.getBean(UsuarioService.class)
-                .buscar(new UsuarioBusquedaRequest())).isInstanceOf(AuthenticationCredentialsNotFoundException.class));
+        runner.run(context -> {
+            var servicio = context.getBean(UsuarioService.class);
+            var solicitud = new UsuarioBusquedaRequest();
+            assertThatThrownBy(() -> servicio.buscar(solicitud))
+                    .isInstanceOf(AuthenticationCredentialsNotFoundException.class);
+        });
         verifyNoInteractions(usuarios, sesiones);
     }
 
     @Test
     void clienteNoPuedeSaltarElControlDelController() {
         autenticar("ROLE_CLIENTE");
-        runner.run(context -> assertThatThrownBy(() -> context.getBean(UsuarioService.class)
-                .buscar(new UsuarioBusquedaRequest())).isInstanceOf(AccessDeniedException.class));
+        runner.run(context -> {
+            var servicio = context.getBean(UsuarioService.class);
+            var solicitud = new UsuarioBusquedaRequest();
+            assertThatThrownBy(() -> servicio.buscar(solicitud)).isInstanceOf(AccessDeniedException.class);
+        });
         verifyNoInteractions(usuarios, sesiones);
     }
 

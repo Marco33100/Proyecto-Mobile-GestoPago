@@ -12,13 +12,13 @@ import lombok.Setter;
 @Setter
 public class UsuarioBusquedaRequest extends PaginacionRequest {
     @Size(max = 203)
-    @Pattern(regexp = ".*\\S.*", message = "El nombre no puede contener solo espacios.")
+    @Pattern(regexp = "[ \\t\\x0B\\f]*+\\S.*", message = "El nombre no puede contener solo espacios.")
     private String nombre;
     @Email(message = "El correo electrónico no tiene un formato válido.")
     @Size(max = 254)
-    @Pattern(regexp = ".*\\S.*", message = "El correo electrónico no puede estar vacío.")
+    @Pattern(regexp = "[ \\t\\x0B\\f]*+\\S.*", message = "El correo electrónico no puede estar vacío.")
     private String correo;
-    @Pattern(regexp = "^[0-9]{10}$", message = "El teléfono debe contener exactamente 10 dígitos.")
+    @Pattern(regexp = "^\\d{10}$", message = "El teléfono debe contener exactamente 10 dígitos.")
     private String telefono;
     private Boolean activo;
 }

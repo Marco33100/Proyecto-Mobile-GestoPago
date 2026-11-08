@@ -13,6 +13,7 @@ import org.springframework.stereotype.Service;
 @Service @PreAuthorize("hasRole('CLIENTE')")
 @ConditionalOnProperty(name = "app.database.enabled", havingValue = "true")
 public class PagoServiceImpl implements PagoService {
+    private static final String SERVICIO_NO_DISPONIBLE = "Servicio no Disponible";
     private final PagoLedger ledger;
     private final PagoGateway gateway;
     private final PagoProperties properties;
@@ -25,11 +26,11 @@ public class PagoServiceImpl implements PagoService {
         this.json = json; this.limiter = limiter;
     }
     private void habilitado() {
-        if (!properties.isEnabled()) throw new PagoException(HttpStatus.SERVICE_UNAVAILABLE, "Servicio no Disponible");
+        if (!properties.isEnabled()) throw new PagoException(HttpStatus.SERVICE_UNAVAILABLE, SERVICIO_NO_DISPONIBLE);
         if (!properties.getUnidad().matches("[A-Za-z0-9 _.-]{3,25}") || properties.getAutorizacionTtl().isNegative()
                 || properties.getAutorizacionTtl().isZero() || properties.getAutorizacionTtl().compareTo(java.time.Duration.ofMinutes(15)) > 0
                 || properties.getConfirmacionIntervalo().compareTo(java.time.Duration.ofSeconds(60)) < 0)
-            throw new PagoException(HttpStatus.SERVICE_UNAVAILABLE, "Servicio no Disponible");
+            throw new PagoException(HttpStatus.SERVICE_UNAVAILABLE, SERVICIO_NO_DISPONIBLE);
         crypto.validarConfiguracion();
     }
     @Override public PagoResponse preparar(PrepararRequest request) {
@@ -40,7 +41,7 @@ public class PagoServiceImpl implements PagoService {
             var payload = json.readTree(resultado.json());
             var referencia = gateway.validarReferencia(payload.path("idProducto").asInt(), payload.path("idServicio").asInt(), payload.path("referencia").asText());
             if (referencia == null || referencia.estado() == PagoGateway.EstadoReferencia.INCIERTA)
-                throw new PagoException(HttpStatus.SERVICE_UNAVAILABLE, "Servicio no Disponible");
+                throw new PagoException(HttpStatus.SERVICE_UNAVAILABLE, SERVICIO_NO_DISPONIBLE);
             var verificado = ledger.referenciaValidada(resultado.pago().pagoId(), actor.userId(), referencia);
             if (referencia.estado() == PagoGateway.EstadoReferencia.INVALIDA)
                 throw new PagoException(HttpStatus.BAD_REQUEST, "Referencia no valida");

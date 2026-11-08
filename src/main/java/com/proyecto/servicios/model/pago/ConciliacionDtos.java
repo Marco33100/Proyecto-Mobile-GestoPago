@@ -14,8 +14,8 @@ public final class ConciliacionDtos {
             @NotBlank @Pattern(regexp = "[A-Z0-9]{10}") String upc,
             @NotNull @DecimalMin("0.01") @Digits(integer = 17, fraction = 2) BigDecimal monto,
             @NotNull Resultado resultado,
-            @Pattern(regexp = "[0-9]{1,60}") String idTransaccion,
-            @Pattern(regexp = "[0-9]{1,60}") String autorizacion,
+            @Pattern(regexp = "\\d{1,60}") String idTransaccion,
+            @Pattern(regexp = "\\d{1,60}") String autorizacion,
             @NotBlank @Size(max = 100) String folioProveedor,
             @NotBlank @Size(min = 20, max = 16000) String evidenciaProveedor,
             @NotBlank @Size(min = 10, max = 1000) String motivo

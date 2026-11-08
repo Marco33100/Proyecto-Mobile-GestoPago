@@ -144,7 +144,8 @@ class ClienteUsuarioTransactionTest {
                 jwt, mock(ActiveSessionService.class)), AuthService.class);
         assertThat(auth.login(new LoginRequest("marco@example.com", request().contrasena())).accessToken())
                 .isEqualTo("token-de-prueba");
-        assertThatThrownBy(() -> auth.login(new LoginRequest("marco@example.com", "Incorrecta1")))
+        var credencialesInvalidas = new LoginRequest("marco@example.com", "Incorrecta1");
+        assertThatThrownBy(() -> auth.login(credencialesInvalidas))
                 .isInstanceOf(InvalidCredentialsException.class);
     }
 
@@ -202,7 +203,9 @@ class ClienteUsuarioTransactionTest {
             throw new DataAccessResourceFailureException("fallo posterior al insert del usuario");
         }).when(fallaAlGuardar).saveAndFlush(any(UserEntity.class));
 
-        assertThatThrownBy(() -> registro(fallaAlGuardar).registrar(request()))
+        var registroConFallo = registro(fallaAlGuardar);
+        var solicitud = request();
+        assertThatThrownBy(() -> registroConFallo.registrar(solicitud))
                 .isInstanceOf(ClientePersistenceException.class);
         assertThat(clientes.count()).isZero();
         assertThat(domicilios.count()).isZero();
@@ -213,11 +216,13 @@ class ClienteUsuarioTransactionTest {
     @Test
     void baseDeDatosImpideDosUsuariosParaUnCliente() {
         var response = registro(usuarios).registrar(request());
-        assertThatThrownBy(() -> new TransactionTemplate(transactionManager).execute(status -> {
+        var transaction = new TransactionTemplate(transactionManager);
+        org.springframework.transaction.support.TransactionCallback<UserEntity> duplicarUsuario = status -> {
             ClienteEntity cliente = clientes.findClienteById(response.id());
             return usuarios.saveAndFlush(new UserEntity(UUID.randomUUID(), "otro@example.com",
                     encoder.encode("Segura123!"), "Otro usuario", cliente, Instant.now()));
-        })).isInstanceOf(RuntimeException.class);
+        };
+        assertThatThrownBy(() -> transaction.execute(duplicarUsuario)).isInstanceOf(RuntimeException.class);
         assertThat(usuarios.count()).isEqualTo(1);
     }
 
@@ -250,8 +255,11 @@ class ClienteUsuarioTransactionTest {
             throw new DataAccessResourceFailureException("fallo despues del delete");
         }).when(falla).deleteById(usuario.getId());
 
-        assertThatThrownBy(() -> gestionUsuarios(falla).cambiarContrasena(new ModificarContrasenaRequest(usuario.getFullName(), usuario.getEmail(),
-                new CambiarContrasenaRequest(request().contrasena(), "Nueva456!")), usuario.getId()))
+        var servicio = gestionUsuarios(falla);
+        var cambio = new ModificarContrasenaRequest(usuario.getFullName(), usuario.getEmail(),
+                new CambiarContrasenaRequest(request().contrasena(), "Nueva456!"));
+        var usuarioId = usuario.getId();
+        assertThatThrownBy(() -> servicio.cambiarContrasena(cambio, usuarioId))
                 .isInstanceOf(AuthPersistenceException.class);
         assertThat(usuarios.findByEmail(usuario.getEmail()).orElseThrow().getPasswordHash())
                 .isEqualTo(usuario.getPasswordHash());
@@ -263,8 +271,11 @@ class ClienteUsuarioTransactionTest {
         registro(usuarios).registrar(request());
         UserEntity usuario = usuarios.findByEmail("marco@example.com").orElseThrow();
         UUID sesion = crearSesion(usuario.getId());
-        assertThatThrownBy(() -> gestionUsuarios(sesiones).cambiarContrasena(new ModificarContrasenaRequest(usuario.getFullName(), usuario.getEmail(),
-                new CambiarContrasenaRequest("Incorrecta123!", "Nueva456!")), usuario.getId()))
+        var servicio = gestionUsuarios(sesiones);
+        var cambio = new ModificarContrasenaRequest(usuario.getFullName(), usuario.getEmail(),
+                new CambiarContrasenaRequest("Incorrecta123!", "Nueva456!"));
+        var usuarioId = usuario.getId();
+        assertThatThrownBy(() -> servicio.cambiarContrasena(cambio, usuarioId))
                 .isInstanceOf(ContrasenaInvalidaException.class);
         assertThat(usuarios.findByEmail(usuario.getEmail()).orElseThrow().getPasswordHash())
                 .isEqualTo(usuario.getPasswordHash());
@@ -331,8 +342,9 @@ class ClienteUsuarioTransactionTest {
                 .when(repositorioFallido).saveAndFlush(any(CuentaEntity.class));
         var servicio = proxy(new CuentaServiceImpl(repositorioFallido, new CuentaProperties(),
                 org.mapstruct.factory.Mappers.getMapper(ClienteResponseMapper.class)), CuentaService.class);
-        assertThatThrownBy(() -> servicio.actualizarEstado(cuenta.getNumeroCuenta(),
-                new ActualizarEstadoCuentaRequest(false))).isInstanceOf(CuentaPersistenceException.class);
+        var numeroCuenta = cuenta.getNumeroCuenta();
+        var cambioEstado = new ActualizarEstadoCuentaRequest(false);
+        assertThatThrownBy(() -> servicio.actualizarEstado(numeroCuenta, cambioEstado)).isInstanceOf(CuentaPersistenceException.class);
         var despues = cuentas.findByNumeroCuenta(cuenta.getNumeroCuenta());
         assertThat(despues.isActiva()).isTrue();
         assertThat(despues.getSaldo()).isEqualByComparingTo(cuenta.getSaldo());
@@ -355,7 +367,8 @@ class ClienteUsuarioTransactionTest {
         assertThat(sesionValida(usuario.getId(), sesion)).isFalse();
         AuthService auth = proxy(new AuthServiceImpl(usuarios, encoder, mock(JwtTokenService.class),
                 mock(ActiveSessionService.class)), AuthService.class);
-        assertThatThrownBy(() -> auth.login(new LoginRequest(usuario.getEmail(), request().contrasena())))
+        var credenciales = new LoginRequest(usuario.getEmail(), request().contrasena());
+        assertThatThrownBy(() -> auth.login(credenciales))
                 .isInstanceOf(com.proyecto.servicios.exception.auth.UsuarioInactivoException.class);
     }
 
@@ -466,13 +479,14 @@ class ClienteUsuarioTransactionTest {
         assertThat(factory.getStatistics().getPrepareStatementCount()).isEqualTo(1);
         assertThat(servicio.consultar(new UsuarioConsultaRequest("Marco Martinez", "dos@example.com"), homonimo.getId()).id())
                 .isEqualTo(homonimo.getId());
+        var primeroId = primero.getId();
         for (var selector : java.util.List.of(new UsuarioConsultaRequest("Marco", "uno@example.com"),
                 new UsuarioConsultaRequest("Maria Perez", "uno@example.com"),
                 new UsuarioConsultaRequest("Marco Martinez", "tres@example.com"),
                 new UsuarioConsultaRequest("Marco Martinez", "dos@example.com"),
                 new UsuarioConsultaRequest("Marco%", "uno@example.com"),
                 new UsuarioConsultaRequest("' OR 1=1 --", "uno@example.com"))) {
-            assertThatThrownBy(() -> servicio.consultar(selector, primero.getId()))
+            assertThatThrownBy(() -> servicio.consultar(selector, primeroId))
                     .isInstanceOf(com.proyecto.servicios.exception.auth.UsuarioNoEncontradoException.class);
         }
         assertThat(factory.getStatistics().getEntityInsertCount()).isZero();
@@ -558,17 +572,19 @@ class ClienteUsuarioTransactionTest {
         UUID sesionAjena = crearSesion(homonimo.getId());
         var servicio = gestionUsuarios(sesiones);
         var credenciales = new CambiarContrasenaRequest("Actual123!", "Nueva456!");
+        var propioId = propio.getId();
         for (var selector : java.util.List.of(
                 new ModificarContrasenaRequest("Marco", propio.getEmail(), credenciales),
                 new ModificarContrasenaRequest("Maria Perez", propio.getEmail(), credenciales),
                 new ModificarContrasenaRequest(propio.getFullName(), homonimo.getEmail(), credenciales),
                 new ModificarContrasenaRequest("Marco%", propio.getEmail(), credenciales),
                 new ModificarContrasenaRequest("' OR 1=1 --", propio.getEmail(), credenciales))) {
-            assertThatThrownBy(() -> servicio.cambiarContrasena(selector, propio.getId()))
+            assertThatThrownBy(() -> servicio.cambiarContrasena(selector, propioId))
                     .isInstanceOf(com.proyecto.servicios.exception.auth.UsuarioNoEncontradoException.class);
         }
-        assertThatThrownBy(() -> servicio.cambiarContrasena(new ModificarContrasenaRequest(
-                propio.getFullName(), propio.getEmail(), credenciales), homonimo.getId()))
+        var selectorPropio = new ModificarContrasenaRequest(propio.getFullName(), propio.getEmail(), credenciales);
+        var homonimoId = homonimo.getId();
+        assertThatThrownBy(() -> servicio.cambiarContrasena(selectorPropio, homonimoId))
                 .isInstanceOf(com.proyecto.servicios.exception.auth.UsuarioNoEncontradoException.class);
         assertThat(usuarios.findById(propio.getId()).orElseThrow().getPasswordHash()).isEqualTo(hash);
         assertThat(usuarios.findById(homonimo.getId()).orElseThrow().getPasswordHash()).isEqualTo(hash);
@@ -590,10 +606,13 @@ class ClienteUsuarioTransactionTest {
     }
 
     private ClienteEntity clienteDeBusqueda(String nombre, String correo, String telefono, int consecutivo, Instant fecha) {
-        return new ClienteEntity(nombre, null, "Lopez", "Perez", LocalDate.of(1990, 1, 1),
-                "LOPE900101HDFRRR0" + consecutivo, "LOPE900101AB" + consecutivo,
-                Sexo.MASCULINO, "Mexicana", EstadoCivil.SOLTERO, null, correo, telefono,
-                null, "Ingeniero", "Empresa", new BigDecimal("1000.00"), fecha);
+        return new ClienteEntity(new ClienteEntity.Nombre(nombre, null, "Lopez", "Perez"),
+                new ClienteEntity.Perfil(LocalDate.of(1990, 1, 1), Sexo.MASCULINO, "Mexicana", EstadoCivil.SOLTERO, null),
+                "LOPE900101HDFRRR0" + consecutivo,
+                "LOPE900101AB" + consecutivo,
+                new ClienteEntity.Contacto(correo, telefono, null),
+                new ClienteEntity.Empleo("Ingeniero", "Empresa", new BigDecimal("1000.00")),
+                fecha);
     }
 
     private UsuarioService gestionUsuarios(UserSessionRepository sessionRepository) {

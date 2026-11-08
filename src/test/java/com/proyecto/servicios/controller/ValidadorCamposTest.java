@@ -65,12 +65,11 @@ class ValidadorCamposTest {
     }
 
     private GenericResponse<Void> validar(BeanPropertyBindingResult errors) throws Exception {
-        var method = getClass().getDeclaredMethod("dto", Object.class);
+        var method = ValidadorCampos.class.getDeclaredMethod("dtoValidation", MethodArgumentNotValidException.class);
         var exception = new MethodArgumentNotValidException(new MethodParameter(method, 0), errors);
         var response = new ValidadorCampos().dtoValidation(exception);
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
         return response.getBody();
     }
 
-    private void dto(Object body) { }
 }

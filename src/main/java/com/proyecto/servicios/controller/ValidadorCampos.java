@@ -28,7 +28,7 @@ public class ValidadorCampos {
     }
 
     @ExceptionHandler(HandlerMethodValidationException.class)
-    public ResponseEntity<?> parametrosValidation(HandlerMethodValidationException exception) {
+    public ResponseEntity<GenericResponse<Void>> parametrosValidation(HandlerMethodValidationException exception) {
         if (exception.isForReturnValue()) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).contentType(MediaType.APPLICATION_JSON)
                     .header("Cache-Control", "no-store")

@@ -26,6 +26,7 @@ import java.util.Optional;
 @Slf4j
 @ConditionalOnProperty(name = {"app.database.enabled", "gestopago.auth.enabled"}, havingValue = "true")
 public class GestoPagoTokenServiceImpl implements GestoPagoTokenService {
+    private static final String BEARER = "Bearer";
     private static final Duration PROVIDER_LIFETIME = Duration.ofHours(24);
     private static final Duration EXPIRY_MARGIN = Duration.ofSeconds(30);
     private final GestoPagoAuthClient client;
@@ -115,7 +116,7 @@ public class GestoPagoTokenServiceImpl implements GestoPagoTokenService {
         return obtenerTokenActivo(idDistribuidor, codigoDispositivo).filter(token ->
                 StringUtils.hasText(token.getToken()) && token.getFechaActualizacion() != null
                         && token.getExpiresIn() != null && token.getExpiresIn() > 0
-                        && (token.getTokenType() == null || "Bearer".equalsIgnoreCase(token.getTokenType())))
+                        && (token.getTokenType() == null || BEARER.equalsIgnoreCase(token.getTokenType())))
                 .filter(token -> {
                     Instant issuedAt = token.getFechaActualizacion().atZone(clock.getZone()).toInstant();
                     long lifetime = Math.min(token.getExpiresIn(), PROVIDER_LIFETIME.toSeconds());
@@ -141,7 +142,7 @@ public class GestoPagoTokenServiceImpl implements GestoPagoTokenService {
                 || !StringUtils.hasText(response.getToken())
                 || (response.getExpiresIn() != null && response.getExpiresIn() <= 0)
                 || (StringUtils.hasText(response.getTokenType())
-                    && !"Bearer".equalsIgnoreCase(response.getTokenType()))) {
+                    && !BEARER.equalsIgnoreCase(response.getTokenType()))) {
             throw new IllegalStateException("Respuesta de autenticacion Gestopago no valida");
         }
         long lifetime = response.getExpiresIn() == null ? PROVIDER_LIFETIME.toSeconds()
@@ -154,7 +155,7 @@ public class GestoPagoTokenServiceImpl implements GestoPagoTokenService {
         entity.setIdDistribuidor(idDistribuidor);
         entity.setCodigoDispositivo(codigoDispositivo);
         entity.setActivo(true);
-        entity.setTokenType("Bearer");
+        entity.setTokenType(BEARER);
         // No conservar una caducidad vieja si la respuesta actual la omite.
         entity.setExpiresIn(lifetime);
         entity.setToken(cipher.encrypt(response.getToken().trim(), idDistribuidor, codigoDispositivo));

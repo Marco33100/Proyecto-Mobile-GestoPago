@@ -43,10 +43,11 @@ class ClienteIdentityPersistenceTest {
                     UUID.randomUUID(), primero, "CTA-0123456789ABCDEF0123", BigDecimal.ZERO, Instant.now()
             );
             session.persist(cuenta);
-            session.persist(new DomicilioEntity(
-                    UUID.randomUUID(), primero, "Reforma", "100", null, "Centro",
-                    "Cuauhtemoc", "Ciudad de Mexico", "06000", "Mexico", Instant.now()
-            ));
+            session.persist(new DomicilioEntity(UUID.randomUUID(),
+                primero,
+                new DomicilioEntity.DatosCalle("Reforma", "100", null, "Centro"),
+                new DomicilioEntity.Localidad("Cuauhtemoc", "Ciudad de Mexico", "06000", "Mexico"),
+                Instant.now()));
             transaction.commit();
             assertThat(primero.getId()).isEqualTo(1L);
             assertThat(segundo.getId()).isEqualTo(2L);
@@ -62,10 +63,12 @@ class ClienteIdentityPersistenceTest {
     }
 
     private ClienteEntity cliente(String curp, String rfc, String correo) {
-        return new ClienteEntity(
-                "Marco", null, "Morales", "Martinez", LocalDate.of(1990, 1, 1),
-                curp, rfc, Sexo.MASCULINO, "Mexicana", EstadoCivil.SOLTERO, null,
-                correo, "5512345678", null, "Ingeniero", "Empresa", new BigDecimal("1000.00"), Instant.now()
-        );
+        return new ClienteEntity(new ClienteEntity.Nombre("Marco", null, "Morales", "Martinez"),
+                new ClienteEntity.Perfil(LocalDate.of(1990, 1, 1), Sexo.MASCULINO, "Mexicana", EstadoCivil.SOLTERO, null),
+                curp,
+                rfc,
+                new ClienteEntity.Contacto(correo, "5512345678", null),
+                new ClienteEntity.Empleo("Ingeniero", "Empresa", new BigDecimal("1000.00")),
+                Instant.now());
     }
 }

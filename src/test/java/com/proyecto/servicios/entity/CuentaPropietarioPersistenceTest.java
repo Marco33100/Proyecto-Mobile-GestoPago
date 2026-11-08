@@ -156,8 +156,12 @@ class CuentaPropietarioPersistenceTest {
     }
 
     private ClienteEntity cliente(String curp, String rfc, String correo) {
-        return new ClienteEntity("Marco", null, "Morales", "Martinez", LocalDate.of(1990, 1, 1),
-                curp, rfc, Sexo.MASCULINO, "Mexicana", EstadoCivil.SOLTERO, null,
-                correo, "5512345678", null, "Ingeniero", "Empresa", new BigDecimal("1000.00"), Instant.now());
+        return new ClienteEntity(new ClienteEntity.Nombre("Marco", null, "Morales", "Martinez"),
+                new ClienteEntity.Perfil(LocalDate.of(1990, 1, 1), Sexo.MASCULINO, "Mexicana", EstadoCivil.SOLTERO, null),
+                curp,
+                rfc,
+                new ClienteEntity.Contacto(correo, "5512345678", null),
+                new ClienteEntity.Empleo("Ingeniero", "Empresa", new BigDecimal("1000.00")),
+                Instant.now());
     }
 }

@@ -12,15 +12,15 @@ import java.util.Base64;
 public final class AesEncryption {
     private AesEncryption() { }
 
-    public static String AESCipher(String mode, String input, String IV, String KEY) {
+    public static String AESCipher(String mode, String input, String encodedIv, String encodedKey) {
         Mode operation;
         try {
             operation = Mode.valueOf(mode);
         } catch (IllegalArgumentException | NullPointerException exception) {
             throw new IllegalArgumentException("El modo debe ser ENCRYPT o DECRYPT");
         }
-        byte[] iv = Base64.getDecoder().decode(IV);
-        byte[] key = Base64.getDecoder().decode(KEY);
+        byte[] iv = Base64.getDecoder().decode(encodedIv);
+        byte[] key = Base64.getDecoder().decode(encodedKey);
         IvParameterSpec ivspec = new IvParameterSpec(iv);
         SecretKey secretKey = new SecretKeySpec(key, 0, key.length, "AES");
         return operation == Mode.ENCRYPT ? encrypt(input, secretKey, ivspec) : decrypt(input, secretKey, ivspec);

@@ -16,6 +16,8 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 @EnableMethodSecurity
 @ConditionalOnProperty(name = "app.database.enabled", havingValue = "true")
 public class SecurityConfiguration {
+    private static final String EJECUTIVO = "EJECUTIVO";
+    private static final String CLIENTE = "CLIENTE";
 
     @Bean
     public LoginRateLimitFilter loginRateLimitFilter(LoginAttemptLimiter limiter,
@@ -37,6 +39,7 @@ public class SecurityConfiguration {
                                                    RestAuthenticationEntryPoint authenticationEntryPoint)
             throws Exception {
         return http
+                // Las sesiones se autentican con Bearer en Authorization, sin cookies de autenticacion.
                 .csrf(csrf -> csrf.disable())
                 .sessionManagement(session ->
                         session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
@@ -51,15 +54,15 @@ public class SecurityConfiguration {
                                 "/actuator/health", "/error"
                         ).permitAll()
                         .requestMatchers("/api/auth/register").denyAll()
-                        .requestMatchers("/api/usuarios/busqueda").hasRole("EJECUTIVO")
-                        .requestMatchers("/api/pagos/conciliacion", "/api/pagos/conciliacion/**").hasRole("EJECUTIVO")
-                        .requestMatchers("/api/pagos", "/api/pagos/**").hasRole("CLIENTE")
-                        .requestMatchers("/api/cuentas/activas/consulta").hasRole("EJECUTIVO")
-                        .requestMatchers(HttpMethod.POST, "/api/cuentas/mias/consulta").hasRole("CLIENTE")
+                        .requestMatchers("/api/usuarios/busqueda").hasRole(EJECUTIVO)
+                        .requestMatchers("/api/pagos/conciliacion", "/api/pagos/conciliacion/**").hasRole(EJECUTIVO)
+                        .requestMatchers("/api/pagos", "/api/pagos/**").hasRole(CLIENTE)
+                        .requestMatchers("/api/cuentas/activas/consulta").hasRole(EJECUTIVO)
+                        .requestMatchers(HttpMethod.POST, "/api/cuentas/mias/consulta").hasRole(CLIENTE)
                         .requestMatchers(HttpMethod.POST, "/api/cuentas/consulta",
-                                "/api/cuentas/saldo/consulta").hasAnyRole("EJECUTIVO", "CLIENTE")
+                                "/api/cuentas/saldo/consulta").hasAnyRole(EJECUTIVO, CLIENTE)
                         .requestMatchers("/api/clientes", "/api/clientes/**",
-                                "/api/cuentas", "/api/cuentas/**").hasRole("EJECUTIVO")
+                                "/api/cuentas", "/api/cuentas/**").hasRole(EJECUTIVO)
                         .requestMatchers("/api/**").authenticated()
                         .anyRequest().authenticated()
                 )

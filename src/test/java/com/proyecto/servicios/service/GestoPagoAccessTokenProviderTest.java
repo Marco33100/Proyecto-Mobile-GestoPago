@@ -34,7 +34,8 @@ class GestoPagoAccessTokenProviderTest {
         var service = mock(GestoPagoTokenService.class);
         when(service.obtenerTokenVigente()).thenThrow(new ProductIntegrationException(
                 com.proyecto.servicios.exception.ProductIntegrationErrorType.GESTOPAGO_UNAVAILABLE, "failure"));
-        assertThatThrownBy(provider(true, service, "fixed-fixture")::obtenerToken)
+        var tokenProvider = provider(true, service, "fixed-fixture");
+        assertThatThrownBy(tokenProvider::obtenerToken)
                 .isInstanceOf(ProductIntegrationException.class);
     }
 
@@ -50,13 +51,15 @@ class GestoPagoAccessTokenProviderTest {
 
     @Test
     void ausenciaDeServicioAutomaticoNoUsaTokenFijo() {
-        assertThatThrownBy(provider(true, null, "fixed-fixture")::obtenerToken)
+        var tokenProvider = provider(true, null, "fixed-fixture");
+        assertThatThrownBy(tokenProvider::obtenerToken)
                 .isInstanceOf(ProductIntegrationException.class);
     }
 
     @Test
     void modoManualSinTokenDevuelveErrorControlado() {
-        assertThatThrownBy(provider(false, null, " ")::obtenerToken)
+        var tokenProvider = provider(false, null, " ");
+        assertThatThrownBy(tokenProvider::obtenerToken)
                 .isInstanceOf(ProductIntegrationException.class);
     }
 }

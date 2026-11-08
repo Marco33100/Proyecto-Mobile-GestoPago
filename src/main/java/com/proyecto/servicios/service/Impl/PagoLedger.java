@@ -24,6 +24,10 @@ import java.util.*;
 @Service
 @ConditionalOnProperty(name = "app.database.enabled", havingValue = "true")
 public class PagoLedger {
+    private static final String CAMPO_ID_PRODUCTO = "idProducto";
+    private static final String CAMPO_ID_SERVICIO = "idServicio";
+    private static final String CAMPO_REFERENCIA = "referencia";
+    private static final String PAGO_NO_DISPONIBLE = "Pago no disponible";
     public record Envio(UUID pagoId, String json) {
         @Override public String toString() { return "Envio[protegido]"; }
     }
@@ -62,9 +66,7 @@ public class PagoLedger {
             var user = usuarioActivo(actor);
             var existente = pagos.bloquear(request.solicitudId()).orElse(null);
             if (existente != null) {
-                propio(existente, actor);
-                if (!huella.equals(existente.getHuella())) throw error(HttpStatus.CONFLICT, "La solicitud ya identifica otro pago");
-                return preparacion(existente);
+                return preparacionExistente(existente, actor, huella);
             }
             var clave = claves.findById(actor).orElseThrow(() -> error(HttpStatus.CONFLICT, "Activa el segundo factor antes de pagar"));
             if (clave.getSecretoCifrado() == null) throw error(HttpStatus.CONFLICT, "Activa el segundo factor antes de pagar");
@@ -73,27 +75,16 @@ public class PagoLedger {
             // Serialize two concurrent preparations of the same account before inserting the idempotency key.
             existente = pagos.findById(request.solicitudId()).orElse(null);
             if (existente != null) {
-                propio(existente, actor);
-                if (!huella.equals(existente.getHuella())) throw error(HttpStatus.CONFLICT, "La solicitud ya identifica otro pago");
-                return preparacion(existente);
+                return preparacionExistente(existente, actor, huella);
             }
             var producto = productos.consultarParaPago(request.idProducto()).orElseThrow(() -> error(HttpStatus.NOT_FOUND, "Producto no disponible en el catalogo local"));
-            if (!Objects.equals(producto.getServiceId(), request.idServicio()) || !Objects.equals(producto.getFrontType(), request.tipoFront()))
-                throw error(HttpStatus.BAD_REQUEST, "El servicio y tipoFront deben corresponder al producto");
+            validarProductoPreparacion(producto, request);
             int tipo = request.tipoFront();
-            if (tipo != 1 && tipo != 2 && tipo != 4) throw error(HttpStatus.UNPROCESSABLE_ENTITY, "Este tipo de producto requiere un contrato adicional del proveedor");
             BigDecimal monto = request.monto().setScale(2);
-            if (tipo == 1 && (producto.getPrice() == null || producto.getPrice().compareTo(monto) != 0))
-                throw error(HttpStatus.BAD_REQUEST, "El monto debe coincidir con el precio del producto");
             validarLimites(producto, monto);
             validarPresupuesto(actor, monto);
-            String telefono = texto(request.telefono());
-            if (tipo == 1 && (Objects.equals(producto.getCategoryServiceTypeId(), 10) || Objects.equals(producto.getCategoryServiceTypeId(), 11))) telefono = "#1111111111";
-            else if (tipo == 1 && !telefono.matches("[0-9]{10,20}")) throw error(HttpStatus.BAD_REQUEST, "El telefono no tiene el formato requerido");
-            else if (tipo != 1) telefono = "1111111111";
-            String referencia = texto(request.referencia());
-            if (tipo != 1 && (referencia.isEmpty() || referencia.chars().anyMatch(Character::isISOControl)))
-                throw error(HttpStatus.BAD_REQUEST, "La referencia es obligatoria y no admite caracteres de control");
+            String telefono = telefonoPreparacion(producto, request);
+            String referencia = referenciaPreparacion(request);
             Instant ahora = Instant.now();
             String huellaOperacion = huellaOperacion(request.idServicio(), request.idProducto(), tipo, monto,
                     tipo == 1 ? telefono : null, tipo == 1 ? null : referencia);
@@ -110,10 +101,10 @@ public class PagoLedger {
             pago.setVenceEn(ahora.plus(properties.getAutorizacionTtl())); pago.setReferenciaValidada(tipo != 4);
             pago.setRequierePin(Objects.equals(producto.getCategoryServiceTypeId(), 10) || Objects.equals(producto.getCategoryServiceTypeId(), 11));
             Map<String, Object> payload = new LinkedHashMap<>();
-            payload.put("idProducto", request.idProducto()); payload.put("idServicio", request.idServicio());
+            payload.put(CAMPO_ID_PRODUCTO, request.idProducto()); payload.put(CAMPO_ID_SERVICIO, request.idServicio());
             payload.put("telefono", telefono);
             payload.put("horaLocal", DateTimeFormatter.ofPattern("yyyyMMddHHmmss").withZone(ZoneId.of(properties.getZonaHoraria())).format(ahora));
-            if (tipo != 1) { payload.put("referencia", referencia); payload.put("montoPago", monto); }
+            if (tipo != 1) { payload.put(CAMPO_REFERENCIA, referencia); payload.put("montoPago", monto); }
             payload.put("upc", pago.getUpc()); payload.put("unidad", properties.getUnidad());
             String contenido = serializar(payload);
             pago.setPayloadCifrado(crypto.proteger(contenido));
@@ -123,6 +114,32 @@ public class PagoLedger {
             return preparacion(pago);
         });
     }
+    private Preparacion preparacionExistente(PagoEntity pago, UUID actor, String huella) {
+        propio(pago, actor);
+        if (!huella.equals(pago.getHuella())) throw error(HttpStatus.CONFLICT, "La solicitud ya identifica otro pago");
+        return preparacion(pago);
+    }
+    private void validarProductoPreparacion(com.proyecto.servicios.entity.gestopago.ProductEntity producto, PrepararRequest request) {
+        if (!Objects.equals(producto.getServiceId(), request.idServicio()) || !Objects.equals(producto.getFrontType(), request.tipoFront()))
+            throw error(HttpStatus.BAD_REQUEST, "El servicio y tipoFront deben corresponder al producto");
+        int tipo = request.tipoFront();
+        if (tipo != 1 && tipo != 2 && tipo != 4) throw error(HttpStatus.UNPROCESSABLE_ENTITY, "Este tipo de producto requiere un contrato adicional del proveedor");
+        if (tipo == 1 && (producto.getPrice() == null || producto.getPrice().compareTo(request.monto().setScale(2)) != 0))
+            throw error(HttpStatus.BAD_REQUEST, "El monto debe coincidir con el precio del producto");
+    }
+    private String telefonoPreparacion(com.proyecto.servicios.entity.gestopago.ProductEntity producto, PrepararRequest request) {
+        if (request.tipoFront() != 1) return "1111111111";
+        if (Objects.equals(producto.getCategoryServiceTypeId(), 10) || Objects.equals(producto.getCategoryServiceTypeId(), 11)) return "#1111111111";
+        String telefono = texto(request.telefono());
+        if (!telefono.matches("\\d{10,20}")) throw error(HttpStatus.BAD_REQUEST, "El telefono no tiene el formato requerido");
+        return telefono;
+    }
+    private String referenciaPreparacion(PrepararRequest request) {
+        String referencia = texto(request.referencia());
+        if (request.tipoFront() != 1 && (referencia.isEmpty() || referencia.chars().anyMatch(Character::isISOControl)))
+            throw error(HttpStatus.BAD_REQUEST, "La referencia es obligatoria y no admite caracteres de control");
+        return referencia;
+    }
     private Preparacion preparacion(PagoEntity pago) {
         return new Preparacion(respuesta(pago), pago.getEstado() == PagoEntity.Estado.PREPARADO && !pago.isReferenciaValidada(),
                 crypto.revelar(pago.getPayloadCifrado()));
@@ -131,59 +148,66 @@ public class PagoLedger {
         return tx.execute(status -> {
             var pago = bloquearPropio(id, actor);
             if (pago.getEstado() == PagoEntity.Estado.PREPARADO && !pago.isReferenciaValidada()) {
-                if (!Instant.now().isBefore(pago.getVenceEn())) {
-                    pago.setEstado(PagoEntity.Estado.EXPIRADO);
-                } else {
-                    if (referencia == null || referencia.estado() == PagoGateway.EstadoReferencia.INCIERTA
-                            || (referencia.estado() == PagoGateway.EstadoReferencia.VALIDA && referencia.saldo() == null))
-                        throw error(HttpStatus.SERVICE_UNAVAILABLE, "No fue posible verificar la referencia");
-                    boolean valida = referencia.estado() == PagoGateway.EstadoReferencia.VALIDA;
-                    pago.setReferenciaValidada(valida);
-                    if (!valida) pago.setEstado(PagoEntity.Estado.RECHAZADO);
-                    pago.setConsultaReferenciaEn(Instant.now());
-                    pago.setConsultaReferenciaCifrada(crypto.proteger(serializar(referencia)));
-                }
+                actualizarReferencia(pago, referencia);
                 pagos.saveAndFlush(pago);
             }
             return respuesta(pago);
         });
     }
+    private void actualizarReferencia(PagoEntity pago, PagoGateway.Referencia referencia) {
+        if (!Instant.now().isBefore(pago.getVenceEn())) {
+            pago.setEstado(PagoEntity.Estado.EXPIRADO);
+            return;
+        }
+        if (referencia == null || referencia.estado() == PagoGateway.EstadoReferencia.INCIERTA
+                || (referencia.estado() == PagoGateway.EstadoReferencia.VALIDA && referencia.saldo() == null))
+            throw error(HttpStatus.SERVICE_UNAVAILABLE, "No fue posible verificar la referencia");
+        boolean valida = referencia.estado() == PagoGateway.EstadoReferencia.VALIDA;
+        pago.setReferenciaValidada(valida);
+        if (!valida) pago.setEstado(PagoEntity.Estado.RECHAZADO);
+        pago.setConsultaReferenciaEn(Instant.now());
+        pago.setConsultaReferenciaCifrada(crypto.proteger(serializar(referencia)));
+    }
     public Envio autorizar(AutorizarRequest request, UUID actor) {
-        var decision = tx.execute(status -> {
-            var user = usuarioActivo(actor);
-            var pago = bloquearPropio(request.pagoId(), actor);
-            if (pago.getEstado() != PagoEntity.Estado.PREPARADO) return new DecisionAutorizacion(null, false);
-            if (!Instant.now().isBefore(pago.getVenceEn())) {
-                pago.setEstado(PagoEntity.Estado.EXPIRADO); pagos.saveAndFlush(pago); return new DecisionAutorizacion(null, false);
-            }
-            var clave = claves.findById(actor).orElseThrow(() -> error(HttpStatus.FORBIDDEN, "Segundo factor no disponible"));
-            if (!pago.getHuellaClave().equals(clave.getHuella()) || clave.getSecretoCifrado() == null)
-                throw error(HttpStatus.FORBIDDEN, "El segundo factor cambio; prepara nuevamente el pago");
-            if (!pago.isReferenciaValidada()) throw error(HttpStatus.CONFLICT, "La referencia aun no ha sido validada");
-            var payload = leerPayload(pago);
-            var producto = productos.consultarParaPago(payload.path("idProducto").asInt()).orElse(null);
-            // No cambiar el importe ni el destino que el cliente reviso al preparar.
-            if (producto == null || pago.getHuellaCatalogo() == null || pago.getHuellaOperacion() == null
-                    || !pago.getHuellaCatalogo().equals(huellaCatalogo(producto)) || pago.getHuellaReglas() == null
-                    || !pago.getHuellaReglas().equals(PagoCrypto.huella(snapshotReglas(producto)))) {
-                pago.setEstado(PagoEntity.Estado.EXPIRADO); pagos.saveAndFlush(pago); return new DecisionAutorizacion(null, false);
-            }
-            validarLimites(producto, pago.getMonto());
-            validarPresupuesto(actor, pago.getMonto());
-            if (Objects.equals(producto.getFrontType(), 4))
-                validarImporteReferencia(pago, payload);
-            validarDuplicado(actor, pago.getId(), pago.getHuellaOperacion(), Instant.now());
-            var cuenta = cuentas.findByNumeroCuentaForUpdate(pago.getNumeroCuenta());
-            validarCuenta(cuenta, user, pago.getMonto());
-            if (!totp.consume(clave, request.codigo())) return new DecisionAutorizacion(null, true);
-            cuenta.retener(pago.getMonto(), Instant.now()); cuentas.saveAndFlush(cuenta);
-            pago.setEstado(PagoEntity.Estado.ENVIADO); pago.setEnviadoEn(Instant.now());
-            pago.setProximaConfirmacion(pago.getEnviadoEn().plusSeconds(75));
-            pagos.saveAndFlush(pago);
-            return new DecisionAutorizacion(new Envio(pago.getId(), crypto.revelar(pago.getPayloadCifrado())), false);
-        });
+        var decision = tx.execute(status -> autorizarPago(request, actor));
         if (decision.denegada()) throw error(HttpStatus.FORBIDDEN, "Codigo incorrecto, vencido o ya utilizado");
         return decision.envio();
+    }
+    private DecisionAutorizacion autorizarPago(AutorizarRequest request, UUID actor) {
+        var user = usuarioActivo(actor);
+        var pago = bloquearPropio(request.pagoId(), actor);
+        if (pago.getEstado() != PagoEntity.Estado.PREPARADO) return new DecisionAutorizacion(null, false);
+        if (!Instant.now().isBefore(pago.getVenceEn())) {
+            pago.setEstado(PagoEntity.Estado.EXPIRADO); pagos.saveAndFlush(pago); return new DecisionAutorizacion(null, false);
+        }
+        var clave = claves.findById(actor).orElseThrow(() -> error(HttpStatus.FORBIDDEN, "Segundo factor no disponible"));
+        if (!pago.getHuellaClave().equals(clave.getHuella()) || clave.getSecretoCifrado() == null)
+            throw error(HttpStatus.FORBIDDEN, "El segundo factor cambio; prepara nuevamente el pago");
+        if (!pago.isReferenciaValidada()) throw error(HttpStatus.CONFLICT, "La referencia aun no ha sido validada");
+        var payload = leerPayload(pago);
+        var producto = productos.consultarParaPago(payload.path(CAMPO_ID_PRODUCTO).asInt()).orElse(null);
+        // No cambiar el importe ni el destino que el cliente reviso al preparar.
+        if (!catalogoVigente(pago, producto)) {
+            pago.setEstado(PagoEntity.Estado.EXPIRADO); pagos.saveAndFlush(pago); return new DecisionAutorizacion(null, false);
+        }
+        validarLimites(producto, pago.getMonto());
+        validarPresupuesto(actor, pago.getMonto());
+        if (Objects.equals(producto.getFrontType(), 4))
+            validarImporteReferencia(pago, payload);
+        validarDuplicado(actor, pago.getId(), pago.getHuellaOperacion(), Instant.now());
+        var cuenta = cuentas.findByNumeroCuentaForUpdate(pago.getNumeroCuenta());
+        validarCuenta(cuenta, user, pago.getMonto());
+        if (!totp.consume(clave, request.codigo())) return new DecisionAutorizacion(null, true);
+        cuenta.retener(pago.getMonto(), Instant.now()); cuentas.saveAndFlush(cuenta);
+        pago.setEstado(PagoEntity.Estado.ENVIADO); pago.setEnviadoEn(Instant.now());
+        pago.setProximaConfirmacion(pago.getEnviadoEn().plusSeconds(75));
+        pagos.saveAndFlush(pago);
+        return new DecisionAutorizacion(new Envio(pago.getId(), crypto.revelar(pago.getPayloadCifrado())), false);
+    }
+    private boolean catalogoVigente(PagoEntity pago, com.proyecto.servicios.entity.gestopago.ProductEntity producto) {
+        return producto != null && pago.getHuellaCatalogo() != null && pago.getHuellaOperacion() != null
+                && pago.getHuellaCatalogo().equals(huellaCatalogo(producto)) && pago.getHuellaReglas() != null
+                && pago.getHuellaReglas().equals(PagoCrypto.huella(snapshotReglas(producto)));
     }
     public PagoResponse registrarResultadoEnvio(UUID id, PagoGateway.Respuesta resultado) {
         return resolver(id, resultado, false, null);
@@ -194,67 +218,91 @@ public class PagoLedger {
     }
     private PagoResponse resolver(UUID id, PagoGateway.Respuesta resultado, boolean confirmacion, UUID intento) {
         return tx.execute(status -> {
-            var pago = pagos.bloquear(id).orElseThrow(() -> error(HttpStatus.NOT_FOUND, "Pago no disponible"));
-            // Archive late/stale responses too, without letting them overwrite a newer decision.
-            String cuerpo = resultado.evidencia() == null || resultado.evidencia().isEmpty()
-                    ? "Sin respuesta verificable" : resultado.evidencia();
+            var pago = pagos.bloquear(id).orElseThrow(() -> error(HttpStatus.NOT_FOUND, PAGO_NO_DISPONIBLE));
             boolean descartada = !abierto(pago) || (confirmacion && !intento.equals(pago.getIntentoConfirmacion()));
-            String registro = (descartada ? "Respuesta tardia/obsoleta archivada sin modificar saldo ni estado.\n" : "")
-                    + (confirmacion ? "Intento de confirmacion: " + intento + "\n" : "") + cuerpo;
-            evidencias.save(new PagoEvidenciaEntity(id, confirmacion ? "confirmTx" : "sendTx",
-                    crypto.proteger(registro)));
+            archivarRespuesta(pago, resultado, confirmacion, intento, descartada);
             if (descartada) return respuesta(pago);
             if (confirmacion) pago.setIntentoConfirmacion(null);
-            if (resultado.evidencia() != null && !resultado.evidencia().isEmpty()) {
-                String cifrado = crypto.proteger(resultado.evidencia());
-                if (pago.getReciboCifrado() == null || resultado.pin() != null) pago.setReciboCifrado(cifrado);
-            }
+            actualizarRecibo(pago, resultado);
             pago.setCodigoProveedor(resultado.codigo());
-            boolean aplicado = resultado.estado() == PagoGateway.Estado.APLICADO;
-            boolean identificadores = resultado.idTransaccion() != null && resultado.idTransaccion().matches("[0-9]{1,60}")
-                    && new BigDecimal(resultado.idTransaccion()).signum() > 0 && resultado.autorizacion() != null
-                    && resultado.autorizacion().matches("[0-9]{1,60}") && new BigDecimal(resultado.autorizacion()).signum() > 0;
-            boolean importeIncoherente = resultado.monto() != null && pago.getMonto().compareTo(resultado.monto()) != 0;
-            boolean codigoAplicado = confirmacion ? "06".equals(resultado.codigo()) : "01".equals(resultado.codigo());
-            if (!confirmacion && "06".equals(resultado.codigo())) {
-                pago.setDuplicadoProveedor(true);
-                if (identificadores) {
-                    pago.setIdTransaccionPrevia(resultado.idTransaccion());
-                    pago.setAutorizacionPrevia(resultado.autorizacion());
-                }
-            }
-            if (pago.isDuplicadoProveedor() && "06".equals(resultado.codigo())) {
-                if (identificadores && !importeIncoherente && coincideConAplicadoAnterior(pago, resultado)) {
-                    // This is a previous debit already recorded locally, never a second successful payment.
-                    liquidarRetencion(pago, false, resultado);
-                } else if (confirmacion) {
-                    revisar(pago, "DUPLICADO_NO_CONCILIADO");
-                } else {
-                    pago.setEstado(PagoEntity.Estado.PENDIENTE);
-                    programarConfirmacion(pago);
-                }
-            } else if (aplicado && (pago.isDuplicadoProveedor() || !identificadores || !codigoAplicado || importeIncoherente || (!confirmacion && resultado.monto() == null)
-                    || pagos.existsByIdTransaccionAndIdNot(resultado.idTransaccion(), pago.getId())
-                    || (pago.getIdTransaccion() != null && !pago.getIdTransaccion().equals(resultado.idTransaccion())))) {
-                revisar(pago, "RESPUESTA_INCONSISTENTE");
-            } else if (confirmacion && "70".equals(resultado.codigo()) && pago.getEstado() == PagoEntity.Estado.ENVIADO) {
-                // No completed send attempt was persisted. A paused dispatcher could still resume;
-                // absence at the provider is not enough to release this reservation safely.
-                revisar(pago, "ENVIO_SIN_CIERRE");
-            } else if (aplicado || (resultado.estado() == PagoGateway.Estado.RECHAZADO
-                    && (confirmacion ? "70".equals(resultado.codigo()) : "NOT_SENT".equals(resultado.codigo())))) {
-                liquidarRetencion(pago, aplicado, resultado);
-            } else {
-                pago.setEstado(PagoEntity.Estado.PENDIENTE);
-                programarConfirmacion(pago);
-            }
+            procesarResultado(pago, resultado, confirmacion);
             pagos.saveAndFlush(pago);
             return respuesta(pago);
         });
     }
+    private void archivarRespuesta(PagoEntity pago, PagoGateway.Respuesta resultado, boolean confirmacion,
+                                   UUID intento, boolean descartada) {
+        String cuerpo = resultado.evidencia() == null || resultado.evidencia().isEmpty()
+                ? "Sin respuesta verificable" : resultado.evidencia();
+        String registro = (descartada ? "Respuesta tardia/obsoleta archivada sin modificar saldo ni estado.\n" : "")
+                + (confirmacion ? "Intento de confirmacion: " + intento + "\n" : "") + cuerpo;
+        evidencias.save(new PagoEvidenciaEntity(pago.getId(), confirmacion ? "confirmTx" : "sendTx", crypto.proteger(registro)));
+    }
+    private void actualizarRecibo(PagoEntity pago, PagoGateway.Respuesta resultado) {
+        if (resultado.evidencia() == null || resultado.evidencia().isEmpty()) return;
+        String cifrado = crypto.proteger(resultado.evidencia());
+        if (pago.getReciboCifrado() == null || resultado.pin() != null) pago.setReciboCifrado(cifrado);
+    }
+    private boolean identificadorPositivo(String valor) {
+        return valor != null && valor.matches("\\d{1,60}") && new BigDecimal(valor).signum() > 0;
+    }
+    private void procesarResultado(PagoEntity pago, PagoGateway.Respuesta resultado, boolean confirmacion) {
+        boolean aplicado = resultado.estado() == PagoGateway.Estado.APLICADO;
+        boolean identificadores = identificadorPositivo(resultado.idTransaccion()) && identificadorPositivo(resultado.autorizacion());
+        boolean importeIncoherente = resultado.monto() != null && pago.getMonto().compareTo(resultado.monto()) != 0;
+        registrarDuplicadoProveedor(pago, resultado, confirmacion, identificadores);
+        if (pago.isDuplicadoProveedor() && "06".equals(resultado.codigo())) {
+            resolverDuplicado(pago, resultado, confirmacion, identificadores && !importeIncoherente);
+        } else if (aplicado && respuestaInconsistente(pago, resultado, confirmacion, identificadores, importeIncoherente)) {
+            revisar(pago, "RESPUESTA_INCONSISTENTE");
+        } else if (confirmacion && "70".equals(resultado.codigo()) && pago.getEstado() == PagoEntity.Estado.ENVIADO) {
+            // Un sendTx pausado aun podria continuar; la ausencia en el proveedor no libera la retencion.
+            revisar(pago, "ENVIO_SIN_CIERRE");
+        } else if (aplicado || rechazoDefinitivo(resultado, confirmacion)) {
+            liquidarRetencion(pago, aplicado, resultado);
+        } else {
+            pendiente(pago);
+        }
+    }
+    private void registrarDuplicadoProveedor(PagoEntity pago, PagoGateway.Respuesta resultado,
+                                            boolean confirmacion, boolean identificadores) {
+        if (confirmacion || !"06".equals(resultado.codigo())) return;
+        pago.setDuplicadoProveedor(true);
+        if (identificadores) {
+            pago.setIdTransaccionPrevia(resultado.idTransaccion());
+            pago.setAutorizacionPrevia(resultado.autorizacion());
+        }
+    }
+    private void resolverDuplicado(PagoEntity pago, PagoGateway.Respuesta resultado,
+                                   boolean confirmacion, boolean datosCoherentes) {
+        if (datosCoherentes && coincideConAplicadoAnterior(pago, resultado)) {
+            // El debito ya esta contabilizado localmente; no cobrar dos veces.
+            liquidarRetencion(pago, false, resultado);
+        } else if (confirmacion) {
+            revisar(pago, "DUPLICADO_NO_CONCILIADO");
+        } else {
+            pendiente(pago);
+        }
+    }
+    private boolean respuestaInconsistente(PagoEntity pago, PagoGateway.Respuesta resultado, boolean confirmacion,
+                                           boolean identificadores, boolean importeIncoherente) {
+        boolean codigoAplicado = confirmacion ? "06".equals(resultado.codigo()) : "01".equals(resultado.codigo());
+        return pago.isDuplicadoProveedor() || !identificadores || !codigoAplicado || importeIncoherente
+                || (!confirmacion && resultado.monto() == null)
+                || pagos.existsByIdTransaccionAndIdNot(resultado.idTransaccion(), pago.getId())
+                || (pago.getIdTransaccion() != null && !pago.getIdTransaccion().equals(resultado.idTransaccion()));
+    }
+    private boolean rechazoDefinitivo(PagoGateway.Respuesta resultado, boolean confirmacion) {
+        return resultado.estado() == PagoGateway.Estado.RECHAZADO
+                && (confirmacion ? "70".equals(resultado.codigo()) : "NOT_SENT".equals(resultado.codigo()));
+    }
+    private void pendiente(PagoEntity pago) {
+        pago.setEstado(PagoEntity.Estado.PENDIENTE);
+        programarConfirmacion(pago);
+    }
     public PagoResponse consultar(UUID id, UUID actor) {
         return tx.execute(status -> {
-            var pago = pagos.findById(id).orElseThrow(() -> error(HttpStatus.NOT_FOUND, "Pago no disponible"));
+            var pago = pagos.findById(id).orElseThrow(() -> error(HttpStatus.NOT_FOUND, PAGO_NO_DISPONIBLE));
             propio(pago, actor); return respuesta(pago);
         });
     }
@@ -286,11 +334,28 @@ public class PagoLedger {
         });
     }
     private PagoResponse respuesta(PagoEntity pago) {
-        String pin = null, leyenda = null;
+        String pin = null;
+        String leyenda = null;
         if (pago.getEstado() == PagoEntity.Estado.APLICADO && pago.getReciboCifrado() != null) {
             var recibo = GestopagoPagoGateway.interpretar(crypto.revelar(pago.getReciboCifrado()), false);
             pin = recibo.pin(); leyenda = recibo.leyenda();
         }
+        String aviso = avisoEstado(pago, pin);
+        var payload = leerPayload(pago);
+        BigDecimal deuda = saldoReferencia(pago);
+        var regla = reglaReferencia(payload);
+        boolean esTipo4 = esReferencia(pago, payload);
+        boolean reglasVigentes = reglasVigentes(pago, payload);
+        boolean disponible = disponibleParaAutorizar(pago, payload, deuda, regla, esTipo4, reglasVigentes);
+        aviso = avisoPreparacion(pago, deuda, esTipo4, disponible, reglasVigentes, aviso);
+        String telefono = payload.has(CAMPO_REFERENCIA) || pago.isRequierePin() ? null : payload.path("telefono").asText();
+        String referencia = payload.has(CAMPO_REFERENCIA) ? payload.path(CAMPO_REFERENCIA).asText() : null;
+        return new PagoResponse(pago.getId(), pago.getEstado().name(), pago.getUpc(), pago.getNumeroCuenta(), pago.getConcepto(),
+                pago.getMonto(), BigDecimal.ZERO,
+                pago.getVenceEn(), pago.getIdTransaccion(), pago.getAutorizacion(), pin, leyenda, aviso, telefono, referencia,
+                deuda, pago.getConsultaReferenciaEn(), modalidadReferencia(esTipo4, regla), disponible);
+    }
+    private String avisoEstado(PagoEntity pago, String pin) {
         String aviso = switch (pago.getEstado()) {
             case ENVIADO, PENDIENTE -> "Pago pendiente de confirmacion. No repitas la operacion; el importe sigue retenido.";
             case REVISION -> "Pago en conciliacion. No repitas la operacion; el importe sigue retenido.";
@@ -303,31 +368,37 @@ public class PagoLedger {
             aviso = "Pago aplicado; el PIN esta pendiente de recuperacion con el proveedor. Conserva la autorizacion y no repitas el pago.";
         if (pago.isDuplicadoProveedor() && pago.getEstado() == PagoEntity.Estado.RECHAZADO)
             aviso = "El proveedor reporto una operacion anterior; no se realizo un nuevo cargo y la retencion fue liberada.";
-        var payload = leerPayload(pago);
-        BigDecimal deuda = saldoReferencia(pago);
-        var regla = reglaReferencia(payload);
-        var reglasConfiguradas = properties.getReglasReferenciaPorProducto();
-        boolean reglaInvalida = regla == null && reglasConfiguradas != null
-                && reglasConfiguradas.containsKey(payload.path("idProducto").asInt());
-        boolean esTipo4 = Objects.equals(pago.getTipoFront(), 4) || pago.getConsultaReferenciaCifrada() != null
-                || (pago.getTipoFront() == null && payload.has("referencia"));
-        boolean reglasVigentes = pago.getHuellaReglas()!=null && pago.getHuellaReglas().equals(PagoCrypto.huella(
-                snapshotReglas(payload.path("idProducto").asInt(),payload.path("idServicio").asInt(),pago.getTipoFront())));
-        boolean disponible = pago.getEstado() == PagoEntity.Estado.PREPARADO && Instant.now().isBefore(pago.getVenceEn())
-                && reglasVigentes && pago.isReferenciaValidada() && (!esTipo4 || (!reglaInvalida && importeReferenciaPermitido(pago.getMonto(), deuda, regla)));
-        if (pago.getEstado() == PagoEntity.Estado.PREPARADO && esTipo4) {
-            if (deuda == null) aviso = "No hay una consulta de deuda verificable. Aun no se ha cobrado.";
-            else if (deuda.signum() <= 0) aviso = "La referencia no presenta deuda pendiente. No se habilita el cobro.";
-            else if (!disponible) aviso = "El importe solicitado no cumple las condiciones de pago. Cancela y prepara nuevamente; aun no se ha cobrado.";
-        }
-        if (pago.getEstado()==PagoEntity.Estado.PREPARADO && !reglasVigentes)
-            aviso="Las condiciones de pago cambiaron; cancela y prepara una nueva solicitud. Aun no se ha cobrado.";
-        String telefono = payload.has("referencia") || pago.isRequierePin() ? null : payload.path("telefono").asText();
-        String referencia = payload.has("referencia") ? payload.path("referencia").asText() : null;
-        return new PagoResponse(pago.getId(), pago.getEstado().name(), pago.getUpc(), pago.getNumeroCuenta(), pago.getConcepto(),
-                pago.getMonto(), BigDecimal.ZERO,
-                pago.getVenceEn(), pago.getIdTransaccion(), pago.getAutorizacion(), pin, leyenda, aviso, telefono, referencia,
-                deuda, pago.getConsultaReferenciaEn(), esTipo4 ? (regla == null ? "HASTA_SALDO_SIN_POLITICA" : regla.modalidad().name()) : null, disponible);
+        return aviso;
+    }
+    private boolean esReferencia(PagoEntity pago, com.fasterxml.jackson.databind.JsonNode payload) {
+        return Objects.equals(pago.getTipoFront(), 4) || pago.getConsultaReferenciaCifrada() != null
+                || (pago.getTipoFront() == null && payload.has(CAMPO_REFERENCIA));
+    }
+    private boolean reglasVigentes(PagoEntity pago, com.fasterxml.jackson.databind.JsonNode payload) {
+        return pago.getHuellaReglas() != null && pago.getHuellaReglas().equals(PagoCrypto.huella(
+                snapshotReglas(payload.path(CAMPO_ID_PRODUCTO).asInt(), payload.path(CAMPO_ID_SERVICIO).asInt(), pago.getTipoFront())));
+    }
+    private boolean disponibleParaAutorizar(PagoEntity pago, com.fasterxml.jackson.databind.JsonNode payload,
+            BigDecimal deuda, PagoProperties.ReglaReferencia regla, boolean esTipo4, boolean reglasVigentes) {
+        var configuradas = properties.getReglasReferenciaPorProducto();
+        boolean reglaInvalida = regla == null && configuradas != null && configuradas.containsKey(payload.path(CAMPO_ID_PRODUCTO).asInt());
+        return pago.getEstado() == PagoEntity.Estado.PREPARADO && Instant.now().isBefore(pago.getVenceEn())
+                && reglasVigentes && pago.isReferenciaValidada()
+                && (!esTipo4 || (!reglaInvalida && importeReferenciaPermitido(pago.getMonto(), deuda, regla)));
+    }
+    private String avisoPreparacion(PagoEntity pago, BigDecimal deuda, boolean esTipo4, boolean disponible,
+                                     boolean reglasVigentes, String aviso) {
+        if (pago.getEstado() != PagoEntity.Estado.PREPARADO) return aviso;
+        if (!reglasVigentes) return "Las condiciones de pago cambiaron; cancela y prepara una nueva solicitud. Aun no se ha cobrado.";
+        if (!esTipo4) return aviso;
+        if (deuda == null) return "No hay una consulta de deuda verificable. Aun no se ha cobrado.";
+        if (deuda.signum() <= 0) return "La referencia no presenta deuda pendiente. No se habilita el cobro.";
+        if (!disponible) return "El importe solicitado no cumple las condiciones de pago. Cancela y prepara nuevamente; aun no se ha cobrado.";
+        return aviso;
+    }
+    private String modalidadReferencia(boolean esTipo4, PagoProperties.ReglaReferencia regla) {
+        if (!esTipo4) return null;
+        return regla == null ? "HASTA_SALDO_SIN_POLITICA" : regla.modalidad().name();
     }
     private BigDecimal saldoReferencia(PagoEntity pago) {
         if (pago.getConsultaReferenciaCifrada() == null) return null;
@@ -337,9 +408,9 @@ public class PagoLedger {
     }
     private PagoProperties.ReglaReferencia reglaReferencia(com.fasterxml.jackson.databind.JsonNode payload) {
         var reglas = properties.getReglasReferenciaPorProducto();
-        var regla = reglas == null ? null : reglas.get(payload.path("idProducto").asInt());
+        var regla = reglas == null ? null : reglas.get(payload.path(CAMPO_ID_PRODUCTO).asInt());
         return regla != null && regla.modalidad() != null
-                && Objects.equals(regla.idServicio(), payload.path("idServicio").asInt()) ? regla : null;
+                && Objects.equals(regla.idServicio(), payload.path(CAMPO_ID_SERVICIO).asInt()) ? regla : null;
     }
     private boolean importeReferenciaPermitido(BigDecimal monto, BigDecimal deuda, PagoProperties.ReglaReferencia regla) {
         if (deuda == null || deuda.signum() <= 0) return false;
@@ -352,17 +423,17 @@ public class PagoLedger {
     private void validarImporteReferencia(PagoEntity pago, com.fasterxml.jackson.databind.JsonNode payload) {
         var regla = reglaReferencia(payload);
         var configuradas = properties.getReglasReferenciaPorProducto();
-        if (regla == null && configuradas != null && configuradas.containsKey(payload.path("idProducto").asInt()))
+        if (regla == null && configuradas != null && configuradas.containsKey(payload.path(CAMPO_ID_PRODUCTO).asInt()))
             throw error(HttpStatus.SERVICE_UNAVAILABLE, "Regla de referencia invalida");
         if (!importeReferenciaPermitido(pago.getMonto(), saldoReferencia(pago), regla))
             throw error(HttpStatus.CONFLICT, "El importe no corresponde a la deuda y regla confirmadas");
     }
     private boolean abierto(PagoEntity pago) { return pago.getEstado() == PagoEntity.Estado.ENVIADO || pago.getEstado() == PagoEntity.Estado.PENDIENTE; }
     private PagoEntity bloquearPropio(UUID id, UUID actor) {
-        var pago = pagos.bloquear(id).orElseThrow(() -> error(HttpStatus.NOT_FOUND, "Pago no disponible")); propio(pago, actor); return pago;
+        var pago = pagos.bloquear(id).orElseThrow(() -> error(HttpStatus.NOT_FOUND, PAGO_NO_DISPONIBLE)); propio(pago, actor); return pago;
     }
     private void propio(PagoEntity pago, UUID actor) {
-        if (!pago.getUsuarioId().equals(actor)) throw error(HttpStatus.NOT_FOUND, "Pago no disponible");
+        if (!pago.getUsuarioId().equals(actor)) throw error(HttpStatus.NOT_FOUND, PAGO_NO_DISPONIBLE);
     }
     private UserEntity usuarioActivo(UUID actor) {
         var user = usuarios.bloquearUsuarioDeSesion(actor).orElseThrow(() -> error(HttpStatus.FORBIDDEN, "Usuario no disponible"));
@@ -385,7 +456,8 @@ public class PagoLedger {
                 && valor.compareTo(new BigDecimal("99999999999999999.99")) <= 0;
     }
     private void validarPresupuesto(UUID actor, BigDecimal monto) {
-        BigDecimal operacion = properties.getMaximoPorOperacion(), diario = properties.getMaximoDiarioPorCliente();
+        BigDecimal operacion = properties.getMaximoPorOperacion();
+        BigDecimal diario = properties.getMaximoDiarioPorCliente();
         if ((operacion != null && !importeConfigurable(operacion)) || (diario != null && !importeConfigurable(diario)))
             throw error(HttpStatus.SERVICE_UNAVAILABLE, "Limites del negocio no verificables");
         if (operacion != null && monto.compareTo(operacion) > 0)
@@ -454,7 +526,8 @@ public class PagoLedger {
         pago.setIntentoConfirmacion(null); pago.setProximaConfirmacion(null);
     }
     private void programarConfirmacion(PagoEntity pago) {
-        Instant ahora = Instant.now(), limite = pago.getEnviadoEn().plus(Duration.ofHours(24));
+        Instant ahora = Instant.now();
+        Instant limite = pago.getEnviadoEn().plus(Duration.ofHours(24));
         if (!ahora.isBefore(limite)) { revisar(pago, "VENTANA_CONFIRMACION_VENCIDA"); return; }
         // Do not shorten an in-flight worker's persisted lease when a late send response arrives.
         if (pago.getIntentoConfirmacion() != null && pago.getProximaConfirmacion() != null

@@ -20,12 +20,24 @@ class RegistrarClienteRequestValidationTest {
 
     private final Validator validator = Validation.buildDefaultValidatorFactory().getValidator();
 
+    @ParameterizedTest
+    @ValueSource(strings = {"", " ", "\t\n", "uno@example.com\n", "\nuno@example.com"})
+    void consultaRechazaCorreoVacioOEspaciosYSaltosDeLinea(String correo) {
+        assertThat(validator.validateValue(ConsultaClientesRequest.class, "correo", correo)).isNotEmpty();
+    }
+
     @Test
     void aceptaRegistroValido() {
         assertThat(validator.validate(request(
                 "MOMA900101HDFRRR01", "MOMA900101AB1", LocalDate.of(1990, 1, 1),
                 "5512345678", new BigDecimal("1000.00"), "06000"
         ))).isEmpty();
+    }
+
+    @Test
+    void rfcAceptaEnieMayusculaYMinuscula() {
+        assertThat(validator.validateValue(RegistrarClienteRequest.class, "rfc", "ABCÑ900101AB1")).isEmpty();
+        assertThat(validator.validateValue(RegistrarClienteRequest.class, "rfc", "abcñ900101ab1")).isEmpty();
     }
 
     @ParameterizedTest
@@ -107,6 +119,14 @@ class RegistrarClienteRequestValidationTest {
                 "marco@example.com", "Segura123!");
 
         assertThat(validator.validate(valido)).isEmpty();
+    }
+
+    @Test
+    void nombresLargosNoAgotanLaPilaDuranteLaValidacion() {
+        String valor = "A ".repeat(10000) + "1";
+        for (Class<?> dto : List.of(RegistrarClienteRequest.class, ActualizarClienteRequest.class)) {
+            assertThat(validator.validateValue(dto, "nombre", valor)).isNotEmpty();
+        }
     }
 
     @Test

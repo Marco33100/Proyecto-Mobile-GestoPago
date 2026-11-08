@@ -7,6 +7,8 @@ import com.proyecto.servicios.repositorys.sf.UserRepository;
 import com.proyecto.servicios.service.Impl.ExecutiveBootstrapService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import java.time.Instant;
@@ -15,6 +17,26 @@ import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 class ExecutiveBootstrapServiceTest {
+    @ParameterizedTest
+    @ValueSource(strings = {"a@b", "a@.c", "a@b.", "a@@b.c", "a b@c.d", "a@b.c ", "@b.c"})
+    void rechazaCorreosSinPartesRequeridasOConSeparadoresInvalidos(String correo) {
+        var configuracion = new ExecutiveBootstrapProperties();
+        configuracion.setEnabled(true);
+        configuracion.setPassword("Segura123!");
+        configuracion.setEmail(correo);
+        assertThat(configuracion.isValidConfiguration()).isFalse();
+    }
+
+    @Test
+    void correoConDominioInvalidoNoSeAceptaAunqueContengaMuchosPuntos() {
+        var configuracion = new ExecutiveBootstrapProperties();
+        configuracion.setEnabled(true);
+        configuracion.setPassword("Segura123!");
+        configuracion.setEmail("a@" + ".".repeat(80) + " ");
+        assertThat(configuracion.isValidConfiguration()).isFalse();
+        configuracion.setEmail("a@b.c");
+        assertThat(configuracion.isValidConfiguration()).isTrue();
+    }
     private UserRepository usuarios;
     private ExecutiveBootstrapProperties properties;
     private BCryptPasswordEncoder encoder;

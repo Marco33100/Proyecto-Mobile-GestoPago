@@ -13,7 +13,7 @@ public record ActualizarDomicilioRequest(
         @NotBlank @Size(max = 100) String colonia,
         @NotBlank @Size(max = 100) String municipio,
         @NotBlank @Size(max = 100) String estado,
-        @NotBlank @Pattern(regexp = "^[0-9]{5}$", message = "debe contener exactamente 5 digitos")
+        @NotBlank @Pattern(regexp = "^\\d{5}$", message = "debe contener exactamente 5 digitos")
         String codigoPostal,
         @NotBlank @Size(max = 60) String pais
 ) implements SolicitudJson {

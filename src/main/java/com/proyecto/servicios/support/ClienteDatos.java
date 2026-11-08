@@ -2,6 +2,7 @@ package com.proyecto.servicios.support;
 
 import com.proyecto.servicios.exception.cliente.ClienteValidationException;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.Locale;
 import java.util.regex.Pattern;
 
@@ -34,7 +35,7 @@ public final class ClienteDatos {
     }
 
     public static void validarMayoriaDeEdad(LocalDate fechaNacimiento) {
-        if (!esMayorDeEdad(fechaNacimiento, LocalDate.now())) {
+        if (!esMayorDeEdad(fechaNacimiento, LocalDate.now(ZoneId.systemDefault()))) {
             throw new ClienteValidationException("El cliente debe tener al menos 18 anos");
         }
     }

@@ -20,6 +20,7 @@ public class PublicSecurityConfiguration {
     public SecurityFilterChain publicSecurityFilterChain(HttpSecurity http,
             RestAuthenticationEntryPoint authenticationEntryPoint) throws Exception {
         return http
+                // Este perfil solo permite salud/documentacion y deniega las operaciones de la API.
                 .csrf(csrf -> csrf.disable())
                 .sessionManagement(session ->
                         session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))

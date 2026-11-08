@@ -21,15 +21,21 @@ public class PagoReconciliador {
         if (!properties.isEnabled()) return;
         try {
             for (var id : ledger.pendientes()) {
-                try {
-                    var confirmacion = ledger.reclamarConfirmacion(id);
-                    if (confirmacion == null) continue;
-                    PagoGateway.Respuesta resultado;
-                    try { resultado = gateway.confirmar(confirmacion.json()); }
-                    catch (Exception e) { resultado = PagoGateway.Respuesta.incierta(); }
-                    ledger.resolverConfirmacion(confirmacion, resultado);
-                } catch (Exception e) { log.warn("Confirmacion de pago pendiente: {}", e.getClass().getSimpleName()); }
+                reconciliarPago(id);
             }
         } catch (Exception e) { log.warn("Conciliacion temporalmente no disponible: {}", e.getClass().getSimpleName()); }
+    }
+
+    private void reconciliarPago(java.util.UUID id) {
+        try {
+            var confirmacion = ledger.reclamarConfirmacion(id);
+            if (confirmacion == null) return;
+            ledger.resolverConfirmacion(confirmacion, confirmar(confirmacion));
+        } catch (Exception e) { log.warn("Confirmacion de pago pendiente: {}", e.getClass().getSimpleName()); }
+    }
+
+    private PagoGateway.Respuesta confirmar(PagoLedger.Confirmacion confirmacion) {
+        try { return gateway.confirmar(confirmacion.json()); }
+        catch (Exception e) { return PagoGateway.Respuesta.incierta(); }
     }
 }

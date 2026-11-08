@@ -24,6 +24,9 @@ import java.util.UUID;
 @Slf4j
 @Service
 public class JwtTokenService {
+    private static final String CLAIM_EMAIL = "email";
+    private static final String CLAIM_IDENTIFIER = "identifier";
+    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
     private final SecretKey signingKey;
     private final JwtParser parser;
@@ -52,8 +55,8 @@ public class JwtTokenService {
                 .issuer(issuer)
                 .issuedAt(Date.from(issuedAt))
                 .expiration(Date.from(expiresAt))
-                .claim("email", user.email())
-                .claim("identifier", user.identifier())
+                .claim(CLAIM_EMAIL, user.email())
+                .claim(CLAIM_IDENTIFIER, user.identifier())
                 .signWith(signingKey)
                 .compact();
         return new TokenResult(token, expiresAt);
@@ -63,15 +66,15 @@ public class JwtTokenService {
         Claims claims = parser.parseSignedClaims(token).getPayload();
         if (claims.getExpiration() == null || claims.getIssuedAt() == null
                 || !claims.getExpiration().after(claims.getIssuedAt())
-                || !StringUtils.hasText(claims.get("email", String.class))
-                || !StringUtils.hasText(claims.get("identifier", String.class))) {
+                || !StringUtils.hasText(claims.get(CLAIM_EMAIL, String.class))
+                || !StringUtils.hasText(claims.get(CLAIM_IDENTIFIER, String.class))) {
             throw new MalformedJwtException("El JWT no contiene los datos de sesion requeridos");
         }
         return new AuthenticatedUser(
                 UUID.fromString(claims.getSubject()),
                 UUID.fromString(claims.getId()),
-                claims.get("email", String.class),
-                claims.get("identifier", String.class)
+                claims.get(CLAIM_EMAIL, String.class),
+                claims.get(CLAIM_IDENTIFIER, String.class)
         );
     }
 
@@ -85,7 +88,7 @@ public class JwtTokenService {
         }
 
         byte[] generatedSecret = new byte[32];
-        new SecureRandom().nextBytes(generatedSecret);
+        SECURE_RANDOM.nextBytes(generatedSecret);
         log.warn("AUTH_JWT_SECRET no esta configurado; se usara una llave temporal hasta reiniciar la aplicacion");
         return Keys.hmacShaKeyFor(generatedSecret);
     }

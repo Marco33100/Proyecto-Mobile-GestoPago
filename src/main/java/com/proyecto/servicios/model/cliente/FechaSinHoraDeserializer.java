@@ -13,7 +13,7 @@ import java.util.regex.Pattern;
 
 /** Fecha de calendario: no convertir timestamps, numeros o arrays a una fecha. */
 public final class FechaSinHoraDeserializer extends JsonDeserializer<LocalDate> {
-    private static final Pattern FORMATO = Pattern.compile("[0-9]{4}-[0-9]{2}-[0-9]{2}");
+    private static final Pattern FORMATO = Pattern.compile("\\d{4}-\\d{2}-\\d{2}");
 
     @Override
     public LocalDate deserialize(JsonParser parser, DeserializationContext context) throws IOException {
