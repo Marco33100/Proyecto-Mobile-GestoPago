@@ -100,8 +100,9 @@ class ClienteRegistroServiceImplTest {
     void noGuardaNadaSiLaCurpYaExiste() {
         when(clienteRepository.existsByCurp("MOMA900101HDFRRR01")).thenReturn(true);
 
-        assertThrows(CurpDuplicadaException.class,
-                () -> service.registrar(request()));
+        var solicitud = request();
+
+        assertThrows(CurpDuplicadaException.class, () -> service.registrar(solicitud));
 
         verify(clienteRepository, never()).saveAndFlush(any(ClienteEntity.class));
         verify(domicilioRepository, never()).saveAndFlush(any(DomicilioEntity.class));
@@ -124,23 +125,24 @@ class ClienteRegistroServiceImplTest {
     @Test
     void rechazaRfcDuplicado() {
         when(clienteRepository.existsByRfc("MOMA900101AB1")).thenReturn(true);
-        assertThrows(RfcDuplicadoException.class,
-                () -> service.registrar(request()));
+        var solicitud = request();
+        assertThrows(RfcDuplicadoException.class, () -> service.registrar(solicitud));
         verify(clienteRepository, never()).saveAndFlush(any(ClienteEntity.class));
     }
 
     @Test
     void rechazaCorreoDuplicado() {
         when(clienteRepository.existsByCorreo("marco@example.com")).thenReturn(true);
-        assertThrows(ClienteYaRegistradoException.class,
-                () -> service.registrar(request()));
+        var solicitud = request();
+        assertThrows(ClienteYaRegistradoException.class, () -> service.registrar(solicitud));
         verify(clienteRepository, never()).saveAndFlush(any(ClienteEntity.class));
     }
 
     @Test
     void noRegistraClienteSiYaExisteUsuarioConElCorreo() {
         when(userRepository.existsByEmailOrIdentifier("marco@example.com")).thenReturn(true);
-        assertThrows(ClienteYaRegistradoException.class, () -> service.registrar(request()));
+        var solicitud = request();
+        assertThrows(ClienteYaRegistradoException.class, () -> service.registrar(solicitud));
         verify(clienteRepository, never()).saveAndFlush(any(ClienteEntity.class));
         verify(userRepository, never()).saveAndFlush(any(UserEntity.class));
         verify(userRepository).existsByEmailOrIdentifier("marco@example.com");
@@ -152,6 +154,7 @@ class ClienteRegistroServiceImplTest {
         when(passwordEncoder.encode("Segura123!")).thenReturn("hash-bcrypt");
         when(userRepository.saveAndFlush(any(UserEntity.class)))
                 .thenThrow(new DataAccessResourceFailureException("fallo"));
-        assertThrows(ClientePersistenceException.class, () -> service.registrar(request()));
+        var solicitud = request();
+        assertThrows(ClientePersistenceException.class, () -> service.registrar(solicitud));
     }
 }

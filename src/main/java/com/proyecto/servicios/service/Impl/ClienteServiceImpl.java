@@ -93,48 +93,29 @@ public class ClienteServiceImpl implements ClienteService {
         String correo = request.getCorreo() == null ? null : normalizarCorreo(request.getCorreo());
         String numero = request.getNumeroCuenta() == null ? null
                 : com.proyecto.servicios.support.CuentaDatos.normalizarNumeroCuenta(request.getNumeroCuenta());
-        return buscar(request.getPagina(), request.getTamanio(), request.getNombre(), request.getRfc(),
-                request.getCurp(), request.getActivo(), request.getDesde(), request.getHasta(),
-                request.getId(), correo, numero);
+        return buscar(request, correo, numero);
     }
 
-    private PaginaResponse<ClienteResponse> buscar(int pagina, int tamanio, String nombre, String rfc, String curp,
-            Boolean activo, LocalDate desde, LocalDate hasta, Long id, String correo, String numeroCuenta) {
-        nombre = textoBusqueda(nombre, 50);
-        rfc = textoBusqueda(rfc, 13);
-        curp = textoBusqueda(curp, 18);
+    private PaginaResponse<ClienteResponse> buscar(ConsultaClientesRequest request, String correo, String numeroCuenta) {
+        String nombre = textoBusqueda(request.getNombre(), 50);
+        String rfc = textoBusqueda(request.getRfc(), 13);
+        String curp = textoBusqueda(request.getCurp(), 18);
+        LocalDate desde = request.getDesde();
+        LocalDate hasta = request.getHasta();
         if (desde != null && hasta != null && desde.isAfter(hasta)) {
             throw new ClienteValidationException("La fecha desde no puede ser posterior a hasta");
         }
-        PaginacionDatos.validar(pagina, tamanio);
+        PaginacionDatos.validar(request.getPagina(), request.getTamanio());
         Instant inicio = desde == null ? null : desde.atStartOfDay(ZoneOffset.UTC).toInstant();
-        Instant finExclusivo = null;
-        if (hasta != null) {
-            try {
-                finExclusivo = hasta.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant();
-            } catch (DateTimeException exception) {
-                throw new ClienteValidationException("La fecha hasta no permite calcular el limite del rango");
-            }
-        }
-        var filtro = ClienteSpecification.filtrosExactos(id, correo, numeroCuenta, activo, inicio, finExclusivo);
+        Instant finExclusivo = finExclusivo(hasta);
+        var filtro = ClienteSpecification.filtrosExactos(request.getId(), correo, numeroCuenta, request.getActivo(), inicio, finExclusivo);
         try {
-            PageRequest paginacion = PageRequest.of(pagina, tamanio,
+            PageRequest paginacion = PageRequest.of(request.getPagina(), request.getTamanio(),
                     Sort.by("fechaCreacion", "id").descending());
-            boolean identificadorExacto = id != null || correo != null || numeroCuenta != null;
-            boolean sinFiltros = !identificadorExacto && activo == null && desde == null && hasta == null;
+            boolean identificadorExacto = request.getId() != null || correo != null || numeroCuenta != null;
+            boolean sinFiltros = !identificadorExacto && request.getActivo() == null && desde == null && hasta == null;
             Specification<ClienteEntity> coincidencias = ClienteSpecification.coincidencias(nombre, rfc, curp);
-            Page<ClienteEntity> clientes;
-            if (coincidencias == null) {
-                clientes = sinFiltros ? clienteRepository.findAll(paginacion)
-                        : clienteRepository.findAll(filtro, paginacion);
-            } else {
-                clientes = clienteRepository.findAll(filtro.and(coincidencias), paginacion);
-                // No confundir una pagina vacia fuera de rango con ausencia total de coincidencias.
-                if (clientes.getTotalElements() == 0) {
-                    clientes = sinFiltros ? clienteRepository.findAll(paginacion)
-                            : clienteRepository.findAll(filtro, paginacion);
-                }
-            }
+            Page<ClienteEntity> clientes = consultarPagina(filtro, coincidencias, paginacion, sinFiltros);
             if (identificadorExacto && clientes.getTotalElements() == 0) {
                 throw new ClienteNoEncontradoException("No existe el cliente solicitado");
             }
@@ -145,6 +126,25 @@ public class ClienteServiceImpl implements ClienteService {
             log.error("Error al consultar clientes con filtros: {}", exception.getClass().getSimpleName());
             throw new ClientePersistenceException("No fue posible consultar los clientes", exception);
         }
+    }
+
+    private Instant finExclusivo(LocalDate hasta) {
+        if (hasta == null) return null;
+        try {
+            return hasta.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant();
+        } catch (DateTimeException exception) {
+            throw new ClienteValidationException("La fecha hasta no permite calcular el limite del rango");
+        }
+    }
+
+    private Page<ClienteEntity> consultarPagina(Specification<ClienteEntity> filtro,
+            Specification<ClienteEntity> coincidencias, PageRequest paginacion, boolean sinFiltros) {
+        if (coincidencias != null) {
+            var clientes = clienteRepository.findAll(filtro.and(coincidencias), paginacion);
+            // Una pagina fuera de rango conserva el total y no activa el fallback.
+            if (clientes.getTotalElements() > 0) return clientes;
+        }
+        return sinFiltros ? clienteRepository.findAll(paginacion) : clienteRepository.findAll(filtro, paginacion);
     }
 
     private String textoBusqueda(String texto, int maximo) {
@@ -321,24 +321,11 @@ public class ClienteServiceImpl implements ClienteService {
             String correoNormalizado,
             Instant ahora
     ) {
-        cliente.actualizar(
-                normalizarTexto(request.nombre()),
-                normalizarOpcional(request.segundoNombre()),
-                normalizarTexto(request.apellidoPaterno()),
-                normalizarTexto(request.apellidoMaterno()),
-                request.fechaNacimiento(),
-                request.sexo(),
-                normalizarTexto(request.nacionalidad()),
-                request.estadoCivil(),
-                normalizarOpcional(request.referenciaReconocimientoFacial()),
-                correoNormalizado,
-                request.telefonoMovil(),
-                normalizarOpcional(request.telefonoAlternativo()),
-                normalizarTexto(request.ocupacion()),
-                normalizarTexto(request.empresa()),
-                request.ingresoMensual(),
-                ahora
-        );
+        cliente.actualizar(new ClienteEntity.Nombre(normalizarTexto(request.nombre()), normalizarOpcional(request.segundoNombre()), normalizarTexto(request.apellidoPaterno()), normalizarTexto(request.apellidoMaterno())),
+                new ClienteEntity.Perfil(request.fechaNacimiento(), request.sexo(), normalizarTexto(request.nacionalidad()), request.estadoCivil(), normalizarOpcional(request.referenciaReconocimientoFacial())),
+                new ClienteEntity.Contacto(correoNormalizado, request.telefonoMovil(), normalizarOpcional(request.telefonoAlternativo())),
+                new ClienteEntity.Empleo(normalizarTexto(request.ocupacion()), normalizarTexto(request.empresa()), request.ingresoMensual()),
+                ahora);
     }
 
     private void actualizarDomicilio(
@@ -346,17 +333,9 @@ public class ClienteServiceImpl implements ClienteService {
             ActualizarDomicilioRequest request,
             Instant ahora
     ) {
-        domicilio.actualizar(
-                normalizarTexto(request.calle()),
-                normalizarTexto(request.numeroExterior()),
-                normalizarOpcional(request.numeroInterior()),
-                normalizarTexto(request.colonia()),
-                normalizarTexto(request.municipio()),
-                normalizarTexto(request.estado()),
-                request.codigoPostal(),
-                normalizarTexto(request.pais()),
-                ahora
-        );
+        domicilio.actualizar(new DomicilioEntity.DatosCalle(normalizarTexto(request.calle()), normalizarTexto(request.numeroExterior()), normalizarOpcional(request.numeroInterior()), normalizarTexto(request.colonia())),
+                new DomicilioEntity.Localidad(normalizarTexto(request.municipio()), normalizarTexto(request.estado()), request.codigoPostal(), normalizarTexto(request.pais())),
+                ahora);
     }
 
 }

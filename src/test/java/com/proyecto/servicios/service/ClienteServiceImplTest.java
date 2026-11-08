@@ -51,6 +51,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -144,8 +145,8 @@ class ClienteServiceImplTest {
         when(clienteRepository.findAll(org.mockito.ArgumentMatchers.<Specification<ClienteEntity>>any(), any(Pageable.class)))
                 .thenReturn(org.springframework.data.domain.Page.empty());
 
-        assertThrows(ClienteNoEncontradoException.class,
-                () -> clienteService.consultar(consulta(r -> r.setId(id))));
+        var solicitud = consulta(r -> r.setId(id));
+        assertThrows(ClienteNoEncontradoException.class, () -> clienteService.consultar(solicitud));
         verifyNoInteractions(domicilioRepository, cuentaRepository);
     }
 
@@ -172,26 +173,13 @@ class ClienteServiceImplTest {
     }
 
     private ClienteEntity cliente() {
-        ClienteEntity cliente = new ClienteEntity(
-                "Marco",
-                null,
-                "Morales",
-                "Martinez",
-                LocalDate.of(1990, 1, 1),
+        ClienteEntity cliente = new ClienteEntity(new ClienteEntity.Nombre("Marco", null, "Morales", "Martinez"),
+                new ClienteEntity.Perfil(LocalDate.of(1990, 1, 1), Sexo.MASCULINO, "Mexicana", EstadoCivil.SOLTERO, null),
                 "MOMA900101HDFRRR01",
                 "MOMA900101AB1",
-                Sexo.MASCULINO,
-                "Mexicana",
-                EstadoCivil.SOLTERO,
-                null,
-                "marco@correo.com",
-                "5512345678",
-                null,
-                "Desarrollador",
-                "Empresa",
-                new BigDecimal("30000.00"),
-                Instant.now()
-        );
+                new ClienteEntity.Contacto("marco@correo.com", "5512345678", null),
+                new ClienteEntity.Empleo("Desarrollador", "Empresa", new BigDecimal("30000.00")),
+                Instant.now());
         ReflectionTestUtils.setField(cliente, "id", 1L);
         return cliente;
     }
@@ -210,12 +198,12 @@ class ClienteServiceImplTest {
 
     @Test
     void rechazaRangoDeFechasInvertido() {
-        assertThrows(ClienteValidationException.class,
-                () -> clienteService.consultar(consulta(r -> {
+        var solicitud = consulta(r -> {
                     r.setActivo(true);
                     r.setDesde(LocalDate.of(2026, 10, 3));
                     r.setHasta(LocalDate.of(2026, 10, 1));
-                })));
+                });
+        assertThrows(ClienteValidationException.class, () -> clienteService.consultar(solicitud));
         verifyNoInteractions(clienteRepository, domicilioRepository, cuentaRepository);
     }
 
@@ -230,8 +218,8 @@ class ClienteServiceImplTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("codigo").value(2));
 
-        assertThrows(ClienteValidationException.class,
-                () -> clienteService.consultar(consulta(r -> r.setHasta(LocalDate.MAX))));
+        var solicitud = consulta(r -> r.setHasta(LocalDate.MAX));
+        assertThrows(ClienteValidationException.class, () -> clienteService.consultar(solicitud));
         verifyNoInteractions(clienteRepository, domicilioRepository, cuentaRepository, userRepository, sessionRepository);
     }
 
@@ -240,8 +228,8 @@ class ClienteServiceImplTest {
         when(clienteRepository.findAll(org.mockito.ArgumentMatchers.<Specification<ClienteEntity>>any(),
                 any(Pageable.class)))
                 .thenThrow(new DataAccessResourceFailureException("fallo"));
-        assertThrows(ClientePersistenceException.class,
-                () -> clienteService.consultar(consulta(r -> r.setActivo(true))));
+        var solicitud = consulta(r -> r.setActivo(true));
+        assertThrows(ClientePersistenceException.class, () -> clienteService.consultar(solicitud));
     }
 
     @Test
@@ -261,8 +249,8 @@ class ClienteServiceImplTest {
         assertEquals(2, respuesta.totalElementos());
         verify(domicilioRepository).findAllByClienteIdIn(List.of(1L, 2L));
         verify(cuentaRepository).findAllByClienteIdIn(List.of(1L, 2L));
-        verify(domicilioRepository, org.mockito.Mockito.never()).findByClienteId(any());
-        verify(cuentaRepository, org.mockito.Mockito.never()).findAllByClienteId(any());
+        verify(domicilioRepository, never()).findByClienteId(any());
+        verify(cuentaRepository, never()).findAllByClienteId(any());
         org.mockito.Mockito.verifyNoMoreInteractions(clienteRepository, domicilioRepository, cuentaRepository);
     }
 
@@ -272,8 +260,10 @@ class ClienteServiceImplTest {
         when(clienteRepository.findClienteById(cliente.getId())).thenReturn(cliente);
         when(clienteRepository.existsByCorreoAndIdNot("nuevo@correo.com", cliente.getId())).thenReturn(true);
 
+        var id = cliente.getId();
+        var solicitud = requestActualizacion();
         assertThrows(com.proyecto.servicios.exception.cliente.ClienteYaRegistradoException.class,
-                () -> clienteService.actualizar(cliente.getId(), requestActualizacion()));
+                () -> clienteService.actualizar(id, solicitud));
         verifyNoInteractions(domicilioRepository, cuentaRepository, userRepository);
         verify(clienteRepository).findClienteById(cliente.getId());
         verify(clienteRepository).existsByCorreoAndIdNot("nuevo@correo.com", cliente.getId());
@@ -308,7 +298,7 @@ class ClienteServiceImplTest {
         }));
         assertEquals(3, result.totalElementos());
         assertTrue(result.contenido().isEmpty());
-        verify(clienteRepository, org.mockito.Mockito.never()).findAll(any(Pageable.class));
+        verify(clienteRepository, never()).findAll(any(Pageable.class));
         verifyNoInteractions(domicilioRepository, cuentaRepository);
     }
 
@@ -316,36 +306,28 @@ class ClienteServiceImplTest {
     void falloDeBusquedaNoSeDisfrazaComoListadoGeneral() {
         when(clienteRepository.findAll(org.mockito.ArgumentMatchers.<Specification<ClienteEntity>>any(), any(Pageable.class)))
                 .thenThrow(new DataAccessResourceFailureException("sql privado"));
-        assertThrows(ClientePersistenceException.class,
-                () -> clienteService.consultar(consulta(r -> r.setRfc("MOMA"))));
-        verify(clienteRepository, org.mockito.Mockito.never()).findAll(any(Pageable.class));
+        var solicitud = consulta(r -> r.setRfc("MOMA"));
+        assertThrows(ClientePersistenceException.class, () -> clienteService.consultar(solicitud));
+        verify(clienteRepository, never()).findAll(any(Pageable.class));
     }
 
     @Test
     void busquedaInvalidaDirectaNoConsultaRepositorio() {
-        assertThrows(ClienteValidationException.class,
-                () -> clienteService.consultar(consulta(r -> r.setNombre("a".repeat(51)))));
-        assertThrows(ClienteValidationException.class,
-                () -> clienteService.consultar(consulta(r -> r.setRfc("a".repeat(14)))));
-        assertThrows(ClienteValidationException.class,
-                () -> clienteService.consultar(consulta(r -> r.setCurp("a".repeat(19)))));
+        var nombre = consulta(r -> r.setNombre("a".repeat(51)));
+        var rfc = consulta(r -> r.setRfc("a".repeat(14)));
+        var curp = consulta(r -> r.setCurp("a".repeat(19)));
+        assertThrows(ClienteValidationException.class, () -> clienteService.consultar(nombre));
+        assertThrows(ClienteValidationException.class, () -> clienteService.consultar(rfc));
+        assertThrows(ClienteValidationException.class, () -> clienteService.consultar(curp));
         verifyNoInteractions(clienteRepository, domicilioRepository, cuentaRepository);
     }
 
     private DomicilioEntity domicilio(ClienteEntity cliente) {
-        return new DomicilioEntity(
-                UUID.randomUUID(),
+        return new DomicilioEntity(UUID.randomUUID(),
                 cliente,
-                "Calle Uno",
-                "10",
-                null,
-                "Centro",
-                "Cuauhtemoc",
-                "Ciudad de Mexico",
-                "06000",
-                "Mexico",
-                Instant.now()
-        );
+                new DomicilioEntity.DatosCalle("Calle Uno", "10", null, "Centro"),
+                new DomicilioEntity.Localidad("Cuauhtemoc", "Ciudad de Mexico", "06000", "Mexico"),
+                Instant.now());
     }
 
     private ActualizarClienteRequest requestActualizacion() {

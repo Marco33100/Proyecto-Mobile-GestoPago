@@ -152,8 +152,10 @@ class CuentaMethodSecurityTest {
     void ejecutivoNoUtilizaListadoPersonalDeClientes() {
         SecurityContextHolder.getContext().setAuthentication(UsernamePasswordAuthenticationToken.authenticated(
                 "ejecutivo", null, List.of(new SimpleGrantedAuthority("ROLE_EJECUTIVO"))));
-        runner.run(context -> assertThrows(AccessDeniedException.class,
-                () -> context.getBean(CuentaService.class).consultarPropias(0, 20)));
+        runner.run(context -> {
+            var service = context.getBean(CuentaService.class);
+            assertThrows(AccessDeniedException.class, () -> service.consultarPropias(0, 20));
+        });
         verifyNoInteractions(repository);
     }
 

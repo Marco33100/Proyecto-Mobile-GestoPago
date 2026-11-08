@@ -20,5 +20,7 @@ subprojects {
 }
 
 tasks.register<Delete>("clean") {
+    group = "build"
+    description = "Deletes the shared Flutter build directory."
     delete(rootProject.layout.buildDirectory)
 }

@@ -69,8 +69,9 @@ class UsuarioServiceImplTest {
 
     @Test
     void consultaSinIdentidadAutenticadaNoLlegaAlRepositorio() {
-        assertThatThrownBy(() -> service.consultar(
-                new UsuarioConsultaRequest(usuario.getFullName(), usuario.getEmail()), null))
+        var solicitud1 = new UsuarioConsultaRequest(usuario.getFullName(), usuario.getEmail());
+        UUID idActor1 = null;
+        assertThatThrownBy(() -> service.consultar(solicitud1, idActor1))
                 .isInstanceOf(AccessDeniedException.class);
         verifyNoInteractions(usuarios, sesiones, events);
     }
@@ -81,8 +82,9 @@ class UsuarioServiceImplTest {
         when(usuarios.consultarPropioPorNombreYCorreo("marco martinez", "uno@example.com", actor))
                 .thenReturn(java.util.Optional.of(usuario));
 
-        assertThatThrownBy(() -> service.consultar(
-                new UsuarioConsultaRequest(usuario.getFullName(), usuario.getEmail()), actor))
+        var solicitud2 = new UsuarioConsultaRequest(usuario.getFullName(), usuario.getEmail());
+        var idActor2 = actor;
+        assertThatThrownBy(() -> service.consultar(solicitud2, idActor2))
                 .isInstanceOf(AccessDeniedException.class);
         verifyNoInteractions(sesiones, events);
     }
@@ -92,8 +94,9 @@ class UsuarioServiceImplTest {
         when(usuarios.consultarPropioPorNombreYCorreo("marco martinez", "uno@example.com", usuario.getId()))
                 .thenThrow(new DataAccessResourceFailureException("sql privado"));
 
-        assertThatThrownBy(() -> service.consultar(
-                new UsuarioConsultaRequest(usuario.getFullName(), usuario.getEmail()), usuario.getId()))
+        var solicitud3 = new UsuarioConsultaRequest(usuario.getFullName(), usuario.getEmail());
+        var idActor3 = usuario.getId();
+        assertThatThrownBy(() -> service.consultar(solicitud3, idActor3))
                 .isInstanceOf(AuthPersistenceException.class);
         verifyNoInteractions(sesiones, events);
     }
@@ -104,8 +107,9 @@ class UsuarioServiceImplTest {
         when(usuarios.consultarPropioPorNombreYCorreo("marco martinez", "uno@example.com", usuario.getId()))
                 .thenReturn(java.util.Optional.of(usuario));
 
-        assertThatThrownBy(() -> service.consultar(
-                new UsuarioConsultaRequest(usuario.getFullName(), usuario.getEmail()), usuario.getId()))
+        var solicitud4 = new UsuarioConsultaRequest(usuario.getFullName(), usuario.getEmail());
+        var idActor4 = usuario.getId();
+        assertThatThrownBy(() -> service.consultar(solicitud4, idActor4))
                 .isInstanceOf(UsuarioInactivoException.class);
         verifyNoInteractions(sesiones, events);
     }
@@ -151,17 +155,21 @@ class UsuarioServiceImplTest {
         when(usuarios.findAll(org.mockito.ArgumentMatchers.<Specification<UserEntity>>any(), any(Pageable.class)))
                 .thenThrow(new DataAccessResourceFailureException("sql privado"));
 
-        assertThatThrownBy(() -> service.buscar(new UsuarioBusquedaRequest())).isInstanceOf(AuthPersistenceException.class);
+        var solicitud = new UsuarioBusquedaRequest();
+        assertThatThrownBy(() -> service.buscar(solicitud)).isInstanceOf(AuthPersistenceException.class);
         verifyNoInteractions(sesiones, events);
     }
 
     @Test
     void noPuedeConsultarNiCambiarOtroUsuario() {
         UUID actor = UUID.randomUUID();
-        assertThatThrownBy(() -> service.consultar(
-                new UsuarioConsultaRequest(usuario.getFullName(), usuario.getEmail()), actor))
+        var solicitud5 = new UsuarioConsultaRequest(usuario.getFullName(), usuario.getEmail());
+        var idActor5 = actor;
+        assertThatThrownBy(() -> service.consultar(solicitud5, idActor5))
                 .isInstanceOf(UsuarioNoEncontradoException.class);
-        assertThatThrownBy(() -> service.cambiarContrasena(cambio("Actual123!", "Nueva456!"), actor)).isInstanceOf(UsuarioNoEncontradoException.class);
+        var solicitud6 = cambio("Actual123!", "Nueva456!");
+        var idActor6 = actor;
+        assertThatThrownBy(() -> service.cambiarContrasena(solicitud6, idActor6)).isInstanceOf(UsuarioNoEncontradoException.class);
         verify(usuarios).consultarPropioPorNombreYCorreo("marco martinez", "uno@example.com", actor);
         verify(usuarios).consultarPropioPorNombreYCorreoParaActualizar("marco martinez", "uno@example.com", actor);
         verifyNoMoreInteractions(usuarios);
@@ -184,7 +192,9 @@ class UsuarioServiceImplTest {
     @Test
     void contrasenaActualIncorrectaNoModificaNada() {
         when(usuarios.consultarPropioPorNombreYCorreoParaActualizar("marco martinez", "uno@example.com", usuario.getId())).thenReturn(java.util.Optional.of(usuario));
-        assertThatThrownBy(() -> service.cambiarContrasena(cambio("Incorrecta1!", "Nueva456!"), usuario.getId()))
+        var solicitud7 = cambio("Incorrecta1!", "Nueva456!");
+        var idActor7 = usuario.getId();
+        assertThatThrownBy(() -> service.cambiarContrasena(solicitud7, idActor7))
                 .isInstanceOf(ContrasenaInvalidaException.class);
         verify(usuarios, never()).saveAndFlush(any());
         verifyNoInteractions(sesiones, events);
@@ -192,14 +202,18 @@ class UsuarioServiceImplTest {
 
     @Test
     void nuevaContrasenaSinEspecialSeRechaza() {
-        assertThatThrownBy(() -> service.cambiarContrasena(cambio("Actual123!", "Nueva456"), usuario.getId()))
+        var solicitud8 = cambio("Actual123!", "Nueva456");
+        var idActor8 = usuario.getId();
+        assertThatThrownBy(() -> service.cambiarContrasena(solicitud8, idActor8))
                 .isInstanceOf(ContrasenaInvalidaException.class);
         verifyNoInteractions(usuarios, sesiones, events);
     }
 
     @Test
     void usuarioNoEncontradoTieneExcepcionEspecifica() {
-        assertThatThrownBy(() -> service.consultar(new UsuarioConsultaRequest(usuario.getFullName(), usuario.getEmail()), usuario.getId()))
+        var solicitud9 = new UsuarioConsultaRequest(usuario.getFullName(), usuario.getEmail());
+        var idActor9 = usuario.getId();
+        assertThatThrownBy(() -> service.consultar(solicitud9, idActor9))
                 .isInstanceOf(UsuarioNoEncontradoException.class);
     }
 
@@ -207,7 +221,9 @@ class UsuarioServiceImplTest {
     void usuarioInactivoNoPuedeCambiarContrasena() {
         usuario.desactivar();
         when(usuarios.consultarPropioPorNombreYCorreoParaActualizar("marco martinez", "uno@example.com", usuario.getId())).thenReturn(java.util.Optional.of(usuario));
-        assertThatThrownBy(() -> service.cambiarContrasena(cambio("Actual123!", "Nueva456!"), usuario.getId()))
+        var solicitud10 = cambio("Actual123!", "Nueva456!");
+        var idActor10 = usuario.getId();
+        assertThatThrownBy(() -> service.cambiarContrasena(solicitud10, idActor10))
                 .isInstanceOf(UsuarioInactivoException.class);
         verifyNoInteractions(sesiones, events);
     }
@@ -216,14 +232,18 @@ class UsuarioServiceImplTest {
     void falloPostgresNoSeOcultaComoExito() {
         when(usuarios.consultarPropioPorNombreYCorreoParaActualizar("marco martinez", "uno@example.com", usuario.getId()))
                 .thenThrow(new DataAccessResourceFailureException("fallo"));
-        assertThatThrownBy(() -> service.cambiarContrasena(cambio("Actual123!", "Nueva456!"), usuario.getId()))
+        var solicitud11 = cambio("Actual123!", "Nueva456!");
+        var idActor11 = usuario.getId();
+        assertThatThrownBy(() -> service.cambiarContrasena(solicitud11, idActor11))
                 .isInstanceOf(AuthPersistenceException.class);
         verifyNoInteractions(sesiones, events);
     }
 
     @Test
     void cambioSinIdentidadAutenticadaNoConsultaNiEscribe() {
-        assertThatThrownBy(() -> service.cambiarContrasena(cambio("Actual123!", "Nueva456!"), null))
+        var solicitud12 = cambio("Actual123!", "Nueva456!");
+        UUID idActor12 = null;
+        assertThatThrownBy(() -> service.cambiarContrasena(solicitud12, idActor12))
                 .isInstanceOf(AccessDeniedException.class);
         verifyNoInteractions(usuarios, sesiones, events);
     }
@@ -245,7 +265,9 @@ class UsuarioServiceImplTest {
         UUID actor = UUID.randomUUID();
         when(usuarios.consultarPropioPorNombreYCorreoParaActualizar("marco martinez", "uno@example.com", actor))
                 .thenReturn(java.util.Optional.of(usuario));
-        assertThatThrownBy(() -> service.cambiarContrasena(cambio("Actual123!", "Nueva456!"), actor))
+        var solicitud13 = cambio("Actual123!", "Nueva456!");
+        var idActor13 = actor;
+        assertThatThrownBy(() -> service.cambiarContrasena(solicitud13, idActor13))
                 .isInstanceOf(AccessDeniedException.class);
         verify(usuarios, never()).saveAndFlush(any());
         verifyNoInteractions(sesiones, events);
@@ -255,7 +277,9 @@ class UsuarioServiceImplTest {
     void contrasenaNuevaIgualALaActualNoEscribeNiRevocaSesion() {
         when(usuarios.consultarPropioPorNombreYCorreoParaActualizar("marco martinez", "uno@example.com", usuario.getId()))
                 .thenReturn(java.util.Optional.of(usuario));
-        assertThatThrownBy(() -> service.cambiarContrasena(cambio("Actual123!", "Actual123!"), usuario.getId()))
+        var solicitud14 = cambio("Actual123!", "Actual123!");
+        var idActor14 = usuario.getId();
+        assertThatThrownBy(() -> service.cambiarContrasena(solicitud14, idActor14))
                 .isInstanceOf(ContrasenaInvalidaException.class);
         verify(usuarios, never()).saveAndFlush(any());
         verifyNoInteractions(sesiones, events);

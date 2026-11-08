@@ -18,6 +18,7 @@ import java.net.ConnectException;
 import java.net.SocketTimeoutException;
 import java.time.Duration;
 import java.util.Locale;
+import java.util.concurrent.atomic.AtomicReference;
 
 @Slf4j
 @Service
@@ -29,7 +30,7 @@ public class GestopagoProductGateway {
     private final GestoPagoAccessTokenProvider tokenProvider;
     private final long failureCooldownNanos;
     // Publicar un unico estado evita mezclar el codigo, mensaje y plazo de fallos concurrentes.
-    private volatile FailureCooldown failureCooldown;
+    private final AtomicReference<FailureCooldown> failureCooldown = new AtomicReference<>();
 
     @Autowired
     public GestopagoProductGateway(
@@ -155,19 +156,19 @@ public class GestopagoProductGateway {
     }
 
     private void rejectDuringCooldown() {
-        FailureCooldown currentFailure = failureCooldown;
+        FailureCooldown currentFailure = failureCooldown.get();
         if (currentFailure != null && System.nanoTime() < currentFailure.retryAfterNanos()) {
             throw new ProductIntegrationException(currentFailure.errorType(), currentFailure.message());
         }
     }
 
     private void registerFailure(ProductIntegrationException exception) {
-        failureCooldown = new FailureCooldown(exception.getErrorType(), exception.getMessage(),
-                System.nanoTime() + failureCooldownNanos);
+        failureCooldown.set(new FailureCooldown(exception.getErrorType(), exception.getMessage(),
+                System.nanoTime() + failureCooldownNanos));
     }
 
     private void clearFailure() {
-        failureCooldown = null;
+        failureCooldown.set(null);
     }
 
     private record FailureCooldown(ProductIntegrationErrorType errorType, String message, long retryAfterNanos) {

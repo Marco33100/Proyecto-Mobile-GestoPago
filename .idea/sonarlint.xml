@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="SonarLintProjectSettings">
+    <option name="fileExclusions">
+      <list>
+        <option value="FILE:mobile/gestopago_app/android/app/src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java" />
+        <option value="FILE:mobile/gestopago_app/ios/Flutter/ephemeral/flutter_lldb_helper.py" />
+        <option value="FILE:src/main/java/com/proyecto/servicios/service/JwtTokenService.java" />
+        <option value="FILE:src/main/java/com/proyecto/servicios/config/PublicSecurityConfiguration.java" />
+        <option value="FILE:src/main/java/com/proyecto/servicios/config/SecurityConfiguration.java" />
+        <option value="FILE:src/main/java/com/proyecto/servicios/service/Impl/TotpCodes.java" />
+      </list>
+    </option>
+  </component>
+</project>

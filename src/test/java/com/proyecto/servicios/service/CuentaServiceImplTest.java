@@ -200,12 +200,12 @@ class CuentaServiceImplTest {
     @Test
     void noSePermiteReactivarONoEnviarEstado() {
         String numero = "CTA-0123456789ABCDEF0123";
+        var activar = new com.proyecto.servicios.model.cliente.ActualizarEstadoCuentaRequest(true);
+        var estadoAusente = new com.proyecto.servicios.model.cliente.ActualizarEstadoCuentaRequest(null);
         assertThrows(com.proyecto.servicios.exception.cliente.CuentaConflictException.class,
-                () -> cuentaService.actualizarEstado(numero,
-                        new com.proyecto.servicios.model.cliente.ActualizarEstadoCuentaRequest(true)));
+                () -> cuentaService.actualizarEstado(numero, activar));
         assertThrows(ClienteValidationException.class, () -> cuentaService.actualizarEstado(numero, null));
-        assertThrows(ClienteValidationException.class, () -> cuentaService.actualizarEstado(numero,
-                new com.proyecto.servicios.model.cliente.ActualizarEstadoCuentaRequest(null)));
+        assertThrows(ClienteValidationException.class, () -> cuentaService.actualizarEstado(numero, estadoAusente));
         verifyNoInteractions(cuentaRepository);
     }
 

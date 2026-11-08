@@ -60,52 +60,30 @@ public class DomicilioEntity {
     protected DomicilioEntity() {
     }
 
-    public DomicilioEntity(
-            UUID id,
-            ClienteEntity cliente,
-            String calle,
-            String numeroExterior,
-            String numeroInterior,
-            String colonia,
-            String municipio,
-            String estado,
-            String codigoPostal,
-            String pais,
-            Instant fechaCreacion
-    ) {
+    public record DatosCalle(String calle, String numeroExterior, String numeroInterior, String colonia) { }
+    public record Localidad(String municipio, String estado, String codigoPostal, String pais) { }
+
+    public DomicilioEntity(UUID id, ClienteEntity cliente, DatosCalle calle, Localidad localidad,
+                           Instant fechaCreacion) {
         this.id = id;
         this.cliente = cliente;
-        this.calle = calle;
-        this.numeroExterior = numeroExterior;
-        this.numeroInterior = numeroInterior;
-        this.colonia = colonia;
-        this.municipio = municipio;
-        this.estado = estado;
-        this.codigoPostal = codigoPostal;
-        this.pais = pais;
+        asignarDatos(calle, localidad, fechaCreacion);
         this.fechaCreacion = fechaCreacion;
-        this.fechaActualizacion = fechaCreacion;
     }
 
-    public void actualizar(
-            String calle,
-            String numeroExterior,
-            String numeroInterior,
-            String colonia,
-            String municipio,
-            String estado,
-            String codigoPostal,
-            String pais,
-            Instant fechaActualizacion
-    ) {
-        this.calle = calle;
-        this.numeroExterior = numeroExterior;
-        this.numeroInterior = numeroInterior;
-        this.colonia = colonia;
-        this.municipio = municipio;
-        this.estado = estado;
-        this.codigoPostal = codigoPostal;
-        this.pais = pais;
+    public void actualizar(DatosCalle calle, Localidad localidad, Instant fechaActualizacion) {
+        asignarDatos(calle, localidad, fechaActualizacion);
+    }
+
+    private void asignarDatos(DatosCalle calle, Localidad localidad, Instant fechaActualizacion) {
+        this.calle = calle.calle();
+        this.numeroExterior = calle.numeroExterior();
+        this.numeroInterior = calle.numeroInterior();
+        this.colonia = calle.colonia();
+        this.municipio = localidad.municipio();
+        this.estado = localidad.estado();
+        this.codigoPostal = localidad.codigoPostal();
+        this.pais = localidad.pais();
         this.fechaActualizacion = fechaActualizacion;
     }
 

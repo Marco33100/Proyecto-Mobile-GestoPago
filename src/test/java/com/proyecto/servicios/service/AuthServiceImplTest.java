@@ -26,7 +26,6 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -84,7 +83,8 @@ class AuthServiceImplTest {
     void loginDeniegaAccesoSiNoPuedeVerificarPostgres() {
         when(userRepository.findByEmailForUpdate("marti@example.com"))
                 .thenThrow(new DataAccessResourceFailureException("database offline"));
-        assertThatThrownBy(() -> service.login(new LoginRequest("marti@example.com", "Password1")))
+        var solicitud = new LoginRequest("marti@example.com", "Password1");
+        assertThatThrownBy(() -> service.login(solicitud))
                 .isInstanceOf(AuthPersistenceException.class);
         org.mockito.Mockito.verifyNoInteractions(jwtTokenService, activeSessionService);
     }
@@ -94,7 +94,8 @@ class AuthServiceImplTest {
         UserEntity user = user("marti@example.com", passwordEncoder.encode("Password1"));
         when(userRepository.findByEmailForUpdate("marti@example.com")).thenReturn(user);
 
-        assertThatThrownBy(() -> service.login(new LoginRequest("marti@example.com", "Wrong1xx")))
+        var solicitud = new LoginRequest("marti@example.com", "Wrong1xx");
+        assertThatThrownBy(() -> service.login(solicitud))
                 .isInstanceOf(InvalidCredentialsException.class)
                 .hasMessage("El correo o la contrasena son incorrectos");
     }
@@ -111,14 +112,16 @@ class AuthServiceImplTest {
         UserEntity user = user("marti@example.com", passwordEncoder.encode("Password1"));
         user.desactivar();
         when(userRepository.findByEmailForUpdate("marti@example.com")).thenReturn(user);
-        assertThatThrownBy(() -> service.login(new LoginRequest("marti@example.com", "Password1")))
+        var solicitud = new LoginRequest("marti@example.com", "Password1");
+        assertThatThrownBy(() -> service.login(solicitud))
                 .isInstanceOf(UsuarioInactivoException.class);
         org.mockito.Mockito.verifyNoInteractions(jwtTokenService, activeSessionService);
     }
 
     @Test
     void deniegaLoginDeUsuarioInexistente() {
-        assertThatThrownBy(() -> service.login(new LoginRequest("nadie@example.com", "Password1")))
+        var solicitud = new LoginRequest("nadie@example.com", "Password1");
+        assertThatThrownBy(() -> service.login(solicitud))
                 .isInstanceOf(UsuarioNoEncontradoException.class);
         org.mockito.Mockito.verifyNoInteractions(jwtTokenService, activeSessionService);
     }

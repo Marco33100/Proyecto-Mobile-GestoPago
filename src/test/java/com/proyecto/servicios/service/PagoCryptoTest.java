@@ -4,7 +4,6 @@ import com.proyecto.servicios.service.Impl.*;
 import org.junit.jupiter.api.Test;
 import javax.crypto.Cipher;
 import javax.crypto.spec.*;
-import java.security.*;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import static org.assertj.core.api.Assertions.*;
@@ -43,8 +42,11 @@ class PagoCryptoTest {
         assertThat(a).isNotEqualTo(b).doesNotContain("sensible");
         assertThat(crypto.revelar(a)).isEqualTo("referencia sensible");
         byte[] bytes = Base64.getDecoder().decode(a); bytes[15] ^= 1;
-        assertThatThrownBy(() -> crypto.revelar(Base64.getEncoder().encodeToString(bytes))).isInstanceOf(IllegalStateException.class);
-        assertThatThrownBy(() -> new PagoCrypto("", "").validarConfiguracion()).isInstanceOf(com.proyecto.servicios.exception.PagoException.class);
+        String alterado = Base64.getEncoder().encodeToString(bytes);
+        var configuracionInvalida = new PagoCrypto("", "");
+        assertThatThrownBy(() -> crypto.revelar(alterado)).isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(configuracionInvalida::validarConfiguracion)
+                .isInstanceOf(com.proyecto.servicios.exception.PagoException.class);
     }
     @Test void upcTieneDiezCaracteresAlfanumericos() {
         var valores = new java.util.HashSet<String>();
@@ -73,7 +75,7 @@ class PagoCryptoTest {
                     "<RESPONSE><MENSAJE><CODIGO>01</CODIGO><SALDO>" + monto + "</SALDO></MENSAJE></RESPONSE>");
             assertThat(resultado.estado()).isEqualTo(PagoGateway.EstadoReferencia.VALIDA);
             assertThat(resultado.saldo()).isEqualByComparingTo(monto);
-            assertThat(resultado.toString()).isEqualTo("Referencia[protegida]");
+            assertThat(resultado).hasToString("Referencia[protegida]");
         }
         assertThat(GestopagoPagoGateway.interpretarReferencia("<RESPONSE><CODIGO>02</CODIGO></RESPONSE>").estado())
                 .isEqualTo(PagoGateway.EstadoReferencia.INVALIDA);

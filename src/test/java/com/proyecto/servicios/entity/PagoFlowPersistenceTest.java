@@ -23,7 +23,6 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import java.math.BigDecimal;
 import java.time.*;
-import java.security.*;
 import java.util.*;
 import java.util.concurrent.*;
 import static org.assertj.core.api.Assertions.*;
@@ -78,9 +77,13 @@ class PagoFlowPersistenceTest {
         ledger = new PagoLedger(pagos, evidencias, cuentas, usuarios, claves, productos, properties, crypto, json, totp, manager);
         actor = UUID.randomUUID(); cuentaId = UUID.randomUUID();
         tx.executeWithoutResult(status -> {
-            var cliente = new ClienteEntity("Juan", null, "Lopez", "Perez", LocalDate.of(1990, 1, 1),
-                    "LOPE900101HDFRRR01", "LOPE900101AB1", Sexo.MASCULINO, "Mexicana", EstadoCivil.SOLTERO,
-                    null, "juan@example.com", "5512345678", null, "Empleado", "Empresa", new BigDecimal("1000"), Instant.now());
+            var cliente = new ClienteEntity(new ClienteEntity.Nombre("Juan", null, "Lopez", "Perez"),
+                new ClienteEntity.Perfil(LocalDate.of(1990, 1, 1), Sexo.MASCULINO, "Mexicana", EstadoCivil.SOLTERO, null),
+                "LOPE900101HDFRRR01",
+                "LOPE900101AB1",
+                new ClienteEntity.Contacto("juan@example.com", "5512345678", null),
+                new ClienteEntity.Empleo("Empleado", "Empresa", new BigDecimal("1000")),
+                Instant.now());
             clientes.saveAndFlush(cliente);
             usuarios.saveAndFlush(new UserEntity(actor, cliente.getCorreo(), "hash", cliente.getNombreCompleto(), cliente, Instant.now()));
             cuentas.saveAndFlush(new CuentaEntity(cuentaId, cliente, "00000000000000000001", new BigDecimal("100.00"), Instant.now()));
@@ -92,11 +95,11 @@ class PagoFlowPersistenceTest {
             producto.setUpdatedAt(LocalDateTime.now()); productos.saveAndFlush(producto);
         });
     }
-    protected Map<String,String> configuracionPersistencia() throws Exception {
+    protected Map<String,String> configuracionPersistencia() {
         return Map.of("hibernate.connection.driver_class","org.h2.Driver", "hibernate.connection.url",
                 "jdbc:h2:mem:"+UUID.randomUUID()+";DB_CLOSE_DELAY=-1;LOCK_TIMEOUT=10000", "hibernate.hbm2ddl.auto","create-drop");
     }
-    protected void limpiarPersistencia() throws Exception { }
+    protected void limpiarPersistencia() throws Exception { /* Sin recursos adicionales en esta prueba. */ }
     @AfterEach void cerrar() throws Exception {
         SecurityContextHolder.clearContext();
         try { if (factory != null) factory.close(); } finally { limpiarPersistencia(); }
@@ -131,7 +134,7 @@ class PagoFlowPersistenceTest {
             return ledger.resolverConfirmacion(new PagoLedger.Confirmacion(id, "", UUID.randomUUID()), resultado);
         return ledger.resolverConfirmacion(reclamarAhora(id), resultado);
     }
-    @Test void retieneSinCobrarYConfirmaUnaSolaVezSinComisionAdicional() throws Exception {
+    @Test void retieneSinCobrarYConfirmaUnaSolaVezSinComisionAdicional() {
         var pago = ledger.preparar(request("20.00"), actor).pago(); saldo("100", "0");
         assertThat(pago.comisionCliente()).isZero();
         assertThat(pago.referencia()).isEqualTo("REF-123");
@@ -140,7 +143,7 @@ class PagoFlowPersistenceTest {
         assertThat(confirmar(pago.pagoId(), aplicado("06", null)).estado()).isEqualTo("APLICADO");
         saldo("80", "0"); confirmar(pago.pagoId(), aplicado("06", null)); saldo("80", "0");
     }
-    @Test void confirmacionNoAplicadaLiberaYFallaDeConfirmacionNoLibera() throws Exception {
+    @Test void confirmacionNoAplicadaLiberaYFallaDeConfirmacionNoLibera() {
         var pago = ledger.preparar(request("20"), actor).pago(); ledger.autorizar(codigoPara(pago), actor);
         confirmar(pago.pagoId(), PagoGateway.Respuesta.noEnviada()); saldo("100", "20");
         confirmar(pago.pagoId(), new PagoGateway.Respuesta(PagoGateway.Estado.RECHAZADO, "70", null, null, null, null, null, null, ""));
@@ -153,13 +156,13 @@ class PagoFlowPersistenceTest {
         assertThatThrownBy(() -> ledger.preparar(alterada, actor)).isInstanceOf(PagoException.class);
         saldo("100", "0");
     }
-    @Test void confirmacionNegativaMientrasEnvioSigueSinCerrarNoLiberaDinero() throws Exception {
+    @Test void confirmacionNegativaMientrasEnvioSigueSinCerrarNoLiberaDinero() {
         var pago = ledger.preparar(request("20"), actor).pago(); ledger.autorizar(codigoPara(pago), actor);
         var negativa = new PagoGateway.Respuesta(PagoGateway.Estado.RECHAZADO, "70", null, null, null, null, null, null, "");
         assertThat(confirmar(pago.pagoId(), negativa).estado()).isEqualTo("REVISION");
         saldo("100", "20");
     }
-    @Test void unaTransaccionDelProveedorNoSeDescuentaEnDosOrdenesDistintas() throws Exception {
+    @Test void unaTransaccionDelProveedorNoSeDescuentaEnDosOrdenesDistintas() {
         var a = ledger.preparar(request("20"), actor).pago();
         var b = ledger.preparar(request("20", "OTRA-FACTURA"), actor).pago();
         ledger.autorizar(codigoPara(a), actor); ledger.autorizar(codigoPara(b), actor);
@@ -182,16 +185,19 @@ class PagoFlowPersistenceTest {
         saldo("75", "0");
         assertThat(ledger.consultar(preparada.pago().pagoId(), actor).aviso()).contains("PIN");
     }
-    @Test void codigoInvalidoCuentaAjenaYMontoInsuficienteNoRetienen() throws Exception {
+    @Test void codigoInvalidoCuentaAjenaYMontoInsuficienteNoRetienen() {
         var pago = ledger.preparar(request("20"), actor).pago();
-        assertThatThrownBy(() -> ledger.autorizar(new AutorizarRequest(pago.pagoId(), "true"), actor)).isInstanceOf(PagoException.class);
+        var idPago = pago.pagoId();
+        var codigoInvalido = new AutorizarRequest(idPago, "true");
+        assertThatThrownBy(() -> ledger.autorizar(codigoInvalido, actor)).isInstanceOf(PagoException.class);
         UUID ajeno = UUID.randomUUID();
-        assertThatThrownBy(() -> ledger.consultar(pago.pagoId(), ajeno)).isInstanceOf(PagoException.class);
+        assertThatThrownBy(() -> ledger.consultar(idPago, ajeno)).isInstanceOf(PagoException.class);
         var firma = codigoPara(pago);
         assertThatThrownBy(() -> ledger.autorizar(firma, ajeno)).isInstanceOf(PagoException.class);
-        assertThatThrownBy(() -> ledger.preparar(request("101"), actor)).isInstanceOf(PagoException.class); saldo("100", "0");
+        var solicitudPago1 = request("101");
+        assertThatThrownBy(() -> ledger.preparar(solicitudPago1, actor)).isInstanceOf(PagoException.class); saldo("100", "0");
     }
-    @Test void cancelarPreparadoImpideAutorizacionTardiaPeroNoRevierteUnEnvio() throws Exception {
+    @Test void cancelarPreparadoImpideAutorizacionTardiaPeroNoRevierteUnEnvio() {
         var pago = ledger.preparar(request("20"), actor).pago(); var firma = codigoPara(pago);
         ledger.cancelar(pago.pagoId(), actor); assertThat(ledger.autorizar(firma, actor)).isNull(); saldo("100", "0");
         var otro = ledger.preparar(request("20"), actor).pago(); ledger.autorizar(codigoPara(otro), actor);
@@ -227,11 +233,11 @@ class PagoFlowPersistenceTest {
             assertThat(List.of(primera.get(15, TimeUnit.SECONDS), segunda.get(15, TimeUnit.SECONDS))).containsExactlyInAnyOrder(true, false); saldo("100", "80");
         } finally { pool.shutdownNow(); }
     }
-    @Test void montoContradictorioSeEscalaSinDebitoNiLiberacion() throws Exception {
+    @Test void montoContradictorioSeEscalaSinDebitoNiLiberacion() {
         var pago = ledger.preparar(request("20"), actor).pago(); ledger.autorizar(codigoPara(pago), actor);
         assertThat(ledger.registrarResultadoEnvio(pago.pagoId(), aplicado("01", "30")).estado()).isEqualTo("REVISION"); saldo("100", "20");
     }
-    @Test void redFueraDeTransaccionYRepeticionNoReenviaSendTx() throws Exception {
+    @Test void redFueraDeTransaccionYRepeticionNoReenviaSendTx() {
         var gateway = mock(PagoGateway.class);
         when(gateway.enviar(any())).thenAnswer(invocation -> { assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse(); return PagoGateway.Respuesta.incierta(); });
         SecurityContextHolder.getContext().setAuthentication(UsernamePasswordAuthenticationToken.authenticated(
@@ -249,26 +255,31 @@ class PagoFlowPersistenceTest {
         assertThat(payload.path("horaLocal").asText()).matches("[0-9]{14}");
         assertThat(payload.has("numeroCuenta")).isFalse();
         assertThat(pagos.findById(pago.pago().pagoId()).orElseThrow().getPayloadCifrado()).doesNotContain("REF-123");
-        assertThatThrownBy(() -> ledger.preparar(new PrepararRequest(UUID.randomUUID(), "00000000000000000001", 99, 1, 2, new BigDecimal("20"), null, "R"), actor)).isInstanceOf(PagoException.class);
+        var productoInvalido = new PrepararRequest(UUID.randomUUID(), "00000000000000000001", 99, 1, 2, new BigDecimal("20"), null, "R");
+        assertThatThrownBy(() -> ledger.preparar(productoInvalido, actor)).isInstanceOf(PagoException.class);
     }
     @Test void montoVariableSinLimitesPuedeAutorizarseYConfiguracionInvalidaSeRechaza() {
         properties.getLimitesPorProducto().clear();
         var pago = ledger.preparar(request("20"), actor).pago();
         assertThat(ledger.autorizar(codigoPara(pago), actor)).isNotNull();
         properties.getLimitesPorProducto().put(1, new PagoProperties.LimiteMonto(2, new BigDecimal("30"), new BigDecimal("10")));
-        assertThatThrownBy(() -> ledger.preparar(request("20", "OTRA"), actor)).isInstanceOf(PagoException.class);
+        var solicitudPago2 = request("20", "OTRA");
+        assertThatThrownBy(() -> ledger.preparar(solicitudPago2, actor)).isInstanceOf(PagoException.class);
         properties.getLimitesPorProducto().put(1, new PagoProperties.LimiteMonto(99, new BigDecimal("1"), new BigDecimal("100")));
-        assertThatThrownBy(() -> ledger.preparar(request("20", "OTRA"), actor)).isInstanceOf(PagoException.class);
+        var solicitudPago3 = request("20", "OTRA");
+        assertThatThrownBy(() -> ledger.preparar(solicitudPago3, actor)).isInstanceOf(PagoException.class);
         assertThat(pagos.count()).isEqualTo(1); saldo("100", "20");
     }
     @Test void rangoDeMontoEsInclusivoYRechazaValoresFueraDeLimites() {
         properties.getLimitesPorProducto().put(1, new PagoProperties.LimiteMonto(2, new BigDecimal("10"), new BigDecimal("30")));
         assertThat(ledger.preparar(request("10"), actor)).isNotNull();
         assertThat(ledger.preparar(request("30"), actor)).isNotNull();
-        assertThatThrownBy(() -> ledger.preparar(request("9.99"), actor)).isInstanceOf(PagoException.class);
-        assertThatThrownBy(() -> ledger.preparar(request("30.01"), actor)).isInstanceOf(PagoException.class); saldo("100", "0");
+        var solicitudPago4 = request("9.99");
+        assertThatThrownBy(() -> ledger.preparar(solicitudPago4, actor)).isInstanceOf(PagoException.class);
+        var solicitudPago5 = request("30.01");
+        assertThatThrownBy(() -> ledger.preparar(solicitudPago5, actor)).isInstanceOf(PagoException.class); saldo("100", "0");
     }
-    @Test void limitesSeRevalidanAntesDeRetenerAunquePreparacionFueraValida() throws Exception {
+    @Test void limitesSeRevalidanAntesDeRetenerAunquePreparacionFueraValida() {
         var pago = ledger.preparar(request("20"), actor).pago(); var firma = codigoPara(pago);
         properties.getLimitesPorProducto().put(1, new PagoProperties.LimiteMonto(2, new BigDecimal("1"), new BigDecimal("10")));
         assertThat(ledger.autorizar(firma, actor)).isNull();
@@ -295,7 +306,8 @@ class PagoFlowPersistenceTest {
     }
     @Test void solicitudNuevaNoDuplicaPagoEquivalenteAunqueCambieCuenta() {
         ledger.preparar(request("20", " REF-123 "), actor);
-        assertThatThrownBy(() -> ledger.preparar(request("20.00"), actor)).isInstanceOf(PagoException.class);
+        var solicitudPago6 = request("20.00");
+        assertThatThrownBy(() -> ledger.preparar(solicitudPago6, actor)).isInstanceOf(PagoException.class);
         tx.executeWithoutResult(status -> cuentas.saveAndFlush(new CuentaEntity(UUID.randomUUID(), cuentas.findById(cuentaId).orElseThrow().getCliente(),
                 "00000000000000000002", new BigDecimal("100"), Instant.now())));
         var otraCuenta = new PrepararRequest(UUID.randomUUID(), "00000000000000000002", 2, 1, 2, new BigDecimal("20"), null, "REF-123");
@@ -311,20 +323,23 @@ class PagoFlowPersistenceTest {
             assertThat(pagos.count()).isEqualTo(1); saldo("100", "0");
         } finally { pool.shutdownNow(); }
     }
-    @Test void pendienteORevisionBloqueanNuevaIntencionSinVentanaArbitraria() throws Exception {
+    @Test void pendienteORevisionBloqueanNuevaIntencionSinVentanaArbitraria() {
         var pago = ledger.preparar(request("20"), actor).pago(); ledger.autorizar(codigoPara(pago), actor);
-        assertThatThrownBy(() -> ledger.preparar(request("20"), actor)).isInstanceOf(PagoException.class);
+        var solicitudPago7 = request("20");
+        assertThatThrownBy(() -> ledger.preparar(solicitudPago7, actor)).isInstanceOf(PagoException.class);
         ledger.registrarResultadoEnvio(pago.pagoId(), PagoGateway.Respuesta.incierta());
-        assertThatThrownBy(() -> ledger.preparar(request("20"), actor)).isInstanceOf(PagoException.class);
+        var solicitudPago8 = request("20");
+        assertThatThrownBy(() -> ledger.preparar(solicitudPago8, actor)).isInstanceOf(PagoException.class);
         confirmar(pago.pagoId(), aplicado("06", "99"));
-        assertThatThrownBy(() -> ledger.preparar(request("20"), actor)).isInstanceOf(PagoException.class); saldo("100", "20");
+        var solicitudPago9 = request("20");
+        assertThatThrownBy(() -> ledger.preparar(solicitudPago9, actor)).isInstanceOf(PagoException.class); saldo("100", "20");
     }
     @Test void preparacionVencidaNoBloqueaNuevaIntencion() {
         var pago = ledger.preparar(request("20"), actor).pago();
         tx.executeWithoutResult(status -> { var p = pagos.findById(pago.pagoId()).orElseThrow(); p.setVenceEn(Instant.now().minusSeconds(1)); pagos.saveAndFlush(p); });
         assertThat(ledger.preparar(request("20"), actor).pago().pagoId()).isNotEqualTo(pago.pagoId());
     }
-    @Test void duplicadoDeOperacionAplicadaConocidaNoDescuentaDosVeces() throws Exception {
+    @Test void duplicadoDeOperacionAplicadaConocidaNoDescuentaDosVeces() {
         var anterior = ledger.preparar(request("20"), actor).pago(); ledger.autorizar(codigoPara(anterior), actor);
         ledger.registrarResultadoEnvio(anterior.pagoId(), aplicado("01", "20")); saldo("80", "0");
         // Successful purchases are not blocked for an invented period; the provider remains authoritative.
@@ -334,14 +349,14 @@ class PagoFlowPersistenceTest {
         assertThat(ledger.consultar(anterior.pagoId(), actor).estado()).isEqualTo("APLICADO");
         assertThat(ledger.consultar(nueva.pagoId(), actor).aviso()).contains("no se realizo un nuevo cargo");
     }
-    @Test void duplicadoExternoDesconocidoNoSeConvierteEnUnNuevoDebitoAlConcodigoPara() throws Exception {
+    @Test void duplicadoExternoDesconocidoNoSeConvierteEnUnNuevoDebitoAlConcodigoPara() {
         var pago = ledger.preparar(request("20"), actor).pago(); ledger.autorizar(codigoPara(pago), actor);
         var duplicada = GestopagoPagoGateway.interpretar("<RESPONSE><CODIGO>06</CODIGO><ID_TX>123</ID_TX><NUM_AUTORIZACION>456</NUM_AUTORIZACION><MONTO>20</MONTO></RESPONSE>", false);
         assertThat(ledger.registrarResultadoEnvio(pago.pagoId(), duplicada).estado()).isEqualTo("PENDIENTE");
         assertThat(confirmar(pago.pagoId(), aplicado("06", null)).estado()).isEqualTo("REVISION"); saldo("100", "20");
         assertThat(pagos.findById(pago.pagoId()).orElseThrow().isDuplicadoProveedor()).isTrue();
     }
-    @Test void duplicadoNoAplicadoConfirmadoLiberaSinCargo() throws Exception {
+    @Test void duplicadoNoAplicadoConfirmadoLiberaSinCargo() {
         var pago = ledger.preparar(request("20"), actor).pago(); ledger.autorizar(codigoPara(pago), actor);
         var duplicada = GestopagoPagoGateway.interpretar("<RESPONSE><CODIGO>06</CODIGO><ID_TX>123</ID_TX><NUM_AUTORIZACION>456</NUM_AUTORIZACION></RESPONSE>", false);
         ledger.registrarResultadoEnvio(pago.pagoId(), duplicada);
@@ -365,7 +380,7 @@ class PagoFlowPersistenceTest {
         assertThat(ledger.autorizar(codigoPara(pago), actor)).isNull(); saldo("100", "0");
         assertThat(ledger.consultar(pago.pagoId(), actor).estado()).isEqualTo("EXPIRADO");
     }
-    @Test void idDeTransaccionAnteriorSinMismoDestinoNoLiberaUnaRetencion() throws Exception {
+    @Test void idDeTransaccionAnteriorSinMismoDestinoNoLiberaUnaRetencion() {
         var anterior = ledger.preparar(request("20", "OTRA-FACTURA"), actor).pago(); ledger.autorizar(codigoPara(anterior), actor);
         ledger.registrarResultadoEnvio(anterior.pagoId(), aplicado("01", "20"));
         var nueva = ledger.preparar(request("20"), actor).pago(); ledger.autorizar(codigoPara(nueva), actor);
@@ -373,7 +388,7 @@ class PagoFlowPersistenceTest {
         ledger.registrarResultadoEnvio(nueva.pagoId(), duplicada);
         assertThat(confirmar(nueva.pagoId(), aplicado("06", null)).estado()).isEqualTo("REVISION"); saldo("80", "20");
     }
-    @Test void respuestaDeConfirmacionAnteriorNoSobrescribeIntentoMasReciente() throws Exception {
+    @Test void respuestaDeConfirmacionAnteriorNoSobrescribeIntentoMasReciente() {
         var pago = ledger.preparar(request("20"), actor).pago(); ledger.autorizar(codigoPara(pago), actor);
         ledger.registrarResultadoEnvio(pago.pagoId(), PagoGateway.Respuesta.incierta());
         var primera = reclamarAhora(pago.pagoId()); var segunda = reclamarAhora(pago.pagoId());
@@ -386,7 +401,7 @@ class PagoFlowPersistenceTest {
         assertThat(evidencias.count()).isEqualTo(4);
         assertThat(evidencias.findAll()).anyMatch(e -> crypto.revelar(e.getContenido()).contains(primera.intento().toString()));
     }
-    @Test void confirmacionFallidaProgramaEsperaCrecienteSinReenviarPago() throws Exception {
+    @Test void confirmacionFallidaProgramaEsperaCrecienteSinReenviarPago() {
         var pago = ledger.preparar(request("20"), actor).pago(); ledger.autorizar(codigoPara(pago), actor);
         ledger.registrarResultadoEnvio(pago.pagoId(), PagoGateway.Respuesta.incierta());
         for (long espera : new long[]{60, 120, 240, 480, 900, 900}) {
@@ -399,7 +414,7 @@ class PagoFlowPersistenceTest {
         }
         assertThat(pagos.findById(pago.pagoId()).orElseThrow().getNumeroConfirmaciones()).isEqualTo(6);
     }
-    @Test void timeoutRealDelGatewayConservaDineroYRepetirAutorizarNoReenvia() throws Exception {
+    @Test void timeoutRealDelGatewayConservaDineroYRepetirAutorizarNoReenvia() {
         var gateway = mock(PagoGateway.class);
         when(gateway.enviar(any())).thenAnswer(invocation -> { throw new java.net.SocketTimeoutException("dato sensible no debe registrarse"); });
         autenticar();
@@ -409,13 +424,15 @@ class PagoFlowPersistenceTest {
         assertThat(service.autorizar(firma).estado()).isEqualTo("PENDIENTE");
         verify(gateway, times(1)).enviar(any());
     }
-    @Test void falloDeBaseDuranteLiquidacionRevierteSaldoEstadoYEvidencia() throws Exception {
+    @Test void falloDeBaseDuranteLiquidacionRevierteSaldoEstadoYEvidencia() {
         var pago = ledger.preparar(request("20"), actor).pago(); ledger.autorizar(codigoPara(pago), actor);
         var cuentasConFallo = mock(CuentaRepository.class, org.mockito.AdditionalAnswers.delegatesTo(cuentas));
         doThrow(new org.springframework.dao.DataAccessResourceFailureException("fallo simulado"))
                 .when(cuentasConFallo).saveAndFlush(any(CuentaEntity.class));
         var ledgerConFallo = new PagoLedger(pagos, evidencias, cuentasConFallo, usuarios, claves, productos, properties, crypto, json, totp, manager);
-        assertThatThrownBy(() -> ledgerConFallo.registrarResultadoEnvio(pago.pagoId(), aplicado("01", "20")))
+        var idPago = pago.pagoId();
+        var resultadoProveedor = aplicado("01", "20");
+        assertThatThrownBy(() -> ledgerConFallo.registrarResultadoEnvio(idPago, resultadoProveedor))
                 .isInstanceOf(org.springframework.dao.DataAccessResourceFailureException.class);
         saldo("100", "20"); assertThat(evidencias.count()).isZero();
         assertThat(ledger.consultar(pago.pagoId(), actor).estado()).isEqualTo("ENVIADO");
@@ -458,7 +475,8 @@ class PagoFlowPersistenceTest {
         var b = ledger.preparar(request("20", "OTRO-RECIBO"), actor).pago();
         var first = codigoPara(a);
         ledger.autorizar(first, actor);
-        assertThatThrownBy(() -> ledger.autorizar(new AutorizarRequest(b.pagoId(), first.codigo()), actor))
+        var codigoReutilizado = new AutorizarRequest(b.pagoId(), first.codigo());
+        assertThatThrownBy(() -> ledger.autorizar(codigoReutilizado, actor))
                 .isInstanceOf(PagoException.class);
         saldo("100", "20");
         assertThat(ledger.consultar(b.pagoId(), actor).estado()).isEqualTo("PREPARADO");
@@ -466,10 +484,12 @@ class PagoFlowPersistenceTest {
     }
     @Test void cincoCodigosIncorrectosPersistenBloqueoAunqueLaRespuestaSeaError() {
         var pago = ledger.preparar(request("20"), actor).pago();
+        var codigoInvalido = new AutorizarRequest(pago.pagoId(), "invalid");
         for (int i = 0; i < 5; i++) assertThatThrownBy(() ->
-                ledger.autorizar(new AutorizarRequest(pago.pagoId(), "invalid"), actor)).isInstanceOf(PagoException.class);
+                ledger.autorizar(codigoInvalido, actor)).isInstanceOf(PagoException.class);
         assertThat(claves.findById(actor).orElseThrow().getIntentos()).isEqualTo(5);
-        assertThatThrownBy(() -> ledger.autorizar(codigoPara(pago), actor))
+        var codigoValidacion1 = codigoPara(pago);
+        assertThatThrownBy(() -> ledger.autorizar(codigoValidacion1, actor))
                 .isInstanceOfSatisfying(PagoException.class, error -> assertThat(error.getStatus().value()).isEqualTo(429));
         saldo("100", "0");
     }
@@ -477,7 +497,8 @@ class PagoFlowPersistenceTest {
         tx.executeWithoutResult(status -> claves.deleteById(actor)); autenticar();
         var service = secondFactorService();
         assertThat(service.estado().activo()).isFalse();
-        assertThatThrownBy(() -> service.preparar(new PrepararFactorRequest("wrong", null, null)))
+        var factorSolicitud8 = new PrepararFactorRequest("wrong", null, null);
+        assertThatThrownBy(() -> service.preparar(factorSolicitud8))
                 .isInstanceOf(PagoException.class);
         var setup = service.preparar(new PrepararFactorRequest("fixture-password", null, null));
         assertThat(setup.uri()).contains("otpauth://totp/", "digits=6", "period=30");
@@ -488,7 +509,8 @@ class PagoFlowPersistenceTest {
         assertThat(stored.getSecretoCifrado()).doesNotContain(setup.secreto());
         assertThat(stored.getPendienteCifrado()).isNull();
         result.codigosRecuperacion().forEach(code -> assertThat(stored.getRecuperacionHashes()).doesNotContain(code));
-        assertThatThrownBy(() -> service.activar(new ActivarFactorRequest("123456"))).isInstanceOf(PagoException.class);
+        var factorSolicitud9 = new ActivarFactorRequest("123456");
+        assertThatThrownBy(() -> service.activar(factorSolicitud9)).isInstanceOf(PagoException.class);
         assertThat(result.toString()).doesNotContain(result.codigosRecuperacion().get(0));
         assertThat(setup.toString()).doesNotContain(setup.secreto());
     }
@@ -498,13 +520,15 @@ class PagoFlowPersistenceTest {
         var initial = service.preparar(new PrepararFactorRequest("fixture-password", null, null));
         var activated = service.activar(new ActivarFactorRequest(totpCodes.code(initial.secreto(), totpCodes.currentStep())));
         String fingerprint = claves.findById(actor).orElseThrow().getHuella();
-        assertThatThrownBy(() -> service.preparar(new PrepararFactorRequest("fixture-password", null, null)))
+        var factorSolicitud10 = new PrepararFactorRequest("fixture-password", null, null);
+        assertThatThrownBy(() -> service.preparar(factorSolicitud10))
                 .isInstanceOf(PagoException.class);
         String recovery = activated.codigosRecuperacion().get(0);
         var setup = service.preparar(new PrepararFactorRequest("fixture-password", null, recovery));
         assertThat(claves.findById(actor).orElseThrow().getHuella()).isEqualTo(fingerprint);
         assertThat(service.estado().activo()).isTrue();
-        assertThatThrownBy(() -> service.preparar(new PrepararFactorRequest("fixture-password", null, recovery)))
+        var factorSolicitud11 = new PrepararFactorRequest("fixture-password", null, recovery);
+        assertThatThrownBy(() -> service.preparar(factorSolicitud11))
                 .isInstanceOf(PagoException.class);
         service.activar(new ActivarFactorRequest(totpCodes.code(setup.secreto(), totpCodes.currentStep())));
         assertThat(claves.findById(actor).orElseThrow().getHuella()).isNotEqualTo(fingerprint);
@@ -515,11 +539,13 @@ class PagoFlowPersistenceTest {
                 totpCodes.code(secret, totpCodes.currentStep()), null));
         String fingerprint = claves.findById(actor).orElseThrow().getHuella();
         autenticar(); // Nueva sesion del mismo usuario.
-        assertThatThrownBy(() -> service.activar(new ActivarFactorRequest(totpCodes.code(setup.secreto(), totpCodes.currentStep()))))
+        var codigoReutilizado = new ActivarFactorRequest(totpCodes.code(setup.secreto(), totpCodes.currentStep()));
+        assertThatThrownBy(() -> service.activar(codigoReutilizado))
                 .isInstanceOf(PagoException.class);
         tx.executeWithoutResult(status -> { var f = claves.findById(actor).orElseThrow();
             f.setVenceEn(Instant.now().minusSeconds(1)); claves.saveAndFlush(f); });
-        assertThatThrownBy(() -> service.activar(new ActivarFactorRequest("123456"))).isInstanceOf(PagoException.class);
+        var factorSolicitud12 = new ActivarFactorRequest("123456");
+        assertThatThrownBy(() -> service.activar(factorSolicitud12)).isInstanceOf(PagoException.class);
         assertThat(claves.findById(actor).orElseThrow().getHuella()).isEqualTo(fingerprint);
     }
     @Test void activarNuevoFactorInvalidaPreparacionAnteriorSinRetenerSaldo() {
@@ -527,7 +553,8 @@ class PagoFlowPersistenceTest {
         var setup = service.preparar(new PrepararFactorRequest("fixture-password",
                 totpCodes.code(secret, totpCodes.currentStep()), null));
         service.activar(new ActivarFactorRequest(totpCodes.code(setup.secreto(), totpCodes.currentStep())));
-        assertThatThrownBy(() -> ledger.autorizar(codigoPara(pago), actor)).isInstanceOf(PagoException.class);
+        var codigoValidacion2 = codigoPara(pago);
+        assertThatThrownBy(() -> ledger.autorizar(codigoValidacion2, actor)).isInstanceOf(PagoException.class);
         saldo("100", "0");
     }
     private SegundoFactorService secondFactorService() {
@@ -596,14 +623,16 @@ class PagoFlowPersistenceTest {
         properties.getLimitesPorProducto().clear();
         var pago = ledger.preparar(requestConDeuda("20"), actor).pago();
         assertThat(referencia(pago, "15").autorizacionDisponible()).isFalse();
-        assertThatThrownBy(() -> ledger.autorizar(codigoPara(pago), actor)).isInstanceOf(PagoException.class);
+        var codigoValidacion3 = codigoPara(pago);
+        assertThatThrownBy(() -> ledger.autorizar(codigoValidacion3, actor)).isInstanceOf(PagoException.class);
         saldo("100", "0");
     }
     @Test void importeExactoExigeCoincidenciaYSeRevalidaAlAutorizar() {
         regla(PagoProperties.ModalidadReferencia.IMPORTE_EXACTO);
         var pago = ledger.preparar(requestConDeuda("20"), actor).pago();
         assertThat(referencia(pago, "25").autorizacionDisponible()).isFalse();
-        assertThatThrownBy(() -> ledger.autorizar(codigoPara(pago), actor)).isInstanceOf(PagoException.class);
+        var codigoValidacion4 = codigoPara(pago);
+        assertThatThrownBy(() -> ledger.autorizar(codigoValidacion4, actor)).isInstanceOf(PagoException.class);
         // Cambiar politica despues de preparar tampoco permite sobrepagar.
         regla(PagoProperties.ModalidadReferencia.PARCIAL_HASTA_SALDO);
         assertThat(ledger.consultar(pago.pagoId(), actor).autorizacionDisponible()).isFalse();
@@ -627,7 +656,8 @@ class PagoFlowPersistenceTest {
         regla(PagoProperties.ModalidadReferencia.PARCIAL_HASTA_SALDO);
         var pago = ledger.preparar(requestConDeuda("20"), actor).pago();
         assertThat(referencia(pago, "15").autorizacionDisponible()).isFalse();
-        assertThatThrownBy(() -> ledger.autorizar(codigoPara(pago), actor)).isInstanceOf(PagoException.class);
+        var codigoValidacion5 = codigoPara(pago);
+        assertThatThrownBy(() -> ledger.autorizar(codigoValidacion5, actor)).isInstanceOf(PagoException.class);
         saldo("100", "0");
     }
     @Test void abonoPermitidoSeAutorizaSinCambiarMontoYRetieneSoloElAbono() {
@@ -641,8 +671,10 @@ class PagoFlowPersistenceTest {
     }
     @Test void respuestaTardiaDeReferenciaNoReactivaPagoCanceladoNiCuentaAjena() {
         var pago = ledger.preparar(requestConDeuda("20"), actor).pago();
-        assertThatThrownBy(() -> ledger.referenciaValidada(pago.pagoId(), UUID.randomUUID(),
-                new PagoGateway.Referencia(PagoGateway.EstadoReferencia.VALIDA, "01", new BigDecimal("20"), "fixture")))
+        var pagoId = pago.pagoId();
+        var usuarioAjeno = UUID.randomUUID();
+        var referenciaAjena = new PagoGateway.Referencia(PagoGateway.EstadoReferencia.VALIDA, "01", new BigDecimal("20"), "fixture");
+        assertThatThrownBy(() -> ledger.referenciaValidada(pagoId, usuarioAjeno, referenciaAjena))
                 .isInstanceOf(PagoException.class);
         ledger.cancelar(pago.pagoId(), actor);
         assertThat(referencia(pago, "20").estado()).isEqualTo("EXPIRADO");
@@ -656,7 +688,8 @@ class PagoFlowPersistenceTest {
             var respuesta = referencia(pago, deuda);
             assertThat(respuesta.saldoReferencia()).isEqualByComparingTo(deuda);
             assertThat(respuesta.autorizacionDisponible()).isFalse();
-            assertThatThrownBy(() -> ledger.autorizar(codigoPara(pago), actor)).isInstanceOf(PagoException.class);
+            var codigoValidacion6 = codigoPara(pago);
+        assertThatThrownBy(() -> ledger.autorizar(codigoValidacion6, actor)).isInstanceOf(PagoException.class);
             ledger.cancelar(pago.pagoId(), actor);
         }
         saldo("100", "0");
@@ -729,9 +762,11 @@ class PagoFlowPersistenceTest {
     }
     @Test void presupuestoPorOperacionYConfiguracionInvalidaNoCreanNiRetienen() {
         properties.setMaximoPorOperacion(new BigDecimal("10"));
-        assertThatThrownBy(() -> ledger.preparar(request("20"),actor)).isInstanceOf(PagoException.class);
+        var solicitudAdicional1 = request("20");
+        assertThatThrownBy(() -> ledger.preparar(solicitudAdicional1, actor)).isInstanceOf(PagoException.class);
         properties.setMaximoPorOperacion(new BigDecimal("-1"));
-        assertThatThrownBy(() -> ledger.preparar(request("1"),actor)).isInstanceOf(PagoException.class);
+        var solicitudAdicional2 = request("1");
+        assertThatThrownBy(() -> ledger.preparar(solicitudAdicional2, actor)).isInstanceOf(PagoException.class);
         assertThat(pagos.count()).isZero(); saldo("100","0");
     }
     @Test void presupuestoDiarioSeRevalidaYCuentaPagosPendientesYEnRevision() {
@@ -739,8 +774,10 @@ class PagoFlowPersistenceTest {
         var a=ledger.preparar(request("20","A"),actor).pago();
         var b=ledger.preparar(request("20","B"),actor).pago();
         ledger.autorizar(codigoPara(a),actor); ledger.registrarResultadoEnvio(a.pagoId(),aplicado("01","99"));
-        assertThatThrownBy(() -> ledger.autorizar(codigoPara(b),actor)).isInstanceOf(PagoException.class);
-        assertThatThrownBy(() -> ledger.preparar(request("20","C"),actor)).isInstanceOf(PagoException.class);
+        var codigoValidacion7 = codigoPara(b);
+        assertThatThrownBy(() -> ledger.autorizar(codigoValidacion7, actor)).isInstanceOf(PagoException.class);
+        var solicitudAdicional3 = request("20","C");
+        assertThatThrownBy(() -> ledger.preparar(solicitudAdicional3, actor)).isInstanceOf(PagoException.class);
         saldo("100","20");
     }
     @Test void presupuestoDiarioConcurrenteNoSeSuperaAunqueAmbasPreparacionesFueranValidas() throws Exception {
@@ -756,14 +793,17 @@ class PagoFlowPersistenceTest {
     }
     @Test void clienteNoPuedeConciliarAunqueSuUuidEsteEnLaListaDeOperadores() {
         var ops=operadores(); properties.getConciliacion().setOperadores(Set.of(actor,ops[0])); autenticar();
-        assertThatThrownBy(() -> conciliacion().pendientes(new com.proyecto.servicios.model.cliente.PaginacionRequest()))
+        var servicioConciliacion6 = conciliacion(); var paginaConciliacion6 = new com.proyecto.servicios.model.cliente.PaginacionRequest();
+        assertThatThrownBy(() -> servicioConciliacion6.pendientes(paginaConciliacion6))
                 .isInstanceOf(PagoException.class); saldo("100","0");
     }
     @Test void ejecutivoNoHabilitadoYTareaDesactivadaNoAccedenAConciliacion() {
         var ops=operadores(); ejecutivo(ops[0]); properties.getConciliacion().setEnabled(false);
-        assertThatThrownBy(() -> conciliacion().pendientes(new com.proyecto.servicios.model.cliente.PaginacionRequest())).isInstanceOf(PagoException.class);
+        var servicioConciliacion7 = conciliacion(); var paginaConciliacion7 = new com.proyecto.servicios.model.cliente.PaginacionRequest();
+        assertThatThrownBy(() -> servicioConciliacion7.pendientes(paginaConciliacion7)).isInstanceOf(PagoException.class);
         properties.getConciliacion().setEnabled(true); ejecutivo(UUID.randomUUID());
-        assertThatThrownBy(() -> conciliacion().pendientes(new com.proyecto.servicios.model.cliente.PaginacionRequest())).isInstanceOf(PagoException.class);
+        var servicioConciliacion8 = conciliacion(); var paginaConciliacion8 = new com.proyecto.servicios.model.cliente.PaginacionRequest();
+        assertThatThrownBy(() -> servicioConciliacion8.pendientes(paginaConciliacion8)).isInstanceOf(PagoException.class);
     }
     @Test void propuestaNoModificaSaldoGuardaEvidenciaCifradaYNoPermiteAutoAprobacion() {
         var pago=enRevision("A"); var ops=operadores(); ejecutivo(ops[0]);
@@ -772,7 +812,8 @@ class PagoFlowPersistenceTest {
         assertThat(creada.estado()).isEqualTo("PROPUESTA");
         assertThat(propuestas.findById(creada.propuestaId()).orElseThrow().getContenidoCifrado()).doesNotContain("Evidencia","FOLIO");
         assertThat(conciliacion().proponer(solicitud).propuestaId()).isEqualTo(creada.propuestaId());
-        assertThatThrownBy(() -> conciliacion().aprobar(decision(creada.propuestaId()))).isInstanceOf(PagoException.class);
+        var servicioConciliacion1 = conciliacion(); var decisionConciliacion1 = decision(creada.propuestaId());
+        assertThatThrownBy(() -> servicioConciliacion1.aprobar(decisionConciliacion1)).isInstanceOf(PagoException.class);
         saldo("100","20");
     }
     @Test void segundaAprobacionAplicaExactamenteUnaVezYConservaAuditoria() {
@@ -801,7 +842,8 @@ class PagoFlowPersistenceTest {
         ledger.registrarResultadoEnvio(anterior.pagoId(),aplicado("01","20"));
         var pago=enRevision("A"); var ops=operadores(); ejecutivo(ops[0]);
         var creada=conciliacion().proponer(propuesta(pago,com.proyecto.servicios.model.pago.ConciliacionDtos.Resultado.APLICADO));
-        ejecutivo(ops[1]); assertThatThrownBy(() -> conciliacion().aprobar(decision(creada.propuestaId()))).isInstanceOf(PagoException.class);
+        ejecutivo(ops[1]); var servicioConciliacion2 = conciliacion(); var decisionConciliacion2 = decision(creada.propuestaId());
+        assertThatThrownBy(() -> servicioConciliacion2.aprobar(decisionConciliacion2)).isInstanceOf(PagoException.class);
         saldo("80","20");
     }
     @Test void propuestaVencidaOCambioDeVersionNoLiberaDinero() {
@@ -809,25 +851,29 @@ class PagoFlowPersistenceTest {
         var creada=conciliacion().proponer(propuesta(pago,com.proyecto.servicios.model.pago.ConciliacionDtos.Resultado.NO_APLICADO_DEFINITIVO));
         tx.executeWithoutResult(status -> {var c=propuestas.findById(creada.propuestaId()).orElseThrow();
             c.setCreadoEn(Instant.now().minusSeconds(7200)); c.setVenceEn(Instant.now().minusSeconds(60)); propuestas.saveAndFlush(c);});
-        ejecutivo(ops[1]); assertThatThrownBy(() -> conciliacion().aprobar(decision(creada.propuestaId()))).isInstanceOf(PagoException.class);
+        ejecutivo(ops[1]); var servicioConciliacion3 = conciliacion(); var decisionConciliacion3 = decision(creada.propuestaId());
+        assertThatThrownBy(() -> servicioConciliacion3.aprobar(decisionConciliacion3)).isInstanceOf(PagoException.class);
         conciliacion().rechazar(decision(creada.propuestaId()));
         ejecutivo(ops[0]); var otra=conciliacion().proponer(propuesta(pago,com.proyecto.servicios.model.pago.ConciliacionDtos.Resultado.NO_APLICADO_DEFINITIVO));
         tx.executeWithoutResult(status -> {var p=pagos.findById(pago.pagoId()).orElseThrow(); p.setMotivoRevision("NUEVA_EVIDENCIA"); pagos.saveAndFlush(p);});
-        ejecutivo(ops[1]); assertThatThrownBy(() -> conciliacion().aprobar(decision(otra.propuestaId()))).isInstanceOf(PagoException.class);
+        ejecutivo(ops[1]); var servicioConciliacion4 = conciliacion(); var decisionConciliacion4 = decision(otra.propuestaId());
+        assertThatThrownBy(() -> servicioConciliacion4.aprobar(decisionConciliacion4)).isInstanceOf(PagoException.class);
         saldo("100","20");
     }
     @Test void proponenteRevocadoNoPermiteAplicarUnaPropuestaAnterior() {
         var pago=enRevision("A"); var ops=operadores(); ejecutivo(ops[0]);
         var creada=conciliacion().proponer(propuesta(pago,com.proyecto.servicios.model.pago.ConciliacionDtos.Resultado.APLICADO));
         tx.executeWithoutResult(status -> {var u=usuarios.findById(ops[0]).orElseThrow(); u.desactivar(); usuarios.saveAndFlush(u);});
-        ejecutivo(ops[1]); assertThatThrownBy(() -> conciliacion().aprobar(decision(creada.propuestaId()))).isInstanceOf(PagoException.class); saldo("100","20");
+        ejecutivo(ops[1]); var servicioConciliacion5 = conciliacion(); var decisionConciliacion5 = decision(creada.propuestaId());
+        assertThatThrownBy(() -> servicioConciliacion5.aprobar(decisionConciliacion5)).isInstanceOf(PagoException.class); saldo("100","20");
     }
     @Test void falloAlGuardarAuditoriaRevierteSaldoPagoYPropuesta() {
         var pago=enRevision("A"); var ops=operadores(); ejecutivo(ops[0]);
         var creada=conciliacion().proponer(propuesta(pago,com.proyecto.servicios.model.pago.ConciliacionDtos.Resultado.APLICADO));
         var repoConFallo=mock(PagoEvidenciaRepository.class); doThrow(new IllegalStateException("fixture")).when(repoConFallo).saveAndFlush(any());
         var servicio=new ConciliacionPagoServiceImpl(properties,pagos,propuestas,cuentas,usuarios,repoConFallo,crypto,json,manager);
-        ejecutivo(ops[1]); assertThatThrownBy(() -> servicio.aprobar(decision(creada.propuestaId()))).isInstanceOf(IllegalStateException.class);
+        ejecutivo(ops[1]); var decisionAuditoria = decision(creada.propuestaId());
+        assertThatThrownBy(() -> servicio.aprobar(decisionAuditoria)).isInstanceOf(IllegalStateException.class);
         saldo("100","20"); assertThat(pagos.findById(pago.pagoId()).orElseThrow().getEstado()).isEqualTo(PagoEntity.Estado.REVISION);
         assertThat(propuestas.findById(creada.propuestaId()).orElseThrow().getEstado()).isEqualTo(ConciliacionPagoEntity.Estado.PROPUESTA);
     }

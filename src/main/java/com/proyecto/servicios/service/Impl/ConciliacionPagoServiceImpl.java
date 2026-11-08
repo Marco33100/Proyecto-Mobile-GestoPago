@@ -100,23 +100,27 @@ public class ConciliacionPagoServiceImpl implements ConciliacionPagoService {
             var propuesta=propuestas.bloquear(encontrada.getId()).orElseThrow(() -> error(HttpStatus.NOT_FOUND));
             if (aprobar && propuesta.getPropuestoPor().equals(actor)) throw error(HttpStatus.FORBIDDEN);
             if (propuesta.getEstado()!=ConciliacionPagoEntity.Estado.PROPUESTA) {
-                if ((aprobar && propuesta.getEstado()==ConciliacionPagoEntity.Estado.APROBADA)
-                        || (!aprobar && propuesta.getEstado()==ConciliacionPagoEntity.Estado.RECHAZADA)) return respuesta(propuesta);
+                if (propuesta.getEstado()==estadoDecision(aprobar)) return respuesta(propuesta);
                 throw error(HttpStatus.CONFLICT);
             }
-            if (aprobar) {
-                if (!Instant.now().isBefore(propuesta.getVenceEn())) throw error(HttpStatus.CONFLICT);
-                var origen=usuarios.findById(propuesta.getPropuestoPor()).orElseThrow(() -> error(HttpStatus.FORBIDDEN));
-                if (!origen.isEnabled() || origen.getRol()!=RolUsuario.EJECUTIVO
-                        || !properties.getConciliacion().getOperadores().contains(origen.getId())) throw error(HttpStatus.FORBIDDEN);
-                var detalle=detalle(propuesta); validarPago(pago,detalle,actor);
-                aplicar(pago,detalle);
-            }
-            propuesta.setEstado(aprobar?ConciliacionPagoEntity.Estado.APROBADA:ConciliacionPagoEntity.Estado.RECHAZADA);
+            if (aprobar) aplicarPropuestaVigente(propuesta, pago, actor);
+            propuesta.setEstado(estadoDecision(aprobar));
             propuesta.setDecididoPor(actor); propuesta.setDecididoEn(Instant.now()); propuestas.saveAndFlush(propuesta);
             evidencia(pago.getId(),aprobar?"manual-aprobar":"manual-rechazar",Map.of("propuestaId",propuesta.getId(),"actor",actor,"observacion",request.observacion()));
             return respuesta(propuesta);
         });
+    }
+    private ConciliacionPagoEntity.Estado estadoDecision(boolean aprobar) {
+        return aprobar ? ConciliacionPagoEntity.Estado.APROBADA : ConciliacionPagoEntity.Estado.RECHAZADA;
+    }
+    private void aplicarPropuestaVigente(ConciliacionPagoEntity propuesta, PagoEntity pago, UUID actor) {
+        if (!Instant.now().isBefore(propuesta.getVenceEn())) throw error(HttpStatus.CONFLICT);
+        var origen=usuarios.findById(propuesta.getPropuestoPor()).orElseThrow(() -> error(HttpStatus.FORBIDDEN));
+        if (!origen.isEnabled() || origen.getRol()!=RolUsuario.EJECUTIVO
+                || !properties.getConciliacion().getOperadores().contains(origen.getId())) throw error(HttpStatus.FORBIDDEN);
+        var detalle=detalle(propuesta);
+        validarPago(pago,detalle,actor);
+        aplicar(pago,detalle);
     }
     private void validarPago(PagoEntity pago,ProponerRequest request,UUID actor) {
         if (pago.getEstado()!=PagoEntity.Estado.REVISION || pago.getUsuarioId().equals(actor)
@@ -159,7 +163,7 @@ public class ConciliacionPagoServiceImpl implements ConciliacionPagoService {
         return new Propuesta(propuesta.getId(),propuesta.getPagoId(),propuesta.getEstado().name(),detalle.resultado(),
                 propuesta.getPropuestoPor(),propuesta.getDecididoPor(),propuesta.getCreadoEn(),propuesta.getVenceEn(),detalle);
     }
-    private boolean positivo(String valor) { return valor!=null && valor.matches("[0-9]{1,60}") && new BigDecimal(valor).signum()>0; }
+    private boolean positivo(String valor) { return valor!=null && valor.matches("\\d{1,60}") && new BigDecimal(valor).signum()>0; }
     private String serializar(Object valor) {
         try { return json.writeValueAsString(valor); } catch (com.fasterxml.jackson.core.JsonProcessingException e) { throw error(HttpStatus.SERVICE_UNAVAILABLE); }
     }

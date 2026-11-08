@@ -40,7 +40,7 @@ class DatabaseSchemaMigrationTest {
     private Connection connection;
 
     @BeforeEach
-    void setUp() throws Exception {
+    void setUp() throws SQLException {
         url = System.getenv("ONBOARDING_TEST_JDBC_URL");
         username = System.getenv().getOrDefault("ONBOARDING_TEST_DB_USER", "onboarding_test");
         password = System.getenv().getOrDefault("ONBOARDING_TEST_DB_PASSWORD", "");
@@ -52,7 +52,7 @@ class DatabaseSchemaMigrationTest {
     }
 
     @AfterEach
-    void tearDown() throws Exception {
+    void tearDown() throws SQLException {
         if (connection != null) {
             try {
                 if (!schema.matches("schema_test_[a-f0-9]{32}")) throw new IllegalStateException("Schema invalido");
@@ -83,25 +83,25 @@ class DatabaseSchemaMigrationTest {
                 ProductEntity.class, GestoPagoToken.class,
                 PagoEntity.class, SegundoFactorEntity.class, PagoEvidenciaEntity.class, ConciliacionPagoEntity.class);
         int checked = 0;
-        for (Class<?> entity : entities) {
-            String table = entity.getAnnotation(Table.class).name();
-            for (var field : entity.getDeclaredFields()) {
-                if (Modifier.isStatic(field.getModifiers()) || field.isSynthetic()) continue;
-                Column column = field.getAnnotation(Column.class);
-                JoinColumn join = field.getAnnotation(JoinColumn.class);
-                String name = join != null ? join.name()
-                        : column != null && !column.name().isEmpty() ? column.name()
-                        : field.getName().toLowerCase(Locale.ROOT);
-                Class<?> type = field.getType();
-                if (join != null) {
-                    type = java.util.Arrays.stream(type.getDeclaredFields())
-                            .filter(id -> id.isAnnotationPresent(Id.class)).findFirst().orElseThrow().getType();
-                }
-                String label = table + "." + name;
-                try (var statement = connection.prepareStatement("""
-                        SELECT data_type,character_maximum_length,numeric_precision,numeric_scale,is_nullable
-                        FROM information_schema.columns WHERE table_schema=? AND table_name=? AND column_name=?
-                        """)) {
+        try (var statement = connection.prepareStatement("""
+                SELECT data_type,character_maximum_length,numeric_precision,numeric_scale,is_nullable
+                FROM information_schema.columns WHERE table_schema=? AND table_name=? AND column_name=?
+                """)) {
+            for (Class<?> entity : entities) {
+                String table = entity.getAnnotation(Table.class).name();
+                for (var field : entity.getDeclaredFields()) {
+                    if (Modifier.isStatic(field.getModifiers()) || field.isSynthetic()) continue;
+                    Column column = field.getAnnotation(Column.class);
+                    JoinColumn join = field.getAnnotation(JoinColumn.class);
+                    String name = join != null ? join.name()
+                            : column != null && !column.name().isEmpty() ? column.name()
+                            : field.getName().toLowerCase(Locale.ROOT);
+                    Class<?> type = field.getType();
+                    if (join != null) {
+                        type = java.util.Arrays.stream(type.getDeclaredFields())
+                                .filter(id -> id.isAnnotationPresent(Id.class)).findFirst().orElseThrow().getType();
+                    }
+                    String label = table + "." + name;
                     statement.setString(1, schema);
                     statement.setString(2, table);
                     statement.setString(3, name);
@@ -296,7 +296,8 @@ class DatabaseSchemaMigrationTest {
         flyway("16").migrate();
         seed();
         String expected = schemaStructure();
-        assertThatThrownBy(() -> initialFlyway().migrate()).isInstanceOf(RuntimeException.class);
+        var migracionFallida1 = initialFlyway();
+        assertThatThrownBy(migracionFallida1::migrate).isInstanceOf(RuntimeException.class);
         assertThat(schemaStructure()).isEqualTo(expected);
         assertThat(scalar("SELECT count(*) FROM flyway_schema_history WHERE version IS NOT NULL"))
                 .isEqualTo("16");
@@ -308,7 +309,8 @@ class DatabaseSchemaMigrationTest {
     void v1ConsolidadaRechazaUnaBaseConTablasSinHistorial() throws Exception {
         sql("CREATE TABLE existing_marker(id integer PRIMARY KEY)");
         sql("INSERT INTO existing_marker VALUES (1)");
-        assertThatThrownBy(() -> initialFlyway().migrate()).isInstanceOf(RuntimeException.class);
+        var migracionFallida2 = initialFlyway();
+        assertThatThrownBy(migracionFallida2::migrate).isInstanceOf(RuntimeException.class);
         assertThat(scalar("SELECT count(*) FROM existing_marker")).isEqualTo("1");
         assertThat(scalar("SELECT count(*) FROM information_schema.tables WHERE table_schema='" + schema
                 + "' AND table_name='clientes'")).isEqualTo("0");
@@ -417,7 +419,8 @@ class DatabaseSchemaMigrationTest {
         };
         sql("UPDATE " + table + " SET " + column + "=repeat('A'," + (limit + 1) + ")");
         String before = snapshot();
-        assertThatThrownBy(() -> flyway("15").migrate()).isInstanceOf(RuntimeException.class);
+        var migracionFallida3 = flyway("15");
+        assertThatThrownBy(migracionFallida3::migrate).isInstanceOf(RuntimeException.class);
         assertThat(snapshot()).isEqualTo(before);
         assertThat(scalar("SELECT count(*) FROM flyway_schema_history WHERE version='15'")).isEqualTo("0");
         assertThat(scalar("SELECT character_maximum_length FROM information_schema.columns WHERE table_schema='"
@@ -484,7 +487,8 @@ class DatabaseSchemaMigrationTest {
         flyway("13").migrate();
         seed();
         sql("UPDATE cuentas SET saldo='NaN'");
-        assertThatThrownBy(() -> flyway("14").migrate()).isInstanceOf(RuntimeException.class);
+        var migracionFallida4 = flyway("14");
+        assertThatThrownBy(migracionFallida4::migrate).isInstanceOf(RuntimeException.class);
         assertThat(scalar("SELECT count(*) FROM flyway_schema_history WHERE version='14'")).isEqualTo("0");
         assertThat(scalar("SELECT saldo FROM cuentas")).isEqualTo("NaN");
         assertThat(scalar("SELECT count(*) FROM pg_indexes WHERE schemaname='" + schema

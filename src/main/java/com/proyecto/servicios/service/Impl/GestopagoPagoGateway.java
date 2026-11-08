@@ -14,8 +14,11 @@ import org.apache.hc.core5.util.Timeout;
 import org.springframework.beans.factory.DisposableBean;
 import org.w3c.dom.Document;
 import org.xml.sax.InputSource;
+import org.xml.sax.SAXException;
 import javax.xml.XMLConstants;
 import javax.xml.parsers.DocumentBuilderFactory;
+import javax.xml.parsers.ParserConfigurationException;
+import java.io.IOException;
 import java.io.StringReader;
 import java.math.BigDecimal;
 import java.net.URI;
@@ -67,21 +70,31 @@ public class GestopagoPagoGateway implements PagoGateway, DisposableBean {
         request.setEntity(new UrlEncodedFormEntity(List.of(new BasicNameValuePair("random", PagoCrypto.nonce()),
                 new BasicNameValuePair("signed", signed)), StandardCharsets.UTF_8));
         try {
-            return http.execute(request, response -> {
-                byte[] bytes = response.getEntity() == null ? new byte[0] : response.getEntity().getContent().readNBytes(1_048_577);
-                if (bytes.length > 1_048_576) return Respuesta.incierta();
-                String body = new String(bytes, StandardCharsets.UTF_8);
-                if ((response.getCode() == 401 || response.getCode() == 403) && tokenExpirado(body)) {
-                    // The provider explicitly rejected authentication; refresh only for future calls. Never replay sendTx.
-                    try { tokens.renovarTrasRechazo(token); } catch (Exception ignored) { }
-                    return Respuesta.noEnviada();
-                }
-                if (response.getCode() < 200 || response.getCode() >= 300) return Respuesta.incierta();
-                return interpretar(body, confirmacion);
-            });
+            return http.execute(request, response -> interpretarRespuesta(response, token, confirmacion));
         } catch (Exception e) {
             // No exception text, request, headers, JSON, gift PINs, or token in logs.
             return Respuesta.incierta();
+        }
+    }
+
+    private Respuesta interpretarRespuesta(org.apache.hc.core5.http.ClassicHttpResponse response,
+                                           String token, boolean confirmacion) throws IOException {
+        byte[] bytes = response.getEntity() == null ? new byte[0] : response.getEntity().getContent().readNBytes(1_048_577);
+        if (bytes.length > 1_048_576) return Respuesta.incierta();
+        String body = new String(bytes, StandardCharsets.UTF_8);
+        if ((response.getCode() == 401 || response.getCode() == 403) && tokenExpirado(body)) {
+            renovarParaSiguientePeticion(token);
+            return Respuesta.noEnviada();
+        }
+        if (response.getCode() < 200 || response.getCode() >= 300) return Respuesta.incierta();
+        return interpretar(body, confirmacion);
+    }
+
+    private void renovarParaSiguientePeticion(String token) {
+        // El rechazo de autenticacion no reintenta sendTx; solo renueva para futuras peticiones.
+        try { tokens.renovarTrasRechazo(token); }
+        catch (Exception ignored) {
+            // La renovacion fallida no cambia el rechazo del pago actual.
         }
     }
     private boolean tokenExpirado(String body) {
@@ -93,10 +106,16 @@ public class GestopagoPagoGateway implements PagoGateway, DisposableBean {
             Document doc = documento(xml);
             if (!"RESPONSE".equals(doc.getDocumentElement().getNodeName())) return Respuesta.incierta();
             String codigo = texto(doc, "CODIGO");
-            String id = texto(doc, "ID_TX"), autorizacion = texto(doc, "NUM_AUTORIZACION");
+            String id = texto(doc, "ID_TX");
+            String autorizacion = texto(doc, "NUM_AUTORIZACION");
             boolean aplicado = (confirmar ? "06".equals(codigo) : "01".equals(codigo))
                     && positivo(id) && positivo(autorizacion);
-            Estado estado = aplicado ? Estado.APLICADO : confirmar && "70".equals(codigo) ? Estado.RECHAZADO : Estado.INCIERTO;
+            Estado estado = Estado.INCIERTO;
+            if (aplicado) {
+                estado = Estado.APLICADO;
+            } else if (confirmar && "70".equals(codigo)) {
+                estado = Estado.RECHAZADO;
+            }
             return new Respuesta(estado, limitar(codigo, 40), limitar(id, 60), limitar(autorizacion, 60),
                     decimal(texto(doc, "MONTO")), decimal(texto(doc, "COMISION")),
                     limitar(texto(doc, "PIN"), 250), limitar(texto(doc, "legend"), 65600), xml);
@@ -119,7 +138,7 @@ public class GestopagoPagoGateway implements PagoGateway, DisposableBean {
             return new Referencia(EstadoReferencia.VALIDA, codigo, saldo.setScale(2), xml);
         } catch (Exception e) { return Referencia.incierta(); }
     }
-    private static Document documento(String xml) throws Exception {
+    private static Document documento(String xml) throws ParserConfigurationException, SAXException, IOException {
             DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
             factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
             factory.setFeature("http://xml.org/sax/features/external-general-entities", false);
@@ -131,7 +150,7 @@ public class GestopagoPagoGateway implements PagoGateway, DisposableBean {
             builder.setErrorHandler(new org.xml.sax.helpers.DefaultHandler());
             return builder.parse(new InputSource(new StringReader(xml)));
     }
-    private static boolean positivo(String valor) { return valor != null && valor.matches("[0-9]{1,60}") && new BigDecimal(valor).signum() > 0; }
+    private static boolean positivo(String valor) { return valor != null && valor.matches("\\d{1,60}") && new BigDecimal(valor).signum() > 0; }
     private static String texto(Document doc, String campo) {
         var nodes = doc.getElementsByTagName(campo);
         if (nodes.getLength() == 0 && "legend".equals(campo)) nodes = doc.getElementsByTagName("LEGEND");

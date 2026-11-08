@@ -25,7 +25,7 @@ public class ConsultaClientesRequest implements SolicitudJson {
     @Size(max = 18) private String curp;
     @Positive(message = "El ID debe ser mayor que cero") private Long id;
     @Email(message = "El correo no tiene un formato valido")
-    @Pattern(regexp = ".*\\S.*", message = "El correo no puede estar vacio")
+    @Pattern(regexp = "\\s*+\\S.*", message = "El correo no puede estar vacio")
     @Size(max = 100) private String correo;
     @Pattern(regexp = com.proyecto.servicios.support.CuentaDatos.NUMERO_CUENTA_REGEX,
             message = com.proyecto.servicios.support.CuentaDatos.NUMERO_CUENTA_MENSAJE)

@@ -7,7 +7,6 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
-import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import org.springframework.http.ResponseEntity;
@@ -29,19 +28,17 @@ public class ProductCatalogController {
 
     @GetMapping
     @Operation(summary = "Consulta el catálogo para el cliente con caché multinivel")
-    @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "Catálogo recuperado correctamente"),
-            @ApiResponse(
-                    responseCode = "500",
-                    description = "No fue posible procesar el catalogo de productos",
-                    content = @Content(schema = @Schema(implementation = GenericResponse.class))
-            ),
-            @ApiResponse(
-                    responseCode = "502",
-                    description = "El proveedor de productos no esta disponible",
-                    content = @Content(schema = @Schema(implementation = GenericResponse.class))
-            )
-    })
+    @ApiResponse(responseCode = "200", description = "Catálogo recuperado correctamente")
+    @ApiResponse(
+            responseCode = "500",
+            description = "No fue posible procesar el catalogo de productos",
+            content = @Content(schema = @Schema(implementation = GenericResponse.class))
+    )
+    @ApiResponse(
+            responseCode = "502",
+            description = "El proveedor de productos no esta disponible",
+            content = @Content(schema = @Schema(implementation = GenericResponse.class))
+    )
     public ResponseEntity<GenericResponse<ProductListResponse>> obtenerProductos() {
         var resultado = productCatalogService.obtenerProductos();
         boolean hayProductos = resultado.getProductos() != null && resultado.getProductos().getProductos() != null

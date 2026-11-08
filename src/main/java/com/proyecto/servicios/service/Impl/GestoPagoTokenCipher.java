@@ -10,6 +10,7 @@ import javax.crypto.spec.SecretKeySpec;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.security.GeneralSecurityException;
 import java.security.SecureRandom;
 import java.util.Base64;
 import java.util.HexFormat;
@@ -50,8 +51,12 @@ public class GestoPagoTokenCipher {
         try {
             if (stored == null || !stored.startsWith(PREFIX)) { throw failure(); }
             String[] parts = stored.substring(PREFIX.length()).split(":", 2);
-            byte[] selected = parts[0].equals(keyId) ? key
-                    : previousKey != null && parts[0].equals(id(previousKey)) ? previousKey : null;
+            byte[] selected = null;
+            if (parts[0].equals(keyId)) {
+                selected = key;
+            } else if (previousKey != null && parts[0].equals(id(previousKey))) {
+                selected = previousKey;
+            }
             if (selected == null || parts.length != 2) { throw failure(); }
             byte[] bytes = Base64.getDecoder().decode(parts[1]);
             if (bytes.length < 29) { throw failure(); }
@@ -67,7 +72,7 @@ public class GestoPagoTokenCipher {
         return !stored.startsWith(PREFIX + keyId + ":");
     }
 
-    private Cipher cipher(int mode, byte[] secret, byte[] nonce, int distributor, String device) throws Exception {
+    private Cipher cipher(int mode, byte[] secret, byte[] nonce, int distributor, String device) throws GeneralSecurityException {
         Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
         cipher.init(mode, new SecretKeySpec(secret, "AES"), new GCMParameterSpec(128, nonce));
         cipher.updateAAD(("gestopago-token/v1/" + distributor + "/" + device).getBytes(StandardCharsets.UTF_8));

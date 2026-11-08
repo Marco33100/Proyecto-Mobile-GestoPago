@@ -134,26 +134,13 @@ public class ClienteRegistroServiceImpl implements ClienteRegistroService {
             String correo,
             Instant ahora
     ) {
-        return new ClienteEntity(
-                normalizarTexto(request.nombre()),
-                normalizarOpcional(request.segundoNombre()),
-                normalizarTexto(request.apellidoPaterno()),
-                normalizarTexto(request.apellidoMaterno()),
-                request.fechaNacimiento(),
+        return new ClienteEntity(new ClienteEntity.Nombre(normalizarTexto(request.nombre()), normalizarOpcional(request.segundoNombre()), normalizarTexto(request.apellidoPaterno()), normalizarTexto(request.apellidoMaterno())),
+                new ClienteEntity.Perfil(request.fechaNacimiento(), request.sexo(), normalizarTexto(request.nacionalidad()), request.estadoCivil(), normalizarOpcional(request.referenciaReconocimientoFacial())),
                 curp,
                 rfc,
-                request.sexo(),
-                normalizarTexto(request.nacionalidad()),
-                request.estadoCivil(),
-                normalizarOpcional(request.referenciaReconocimientoFacial()),
-                correo,
-                request.telefonoMovil(),
-                normalizarOpcional(request.telefonoAlternativo()),
-                normalizarTexto(request.ocupacion()),
-                normalizarTexto(request.empresa()),
-                request.ingresoMensual(),
-                ahora
-        );
+                new ClienteEntity.Contacto(correo, request.telefonoMovil(), normalizarOpcional(request.telefonoAlternativo())),
+                new ClienteEntity.Empleo(normalizarTexto(request.ocupacion()), normalizarTexto(request.empresa()), request.ingresoMensual()),
+                ahora);
     }
 
     private DomicilioEntity crearDomicilio(
@@ -161,19 +148,11 @@ public class ClienteRegistroServiceImpl implements ClienteRegistroService {
             ClienteEntity cliente,
             Instant ahora
     ) {
-        return new DomicilioEntity(
-                UUID.randomUUID(),
+        return new DomicilioEntity(UUID.randomUUID(),
                 cliente,
-                normalizarTexto(request.calle()),
-                normalizarTexto(request.numeroExterior()),
-                normalizarOpcional(request.numeroInterior()),
-                normalizarTexto(request.colonia()),
-                normalizarTexto(request.municipio()),
-                normalizarTexto(request.estado()),
-                request.codigoPostal(),
-                normalizarTexto(request.pais()),
-                ahora
-        );
+                new DomicilioEntity.DatosCalle(normalizarTexto(request.calle()), normalizarTexto(request.numeroExterior()), normalizarOpcional(request.numeroInterior()), normalizarTexto(request.colonia())),
+                new DomicilioEntity.Localidad(normalizarTexto(request.municipio()), normalizarTexto(request.estado()), request.codigoPostal(), normalizarTexto(request.pais())),
+                ahora);
     }
 
 }

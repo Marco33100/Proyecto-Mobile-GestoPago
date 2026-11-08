@@ -10,7 +10,14 @@ import java.util.*;
 class PagoFlowPostgresTest extends PagoFlowPersistenceTest {
     private Connection connection;
     private String schema;
-    @Override protected Map<String,String> configuracionPersistencia() throws Exception {
+    @Override protected Map<String,String> configuracionPersistencia() {
+        try {
+            return configurarPostgres();
+        } catch (SQLException exception) {
+            throw new IllegalStateException("No fue posible configurar PostgreSQL para la prueba de pagos", exception);
+        }
+    }
+    private Map<String,String> configurarPostgres() throws SQLException {
         String url=System.getenv("ONBOARDING_TEST_JDBC_URL");
         String user=System.getenv().getOrDefault("ONBOARDING_TEST_DB_USER","onboarding_test");
         String password=System.getenv().getOrDefault("ONBOARDING_TEST_DB_PASSWORD","");

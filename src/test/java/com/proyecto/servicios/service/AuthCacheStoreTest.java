@@ -17,7 +17,6 @@ import java.util.List;
 import java.util.UUID;
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
-import static org.mockito.ArgumentMatchers.*;
 
 @ExtendWith(MockitoExtension.class)
 class AuthCacheStoreTest {
@@ -44,9 +43,11 @@ class AuthCacheStoreTest {
 
     @Test
     void falloRedisSeTraduceAExcepcionDeCache() {
+        UUID user = UUID.randomUUID();
+        UUID session = UUID.randomUUID();
         when(redis.execute(any(RedisScript.class), anyList(), any(Object[].class)))
                 .thenThrow(new IllegalStateException("offline"));
-        assertThatThrownBy(() -> store.invalidateSessionIfMatches(UUID.randomUUID(), UUID.randomUUID()))
+        assertThatThrownBy(() -> store.invalidateSessionIfMatches(user, session))
                 .isInstanceOf(AuthCacheException.class);
     }
 
@@ -67,17 +68,22 @@ class AuthCacheStoreTest {
 
     @Test
     void noCopiaSesionesVencidasEnRedis() {
-        assertThatThrownBy(() -> store.replaceSession(UUID.randomUUID(), UUID.randomUUID(), Instant.EPOCH))
+        UUID user = UUID.randomUUID();
+        UUID session = UUID.randomUUID();
+        assertThatThrownBy(() -> store.replaceSession(user, session, Instant.EPOCH))
                 .isInstanceOf(AuthCacheException.class);
         verifyNoInteractions(redis, valores);
     }
 
     @Test
     void falloAlCopiarSesionSeTraduceAExcepcionDeCache() {
+        UUID user = UUID.randomUUID();
+        UUID session = UUID.randomUUID();
+        Instant expiration = Instant.now().plusSeconds(300);
         when(redis.opsForValue()).thenThrow(new IllegalStateException("offline"));
 
-        assertThatThrownBy(() -> store.replaceSession(UUID.randomUUID(), UUID.randomUUID(),
-                Instant.now().plusSeconds(300))).isInstanceOf(AuthCacheException.class);
+        assertThatThrownBy(() -> store.replaceSession(user, session, expiration))
+                .isInstanceOf(AuthCacheException.class);
     }
 
     @Test

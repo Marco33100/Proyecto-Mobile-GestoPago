@@ -20,16 +20,16 @@ import java.time.LocalDate;
 
 public record ActualizarClienteRequest(
         @NotBlank(message = "El nombre es obligatorio y no puede contener solo espacios.") @Size(min = 2, max = 50)
-        @Pattern(regexp = "^ *[\\p{L}]+(?: +[\\p{L}]+)* *$", message = "solo puede contener letras y espacios")
+        @Pattern(regexp = "^ *[\\p{L}]+(?: +[\\p{L}]+)*+ *$", message = "solo puede contener letras y espacios")
         String nombre,
         @Size(max = 50)
-        @Pattern(regexp = "^ *$|^ *[\\p{L}]+(?: +[\\p{L}]+)* *$", message = "solo puede contener letras y espacios")
+        @Pattern(regexp = "^ *$|^ *[\\p{L}]+(?: +[\\p{L}]+)*+ *$", message = "solo puede contener letras y espacios")
         String segundoNombre,
         @NotBlank @Size(min = 2, max = 50)
-        @Pattern(regexp = "^ *[\\p{L}]+(?: +[\\p{L}]+)* *$", message = "solo puede contener letras y espacios")
+        @Pattern(regexp = "^ *[\\p{L}]+(?: +[\\p{L}]+)*+ *$", message = "solo puede contener letras y espacios")
         String apellidoPaterno,
         @NotBlank @Size(min = 2, max = 50)
-        @Pattern(regexp = "^ *[\\p{L}]+(?: +[\\p{L}]+)* *$", message = "solo puede contener letras y espacios")
+        @Pattern(regexp = "^ *[\\p{L}]+(?: +[\\p{L}]+)*+ *$", message = "solo puede contener letras y espacios")
         String apellidoMaterno,
         @NotNull @Past @MayorDeEdad
         @JsonDeserialize(using = FechaSinHoraDeserializer.class)
@@ -42,9 +42,9 @@ public record ActualizarClienteRequest(
         @Email(message = "El correo electrónico no tiene un formato válido.")
         @Size(max = 100) String correo,
         @NotBlank(message = "El teléfono es obligatorio.")
-        @Pattern(regexp = "^[0-9]{10}$", message = "El teléfono debe contener exactamente 10 dígitos.")
+        @Pattern(regexp = "^\\d{10}$", message = "El teléfono debe contener exactamente 10 dígitos.")
         String telefonoMovil,
-        @Pattern(regexp = "^\\s*$|^[0-9]{10}$", message = "debe estar vacio o contener exactamente 10 digitos")
+        @Pattern(regexp = "^\\s*$|^\\d{10}$", message = "debe estar vacio o contener exactamente 10 digitos")
         String telefonoAlternativo,
         @NotBlank @Size(max = 100) String ocupacion,
         @NotBlank @Size(max = 150) String empresa,

@@ -82,8 +82,10 @@ class ClienteMethodSecurityTest {
         when(clientes.findAll(org.mockito.ArgumentMatchers.<Specification<ClienteEntity>>any(), any(Pageable.class))).thenReturn(Page.empty());
         var request = new ConsultaClientesRequest();
         request.setId(1L);
-        runner.run(context -> assertThrows(ClienteNoEncontradoException.class,
-                () -> context.getBean(ClienteService.class).consultar(request)));
+        runner.run(context -> {
+            var servicio = context.getBean(ClienteService.class);
+            assertThrows(ClienteNoEncontradoException.class, () -> servicio.consultar(request));
+        });
         verify(clientes).findAll(org.mockito.ArgumentMatchers.<Specification<ClienteEntity>>any(), any(Pageable.class));
         verifyNoMoreInteractions(clientes);
         verifyNoInteractions(cuentas, domicilios, usuarios, sesiones);

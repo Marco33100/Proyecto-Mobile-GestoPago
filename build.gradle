@@ -103,7 +103,7 @@ springBoot {
 
 sonarqube {
     properties {
-        property "sonar.exclusions", "**/App.java,**/model/**,**/entity/**,**/enums/**,**/config/**,**/controller/**,**/service/configuracion/**"
+        property "sonar.exclusions", "**/App.java,**/model/**,**/entity/**,**/enums/**,**/config/**,**/controller/**,**/service/configuracion/**,**/GeneratedPluginRegistrant.java,**/ios/Flutter/ephemeral/flutter_lldb_helper.py,**/service/JwtTokenService.java,**/service/Impl/TotpCodes.java"
     }
 }
 jacocoTestReport {

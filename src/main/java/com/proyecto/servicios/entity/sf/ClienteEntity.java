@@ -92,81 +92,43 @@ public class ClienteEntity {
     protected ClienteEntity() {
     }
 
-    public ClienteEntity(
-            String nombre,
-            String segundoNombre,
-            String apellidoPaterno,
-            String apellidoMaterno,
-            LocalDate fechaNacimiento,
-            String curp,
-            String rfc,
-            Sexo sexo,
-            String nacionalidad,
-            EstadoCivil estadoCivil,
-            String referenciaReconocimientoFacial,
-            String correo,
-            String telefonoMovil,
-            String telefonoAlternativo,
-            String ocupacion,
-            String empresa,
-            BigDecimal ingresoMensual,
-            Instant fechaCreacion
-    ) {
-        this.nombre = nombre;
-        this.segundoNombre = segundoNombre;
-        this.apellidoPaterno = apellidoPaterno;
-        this.apellidoMaterno = apellidoMaterno;
-        this.fechaNacimiento = fechaNacimiento;
+    public record Nombre(String nombre, String segundoNombre, String apellidoPaterno, String apellidoMaterno) { }
+    public record Perfil(LocalDate fechaNacimiento, Sexo sexo, String nacionalidad,
+                         EstadoCivil estadoCivil, String referenciaReconocimientoFacial) { }
+    public record Contacto(String correo, String telefonoMovil, String telefonoAlternativo) { }
+    public record Empleo(String ocupacion, String empresa, BigDecimal ingresoMensual) { }
+
+    public ClienteEntity(Nombre nombre, Perfil perfil, String curp, String rfc,
+                         Contacto contacto, Empleo empleo, Instant fechaCreacion) {
+        asignarDatos(nombre, perfil, contacto, empleo, fechaCreacion);
         this.curp = curp;
         this.rfc = rfc;
-        this.sexo = sexo;
-        this.nacionalidad = nacionalidad;
-        this.estadoCivil = estadoCivil;
-        this.referenciaReconocimientoFacial = referenciaReconocimientoFacial;
-        this.correo = correo;
-        this.telefonoMovil = telefonoMovil;
-        this.telefonoAlternativo = telefonoAlternativo;
-        this.ocupacion = ocupacion;
-        this.empresa = empresa;
-        this.ingresoMensual = ingresoMensual;
         this.activo = true;
         this.fechaCreacion = fechaCreacion;
-        this.fechaActualizacion = fechaCreacion;
     }
 
-    public void actualizar(
-            String nombre,
-            String segundoNombre,
-            String apellidoPaterno,
-            String apellidoMaterno,
-            LocalDate fechaNacimiento,
-            Sexo sexo,
-            String nacionalidad,
-            EstadoCivil estadoCivil,
-            String referenciaReconocimientoFacial,
-            String correo,
-            String telefonoMovil,
-            String telefonoAlternativo,
-            String ocupacion,
-            String empresa,
-            BigDecimal ingresoMensual,
-            Instant fechaActualizacion
-    ) {
-        this.nombre = nombre;
-        this.segundoNombre = segundoNombre;
-        this.apellidoPaterno = apellidoPaterno;
-        this.apellidoMaterno = apellidoMaterno;
-        this.fechaNacimiento = fechaNacimiento;
-        this.sexo = sexo;
-        this.nacionalidad = nacionalidad;
-        this.estadoCivil = estadoCivil;
-        this.referenciaReconocimientoFacial = referenciaReconocimientoFacial;
-        this.correo = correo;
-        this.telefonoMovil = telefonoMovil;
-        this.telefonoAlternativo = telefonoAlternativo;
-        this.ocupacion = ocupacion;
-        this.empresa = empresa;
-        this.ingresoMensual = ingresoMensual;
+    public void actualizar(Nombre nombre, Perfil perfil, Contacto contacto, Empleo empleo,
+                           Instant fechaActualizacion) {
+        asignarDatos(nombre, perfil, contacto, empleo, fechaActualizacion);
+    }
+
+    private void asignarDatos(Nombre nombre, Perfil perfil, Contacto contacto, Empleo empleo,
+                             Instant fechaActualizacion) {
+        this.nombre = nombre.nombre();
+        this.segundoNombre = nombre.segundoNombre();
+        this.apellidoPaterno = nombre.apellidoPaterno();
+        this.apellidoMaterno = nombre.apellidoMaterno();
+        this.fechaNacimiento = perfil.fechaNacimiento();
+        this.sexo = perfil.sexo();
+        this.nacionalidad = perfil.nacionalidad();
+        this.estadoCivil = perfil.estadoCivil();
+        this.referenciaReconocimientoFacial = perfil.referenciaReconocimientoFacial();
+        this.correo = contacto.correo();
+        this.telefonoMovil = contacto.telefonoMovil();
+        this.telefonoAlternativo = contacto.telefonoAlternativo();
+        this.ocupacion = empleo.ocupacion();
+        this.empresa = empleo.empresa();
+        this.ingresoMensual = empleo.ingresoMensual();
         this.fechaActualizacion = fechaActualizacion;
     }
 

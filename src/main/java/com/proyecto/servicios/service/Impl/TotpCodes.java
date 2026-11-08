@@ -1,6 +1,7 @@
 package com.proyecto.servicios.service.Impl;
 
 import org.springframework.stereotype.Component;
+import org.springframework.beans.factory.annotation.Autowired;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import java.nio.ByteBuffer;
@@ -16,13 +17,15 @@ public class TotpCodes {
     private static final char[] BASE32 = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567".toCharArray();
     private final Clock clock;
     private final SecureRandom random = new SecureRandom();
+    @Autowired
     public TotpCodes() { this(Clock.systemUTC()); }
     public TotpCodes(Clock clock) { this.clock = clock; }
 
     public String newSecret() {
         byte[] bytes = new byte[20]; random.nextBytes(bytes);
         StringBuilder encoded = new StringBuilder(32);
-        int buffer = 0, bits = 0;
+        int buffer = 0;
+        int bits = 0;
         for (byte value : bytes) {
             buffer = (buffer << 8) | (value & 255); bits += 8;
             while (bits >= 5) { bits -= 5; encoded.append(BASE32[(buffer >>> bits) & 31]); }
@@ -33,7 +36,7 @@ public class TotpCodes {
     public long currentStep() { return clock.instant().getEpochSecond() / 30; }
 
     public long matchingStep(String secret, String code, long lastUsed) {
-        if (code == null || !code.matches("[0-9]{6}")) return -1;
+        if (code == null || !code.matches("\\d{6}")) return -1;
         long now = currentStep();
         for (long step : new long[]{now, now - 1, now + 1}) {
             if (step > lastUsed && step >= 0 && MessageDigest.isEqual(
@@ -58,7 +61,9 @@ public class TotpCodes {
             int offset = hash[hash.length - 1] & 15;
             int binary = ByteBuffer.wrap(hash, offset, 4).getInt() & 0x7fffffff;
             if (digits != 6 && digits != 8) throw new IllegalArgumentException();
-            return String.format(Locale.ROOT, "%0" + digits + "d", binary % (digits == 6 ? 1_000_000 : 100_000_000));
+            return digits == 6
+                    ? String.format(Locale.ROOT, "%06d", binary % 1_000_000)
+                    : String.format(Locale.ROOT, "%08d", binary % 100_000_000);
         } catch (Exception ignored) {
             throw new IllegalStateException("No fue posible verificar el segundo factor");
         }
@@ -66,7 +71,10 @@ public class TotpCodes {
 
     private byte[] decode(String secret) {
         if (secret == null || !secret.matches("[A-Z2-7]{32}")) throw new IllegalArgumentException();
-        byte[] bytes = new byte[20]; int buffer = 0, bits = 0, index = 0;
+        byte[] bytes = new byte[20];
+        int buffer = 0;
+        int bits = 0;
+        int index = 0;
         for (char value : secret.toCharArray()) {
             int n = value >= 'A' && value <= 'Z' ? value - 'A' : value - '2' + 26;
             buffer = (buffer << 5) | n; bits += 5;

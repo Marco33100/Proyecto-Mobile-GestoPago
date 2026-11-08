@@ -60,15 +60,7 @@ public class SegundoFactorServiceImpl implements SegundoFactorService {
             boolean passwordOk = request.contrasena().getBytes(StandardCharsets.UTF_8).length <= 72
                     && passwords.matches(request.contrasena(), user.getPasswordHash());
             if (!passwordOk) { authorization.failed(factor); return null; }
-            if (factor.getSecretoCifrado() != null) {
-                if (request.codigoActual() != null && request.codigoRecuperacion() != null) {
-                    authorization.failed(factor); return null;
-                }
-                boolean verified = request.codigoRecuperacion() != null
-                        ? consumeRecovery(factor, request.codigoRecuperacion())
-                        : authorization.consume(factor, request.codigoActual());
-                if (!verified) return null;
-            }
+            if (!verificarFactorActual(factor, request)) return null;
             String secret = codes.newSecret();
             factor.setPendienteCifrado(secrets.encrypt(actor.userId(), secret));
             factor.setSesionRegistro(actor.sessionId()); factor.setVenceEn(Instant.now().plusSeconds(300));
@@ -80,6 +72,17 @@ public class SegundoFactorServiceImpl implements SegundoFactorService {
         // Fallos se devuelven fuera de la transaccion para conservar intentos y bloqueos.
         if (result == null) throw error(HttpStatus.FORBIDDEN);
         return result;
+    }
+
+    private boolean verificarFactorActual(SegundoFactorEntity factor, PrepararFactorRequest request) {
+        if (factor.getSecretoCifrado() == null) return true;
+        if (request.codigoActual() != null && request.codigoRecuperacion() != null) {
+            authorization.failed(factor);
+            return false;
+        }
+        return request.codigoRecuperacion() != null
+                ? consumeRecovery(factor, request.codigoRecuperacion())
+                : authorization.consume(factor, request.codigoActual());
     }
     @Override public ActivarFactorResponse activar(ActivarFactorRequest request) {
         secrets.requireConfigured(); var actor = PagoIdentidad.actual();

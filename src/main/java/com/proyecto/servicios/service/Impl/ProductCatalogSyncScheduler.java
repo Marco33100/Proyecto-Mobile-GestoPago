@@ -56,12 +56,7 @@ public class ProductCatalogSyncScheduler {
                 return;
             }
 
-            try {
-                productCacheStore.replaceCatalog(response);
-                log.info("Redis sobrescrito después del commit de PostgreSQL");
-            } catch (ProductCacheException exception) {
-                log.error("PostgreSQL se actualizó, pero Redis no pudo sobrescribirse");
-            }
+            actualizarCache(response);
 
             log.info(
                     "Sincronización diaria completada; anteriores={}, guardados={}",
@@ -80,6 +75,15 @@ public class ProductCatalogSyncScheduler {
         } finally {
             snapshotFileService.deleteSnapshot(snapshot);
             log.info("Finaliza sincronización diaria del catálogo Gestopago");
+        }
+    }
+
+    private void actualizarCache(ProductListResponse response) {
+        try {
+            productCacheStore.replaceCatalog(response);
+            log.info("Redis sobrescrito después del commit de PostgreSQL");
+        } catch (ProductCacheException exception) {
+            log.error("PostgreSQL se actualizó, pero Redis no pudo sobrescribirse");
         }
     }
 

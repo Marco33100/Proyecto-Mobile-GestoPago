@@ -16,23 +16,23 @@ public final class PagoDtos {
             @NotNull @Positive Integer idProducto,
             @NotNull @Positive Integer tipoFront,
             @NotNull @DecimalMin("0.01") @Digits(integer = 17, fraction = 2) BigDecimal monto,
-            @Pattern(regexp = "[0-9]{10,20}") String telefono,
+            @Pattern(regexp = "\\d{10,20}") String telefono,
             @Size(min = 1, max = 100) String referencia
     ) implements SolicitudJson {
         @Override public String toString() { return "PrepararRequest[protegido]"; }
     }
-    public record AutorizarRequest(@NotNull UUID pagoId, @NotBlank @Pattern(regexp = "[0-9]{6}") String codigo) implements SolicitudJson {
+    public record AutorizarRequest(@NotNull UUID pagoId, @NotBlank @Pattern(regexp = "\\d{6}") String codigo) implements SolicitudJson {
         @Override public String toString() { return "AutorizarRequest[protegido]"; }
     }
     public record ConsultaRequest(@NotNull UUID pagoId) implements SolicitudJson { }
     public record PrepararFactorRequest(
             @NotBlank @Size(max = 72) String contrasena,
-            @Pattern(regexp = "[0-9]{6}") String codigoActual,
+            @Pattern(regexp = "\\d{6}") String codigoActual,
             @Pattern(regexp = "[A-F0-9]{8}(?:-[A-F0-9]{8}){3}") String codigoRecuperacion
     ) implements SolicitudJson {
         @Override public String toString() { return "PrepararFactorRequest[protegido]"; }
     }
-    public record ActivarFactorRequest(@NotBlank @Pattern(regexp = "[0-9]{6}") String codigo) implements SolicitudJson {
+    public record ActivarFactorRequest(@NotBlank @Pattern(regexp = "\\d{6}") String codigo) implements SolicitudJson {
         @Override public String toString() { return "ActivarFactorRequest[protegido]"; }
     }
     public record EstadoFactorResponse(boolean activo) { }
