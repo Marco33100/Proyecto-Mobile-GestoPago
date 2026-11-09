@@ -1,7 +1,7 @@
 abstract final class ApiConfig {
-  // 10.0.2.2 permite que el emulador Android llegue al localhost de Windows.
+  // El entorno local puede seleccionarse con --dart-define=API_BASE_URL=...
   static const String baseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'http://10.0.2.2:8080',
+    defaultValue: 'https://gestopago-backend-vhlt.onrender.com',
   );
 }

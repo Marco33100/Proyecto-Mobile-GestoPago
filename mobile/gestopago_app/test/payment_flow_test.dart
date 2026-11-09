@@ -34,6 +34,304 @@ class MemoryPending extends PendingPaymentStore {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  for (final outcome in ['APLICADO', 'RECHAZADO']) {
+    testWidgets(
+      'regresar de pago $outcome conserva cuenta con saldo actualizado sin referencias antiguas',
+      (tester) async {
+        final pending = MemoryPending();
+        var accountReads = 0;
+        final client = MockClient((request) async {
+          final path = request.url.path;
+          Map<String, dynamic> data;
+          if (path.endsWith('/estado')) {
+            data = {'activo': true};
+          } else if (path.endsWith('/mias/consulta')) {
+            accountReads++;
+            data = {
+              'contenido': [
+                {
+                  'numeroCuenta': 'CTA-0123456789ABCDEF0123',
+                  'activa': true,
+                  'saldoDisponible': accountReads == 1 || outcome == 'RECHAZADO'
+                      ? 100
+                      : 90,
+                },
+              ],
+            };
+          } else if (path == '/api/products') {
+            data = {
+              'productos': {
+                'productos': [
+                  {
+                    'servicio': 'Telcel',
+                    'producto': 'Recarga 10',
+                    'idServicio': 133,
+                    'idProducto': 582,
+                    'tipoFront': 1,
+                    'precio': 10,
+                  },
+                ],
+              },
+            };
+          } else if (path.endsWith('/preparar')) {
+            data = {
+              'pagoId': pending.id,
+              'estado': 'PREPARADO',
+              'concepto': 'Recarga 10',
+              'monto': 10,
+              'numeroCuenta': 'CTA-0123456789ABCDEF0123',
+              'autorizacionDisponible': true,
+            };
+          } else if (path.endsWith('/autorizar')) {
+            data = {
+              'pagoId': pending.id,
+              'estado': outcome,
+              'concepto': 'Recarga 10',
+              'monto': 10,
+              'numeroCuenta': 'CTA-0123456789ABCDEF0123',
+            };
+          } else {
+            throw StateError('Ruta inesperada');
+          }
+          return http.Response(jsonEncode({'codigo': 1, 'datos': data}), 200);
+        });
+        addTearDown(client.close);
+        await tester.pumpWidget(
+          MaterialApp(
+            home: PaymentPage(
+              session: session,
+              api: PaymentApiService(client, session),
+              pendingStore: pending,
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        Future<void> tap(Finder finder) async {
+          await tester.ensureVisible(finder);
+          await tester.pumpAndSettle();
+          await tester.tap(finder);
+          await tester.pumpAndSettle();
+        }
+
+        await tap(find.byType(DropdownButtonFormField<String>));
+        await tester.tap(find.textContaining('100.00 MXN').last);
+        await tester.pumpAndSettle();
+        await tap(find.byKey(const ValueKey('product-selector')));
+        await tester.tap(find.text('Recarga 10'));
+        await tester.pumpAndSettle();
+        final phone = find.byWidgetPredicate(
+          (w) =>
+              w is TextField &&
+              w.decoration?.labelText == 'Teléfono de la recarga',
+        );
+        await tester.ensureVisible(phone);
+        await tester.pumpAndSettle();
+        await tester.enterText(phone, '5555555551');
+        await tap(find.text('Revisar pago'));
+        final otp = find.byWidgetPredicate(
+          (w) =>
+              w is TextField &&
+              w.decoration?.labelText == 'Código del autenticador',
+        );
+        await tester.ensureVisible(otp);
+        await tester.pumpAndSettle();
+        await tester.enterText(otp, '123456');
+        await tap(find.text('Autorizar pago'));
+        await tap(find.text('Volver a mis servicios'));
+        expect(accountReads, 2);
+        final selector = tester.widget<DropdownButtonFormField<String>>(
+          find.byType(DropdownButtonFormField<String>),
+        );
+        expect(selector.initialValue, 'CTA-0123456789ABCDEF0123');
+        expect(
+          find.textContaining(
+            outcome == 'APLICADO' ? '90.00 MXN' : '100.00 MXN',
+          ),
+          findsOneWidget,
+        );
+        expect(pending.id, isNull);
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+  testWidgets(
+    'catálogo integra búsqueda y permite cambiar producto sin errores ni pagos',
+    (tester) async {
+      var prepareCalls = 0;
+      final client = MockClient((request) async {
+        final path = request.url.path;
+        Map<String, dynamic> data;
+        if (path.endsWith('/estado')) {
+          data = {'activo': true};
+        } else if (path.endsWith('/mias/consulta')) {
+          data = {
+            'contenido': [
+              {
+                'numeroCuenta': 'CTA-0123456789ABCDEF0123',
+                'activa': true,
+                'saldoDisponible': 100,
+              },
+            ],
+          };
+        } else if (path == '/api/products') {
+          data = {
+            'productos': {
+              'productos': [
+                {
+                  'servicio': 'Telcel',
+                  'producto': 'Recarga 20',
+                  'idServicio': 133,
+                  'idProducto': 403,
+                  'tipoFront': 1,
+                  'precio': 20,
+                },
+                {
+                  'servicio': 'Telcel',
+                  'producto': 'Recarga 10',
+                  'idServicio': 133,
+                  'idProducto': 582,
+                  'tipoFront': 1,
+                  'precio': 10,
+                },
+                {
+                  'servicio': 'Agua',
+                  'producto': 'Recibo de agua',
+                  'idServicio': 76,
+                  'idProducto': 205,
+                  'tipoFront': 2,
+                },
+              ],
+            },
+          };
+        } else {
+          prepareCalls++;
+          throw StateError('La búsqueda no debe enviar pagos');
+        }
+        return http.Response(jsonEncode({'codigo': 1, 'datos': data}), 200);
+      });
+      addTearDown(client.close);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: PaymentPage(
+            session: session,
+            api: PaymentApiService(client, session),
+            pendingStore: MemoryPending(),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      Future<void> openCatalog() async {
+        final selector = find.byKey(const ValueKey('product-selector'));
+        await tester.ensureVisible(selector);
+        await tester.pumpAndSettle();
+        await tester.tap(selector);
+        await tester.pumpAndSettle();
+      }
+
+      Future<void> search(String text) async {
+        await tester.enterText(
+          find.byKey(const ValueKey('catalog-search')),
+          text,
+        );
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+      }
+
+      expect(find.byKey(const ValueKey('catalog-search')), findsNothing);
+      await openCatalog();
+      await search('Telcel');
+      expect(find.text('Recibo de agua'), findsNothing);
+      await tester.tap(find.text('Recarga 20'));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('catalog-search')), findsNothing);
+      expect(find.text('Telcel · Recarga 20'), findsOneWidget);
+      expect(find.text(r'$20.00 MXN'), findsOneWidget);
+      await openCatalog();
+      await search('Agua');
+      expect(find.text('Recarga 20'), findsNothing);
+      await search('sin coincidencias');
+      expect(
+        find.text(
+          'No hay coincidencias. Prueba otro nombre o limpia la búsqueda.',
+        ),
+        findsOneWidget,
+      );
+      await tester.tap(find.byTooltip('Limpiar búsqueda'));
+      await tester.pumpAndSettle();
+      expect(find.text('Recarga 10'), findsOneWidget);
+      await tester.tap(find.byTooltip('Cerrar catálogo'));
+      await tester.pumpAndSettle();
+      // Buscar y cancelar no cambia el producto que se estaba preparando.
+      expect(find.text('Telcel · Recarga 20'), findsOneWidget);
+      await openCatalog();
+      await search('Agua');
+      await tester.tap(find.text('Recibo de agua'));
+      await tester.pumpAndSettle();
+      expect(find.text('Referencia del servicio'), findsOneWidget);
+      expect(find.text('Teléfono de la recarga'), findsNothing);
+      await openCatalog();
+      await search('recarga 10');
+      await tester.tap(find.text('Recarga 10'));
+      await tester.pumpAndSettle();
+      expect(find.text('Telcel · Recarga 10'), findsOneWidget);
+      expect(find.text(r'$10.00 MXN'), findsOneWidget);
+      expect(prepareCalls, 0);
+      expect(tester.takeException(), isNull);
+    },
+  );
+  for (final rule in [
+    'PARCIAL_HASTA_SALDO',
+    'HASTA_SALDO_SIN_POLITICA',
+    'IMPORTE_EXACTO',
+  ]) {
+    testWidgets('explica la regla real del backend: $rule', (tester) async {
+      final pending = MemoryPending()..id = 'intent';
+      final client = MockClient(
+        (_) async => http.Response(
+          jsonEncode({
+            'codigo': 1,
+            'datos': {
+              'pagoId': 'intent',
+              'estado': 'PREPARADO',
+              'concepto': 'Luz',
+              'monto': 20,
+              'numeroCuenta': '123',
+              'reglaImporteReferencia': rule,
+              'autorizacionDisponible': false,
+            },
+          }),
+          200,
+        ),
+      );
+      addTearDown(client.close);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: PaymentPage(
+            session: session,
+            api: PaymentApiService(client, session),
+            pendingStore: pending,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.text(
+          rule == 'IMPORTE_EXACTO'
+              ? 'El importe debe coincidir con el saldo que informó el proveedor.'
+              : 'El importe no puede superar el saldo que informó el proveedor.',
+        ),
+        findsOneWidget,
+      );
+      expect(
+        tester
+            .widget<FilledButton>(
+              find.widgetWithText(FilledButton, 'Autorizar pago'),
+            )
+            .onPressed,
+        isNull,
+      );
+    });
+  }
   testWidgets(
     'muestra deuda consultada y bloquea autorizar sin regla confirmada',
     (tester) async {
@@ -69,17 +367,17 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      expect(find.text('Saldo informado del servicio: 30 MXN'), findsOneWidget);
-      expect(find.text('Regla de importe: SIN_DEFINIR'), findsOneWidget);
+      expect(find.text('Saldo informado del servicio'), findsOneWidget);
+      expect(find.text(r'$30.00 MXN'), findsOneWidget);
       await tester.scrollUntilVisible(
-        find.text('Autorizar este pago'),
+        find.text('Autorizar pago'),
         250,
         scrollable: find.byType(Scrollable).first,
       );
       final button = tester.widget<FilledButton>(
         find
             .ancestor(
-              of: find.text('Autorizar este pago'),
+              of: find.text('Autorizar pago'),
               matching: find.byWidgetPredicate(
                 (widget) => widget is FilledButton,
               ),
@@ -174,8 +472,8 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('PENDIENTE'), findsOneWidget);
-    expect(find.text('Referencia: DESTINO-REAL-123'), findsOneWidget);
+    expect(find.text('Pago en proceso'), findsOneWidget);
+    expect(find.text('DESTINO-REAL-123'), findsOneWidget);
     expect(find.text('Revisar pago'), findsNothing);
     expect(pending.id, 'intent');
     expect(tester.takeException(), isNull);
@@ -212,6 +510,7 @@ void main() {
               'numeroCuenta': '123',
               'upc': 'ABC1234567',
               'referencia': 'REAL',
+              'autorizacionDisponible': true,
             },
           }),
           200,
@@ -227,16 +526,18 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      await tester.ensureVisible(find.text('Autorizar este pago'));
-      await tester.tap(find.text('Autorizar este pago'));
+      await tester.ensureVisible(find.text('Autorizar pago'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Autorizar pago'));
       await tester.pumpAndSettle();
       expect(authorizations, 0);
       await tester.enterText(find.byType(TextField), '123456');
-      await tester.ensureVisible(find.text('Autorizar este pago'));
-      await tester.tap(find.text('Autorizar este pago'));
+      await tester.ensureVisible(find.text('Autorizar pago'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Autorizar pago'));
       await tester.pumpAndSettle();
       expect(authorizations, 1);
-      expect(find.text('PENDIENTE'), findsOneWidget);
+      expect(find.text('Pago en proceso'), findsOneWidget);
       expect(tester.takeException(), isNull);
       client.close();
     },
@@ -285,15 +586,17 @@ void main() {
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField).first, 'password-fixture');
     await tester.ensureVisible(find.text('Preparar autenticador'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Preparar autenticador'));
     await tester.pumpAndSettle();
     expect(find.text(secret), findsOneWidget);
     await tester.enterText(find.byType(TextField).first, '123456');
-    await tester.ensureVisible(find.text('Activar segundo factor'));
-    await tester.tap(find.text('Activar segundo factor'));
+    await tester.ensureVisible(find.text('Activar autenticador'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Activar autenticador'));
     await tester.pumpAndSettle();
     expect(find.text(secret), findsNothing);
-    expect(find.text('Guarda tus codigos de recuperacion'), findsOneWidget);
+    expect(find.text('Guarda tus códigos'), findsOneWidget);
     expect(tester.takeException(), isNull);
     client.close();
   });
@@ -331,9 +634,11 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(find.textContaining('secret-pin'), findsNothing);
-      await tester.tap(find.text('Mostrar PIN de la tarjeta'));
+      await tester.ensureVisible(find.byTooltip('Mostrar PIN'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Mostrar PIN'));
       await tester.pump();
-      expect(find.text('PIN: secret-pin'), findsOneWidget);
+      expect(find.text('secret-pin'), findsOneWidget);
       expect(tester.takeException(), isNull);
       client.close();
     },

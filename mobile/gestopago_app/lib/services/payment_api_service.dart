@@ -25,7 +25,22 @@ class PaymentApiService {
   Future<Map<String, dynamic>> request(
     String path, [
     Map<String, dynamic>? body,
-  ]) async {
+  ]) => _send(path, body, body == null ? 'GET' : 'POST');
+
+  Future<Map<String, dynamic>> update(
+    String path,
+    Map<String, dynamic> body, {
+    String method = 'PUT',
+  }) => _send(path, body, method);
+
+  Future<Map<String, dynamic>> _send(
+    String path,
+    Map<String, dynamic>? body,
+    String method,
+  ) async {
+    final financial =
+        path.startsWith('/api/pagos/') &&
+        !path.startsWith('/api/pagos/segundo-factor/');
     final uri = Uri.parse('$base$path');
     if (kReleaseMode && uri.scheme != 'https') {
       throw const PaymentFailure('Los pagos requieren una conexion HTTPS.');
@@ -36,24 +51,43 @@ class PaymentApiService {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
       };
-      final response =
-          await (body == null
-                  ? client.get(uri, headers: headers)
-                  : client.post(uri, headers: headers, body: jsonEncode(body)))
-              .timeout(const Duration(seconds: 85));
+      final request = http.Request(method, uri)..headers.addAll(headers);
+      if (body != null) request.body = jsonEncode(body);
+      final response = await client
+          .send(request)
+          .then(http.Response.fromStream)
+          .timeout(const Duration(seconds: 85));
+      if (response.statusCode == 204) return {};
       final dynamic decoded;
       try {
         decoded = jsonDecode(response.body);
       } on FormatException {
-        throw const PaymentFailure(
-          'Respuesta no disponible. Consulta el estado del pago antes de repetirlo.',
+        throw PaymentFailure(
+          financial
+              ? 'Respuesta no disponible. Consulta el estado del pago antes de repetirlo.'
+              : 'El servidor no devolvió una respuesta válida. Actualiza la información antes de repetir la operación.',
+          status: response.statusCode,
         );
       }
       if (response.statusCode < 200 || response.statusCode >= 300) {
+        final message = decoded is Map ? decoded['mensaje'] : null;
+        final code = decoded is Map ? decoded['codigo'] : null;
+        final publicMessage =
+            const ['0', '1', '2', '01', '02'].contains('$code') &&
+            message is String &&
+            message.trim().isNotEmpty;
         throw PaymentFailure(
           response.statusCode == 401
-              ? 'Tu sesion vencio. Inicia sesion para consultar el pago.'
-              : 'No se pudo completar la solicitud. Consulta el estado antes de repetir el pago.',
+              ? 'Tu sesión venció. Inicia sesión nuevamente.'
+              : response.statusCode >= 500
+              ? financial
+                    ? 'El servicio no está disponible temporalmente. Si ya autorizaste un pago, consulta su estado antes de repetirlo.'
+                    : 'El servicio no está disponible temporalmente. Inténtalo más tarde.'
+              : publicMessage
+              ? message
+              : financial
+              ? 'No se pudo completar la solicitud. Consulta el estado antes de repetir el pago.'
+              : 'No se pudo completar la solicitud. Revisa los datos y tus permisos.',
           status: response.statusCode,
         );
       }
@@ -62,18 +96,26 @@ class PaymentApiService {
         return decoded['datos'] as Map<String, dynamic>;
       }
       if (decoded['codigo'] == 0) return {};
-      throw const PaymentFailure('Servicio no Disponible');
-    } on TimeoutException {
       throw const PaymentFailure(
-        'La respuesta tardo demasiado. No repitas el pago: consulta su estado.',
+        'No se pudo confirmar el resultado de la operación.',
+      );
+    } on TimeoutException {
+      throw PaymentFailure(
+        financial
+            ? 'La respuesta tardo demasiado. No repitas el pago: consulta su estado.'
+            : 'El servidor tardó demasiado. Actualiza la información antes de repetir la operación.',
       );
     } on http.ClientException {
-      throw const PaymentFailure(
-        'Se perdio la conexion. Consulta el estado antes de repetir el pago.',
+      throw PaymentFailure(
+        financial
+            ? 'Se perdio la conexion. Consulta el estado antes de repetir el pago.'
+            : 'Se perdió la conexión. Revisa tu red y actualiza la información.',
       );
     } on FormatException {
-      throw const PaymentFailure(
-        'Respuesta no reconocida. Consulta el estado del pago.',
+      throw PaymentFailure(
+        financial
+            ? 'Respuesta no reconocida. Consulta el estado del pago.'
+            : 'El servidor envió una respuesta no reconocida.',
       );
     }
   }
