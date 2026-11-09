@@ -51,8 +51,14 @@ Future<void> fillForm(
     'confirmarContrasena': password,
   };
   for (final field in values.entries) {
+    if (field.key == 'correo' || field.key == 'ocupacion') {
+      FocusManager.instance.primaryFocus?.unfocus();
+      await tester.tap(find.text('Continuar'));
+      await tester.pumpAndSettle();
+    }
     final finder = find.byKey(ValueKey(field.key));
     await tester.ensureVisible(finder);
+    await tester.pumpAndSettle();
     if (field.key == 'fechaNacimiento') {
       await chooseBirthDate(tester);
     } else {
@@ -63,11 +69,13 @@ Future<void> fillForm(
   await tester.pumpAndSettle();
   await tester.ensureVisible(find.text('Registrar cliente').last);
   await tester.pumpAndSettle();
+  await tester.pumpAndSettle();
 }
 
 Future<void> chooseBirthDate(WidgetTester tester) async {
   final field = find.byKey(const ValueKey('fechaNacimiento'));
   await tester.ensureVisible(field);
+  await tester.pumpAndSettle();
   await tester.tap(field);
   await tester.pumpAndSettle();
   final dialog = tester.widget<DatePickerDialog>(find.byType(DatePickerDialog));
@@ -122,7 +130,8 @@ void main() {
       expect(input.readOnly, isTrue);
       expect(input.enableInteractiveSelection, isFalse);
       await tester.ensureVisible(finder);
-      await tester.tap(find.byTooltip('Elegir fecha de nacimiento'));
+      await tester.pumpAndSettle();
+      await tester.tap(finder);
       await tester.pumpAndSettle();
       var dialog = tester.widget<DatePickerDialog>(
         find.byType(DatePickerDialog),
@@ -165,6 +174,7 @@ void main() {
     );
     final field = find.byKey(const ValueKey('fechaNacimiento'));
     await tester.ensureVisible(field);
+    await tester.pumpAndSettle();
     await tester.tap(field);
     // Segunda activacion antes de que la primera apertura termine.
     tester
@@ -199,7 +209,7 @@ void main() {
       '${'a' * 255}@b.com',
     );
     await tester.enterText(find.byType(TextFormField).at(1), 'A' * 73);
-    await tester.tap(find.text('Iniciar sesion'));
+    await tester.tap(find.text('Iniciar sesión'));
     await tester.pump();
     expect(requests, 0);
     expect(
@@ -225,7 +235,7 @@ void main() {
       ),
     );
     expect(find.byType(TextFormField), findsNWidgets(2));
-    expect(find.text('Iniciar sesion'), findsOneWidget);
+    expect(find.text('Iniciar sesión'), findsOneWidget);
     expect(find.text('Crear una cuenta'), findsNothing);
     expect(find.textContaining('ejecutivo'), findsOneWidget);
   });
@@ -274,10 +284,14 @@ void main() {
       ),
     );
     await fillForm(tester, password: 'Segura123');
-    await tester.tap(find.text('Registrar cliente'));
+    await tester.tap(find.text('Registrar cliente').last);
     await tester.pump();
     expect(requests, 0);
     expect(find.text('Incluye un caracter especial'), findsOneWidget);
+    await tester.tap(find.text('Atrás'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Atrás'));
+    await tester.pumpAndSettle();
     expect(
       tester
           .widget<TextFormField>(find.byKey(const ValueKey('nombre')))
@@ -336,7 +350,7 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      expect(find.text('Bienvenido, Ejecutivo'), findsOneWidget);
+      expect(find.text('Hola, Ejecutivo'), findsOneWidget);
       expect(find.text('Cliente registrado. Cuenta: CTA-123'), findsOneWidget);
     },
   );
@@ -360,9 +374,11 @@ void main() {
         ),
       );
       await fillForm(tester);
-      await tester.tap(find.text('Registrar cliente'));
+      await tester.tap(find.text('Registrar cliente').last);
       await tester.pumpAndSettle();
       expect(find.text('La CURP ya esta registrada'), findsOneWidget);
+      await tester.tap(find.text('Atrás'));
+      await tester.pumpAndSettle();
       expect(
         tester
             .widget<TextFormField>(find.byKey(const ValueKey('correo')))

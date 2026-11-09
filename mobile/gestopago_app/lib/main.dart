@@ -7,6 +7,9 @@ import 'models/login_session.dart';
 import 'screens/home_page.dart';
 import 'screens/login_page.dart';
 import 'services/auth_api_service.dart';
+import 'theme.dart';
+import 'widgets/brand_wordmark.dart';
+import 'widgets/paper_background.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -42,7 +45,7 @@ class _GestopagoAppState extends State<GestopagoApp> {
     return MaterialApp(
       title: 'Gestopago',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(colorSchemeSeed: Colors.indigo, useMaterial3: true),
+      theme: gestopagoTheme(),
       home: SessionGate(authApi: _authApi),
     );
   }
@@ -77,7 +80,8 @@ class _SessionGateState extends State<SessionGate> {
       if (mounted) setState(() => _session = session);
     } catch (_) {
       _showNotice(
-          'No fue posible recuperar la sesion local. Inicia sesion nuevamente.');
+        'No fue posible recuperar la sesion local. Inicia sesion nuevamente.',
+      );
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -92,13 +96,15 @@ class _SessionGateState extends State<SessionGate> {
       if (session != null) await widget.authApi.logout(session);
     } catch (_) {
       warnings.add(
-          'No se pudo confirmar el cierre en el servidor. La sesion remota podria seguir activa.');
+        'No se pudo confirmar el cierre en el servidor. La sesion remota podria seguir activa.',
+      );
     }
     try {
       await _store.clear();
     } catch (_) {
-      warnings
-          .add('No fue posible borrar la sesion guardada en el dispositivo.');
+      warnings.add(
+        'No fue posible borrar la sesion guardada en el dispositivo.',
+      );
     } finally {
       if (mounted) {
         setState(() {
@@ -122,15 +128,33 @@ class _SessionGateState extends State<SessionGate> {
   @override
   Widget build(BuildContext context) {
     if (_loading) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      return const Scaffold(
+        body: PaperBackground(
+          child: SafeArea(
+            child: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  BrandWordmark(centered: true),
+                  SizedBox(height: 26),
+                  CircularProgressIndicator(
+                    semanticsLabel: 'Restaurando sesión',
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
     }
     final session = _session;
     if (session != null) {
       return HomePage(
-          session: session,
-          onLogout: _logout,
-          authApi: widget.authApi,
-          isLoggingOut: _loggingOut);
+        session: session,
+        onLogout: _logout,
+        authApi: widget.authApi,
+        isLoggingOut: _loggingOut,
+      );
     }
     return LoginPage(
       authApi: widget.authApi,
