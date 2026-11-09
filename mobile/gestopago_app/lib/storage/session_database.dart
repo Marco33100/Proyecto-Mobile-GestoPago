@@ -42,7 +42,8 @@ class SessionDatabase implements SessionStore {
         version: 5,
         onConfigure: (db) async {
           await db.execute('PRAGMA foreign_keys = ON');
-          await db.execute('PRAGMA secure_delete = ON');
+          // Este PRAGMA devuelve una fila; Android exige ejecutarlo como consulta.
+          await db.rawQuery('PRAGMA secure_delete = ON');
         },
         onCreate: (db, version) => _createSessionTable(db),
         onUpgrade: (db, oldVersion, newVersion) async {

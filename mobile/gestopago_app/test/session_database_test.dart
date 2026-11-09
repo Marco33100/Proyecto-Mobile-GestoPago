@@ -58,6 +58,14 @@ void main() {
     await (await store.database).close();
   });
 
+  test('configuración conserva el borrado seguro al abrir SQLite', () async {
+    final db = await store.database;
+    final rows = await db.rawQuery('PRAGMA secure_delete');
+    expect(rows.single['secure_delete'], 1);
+    await store.save(session('token-de-prueba'));
+    expect((await store.current())?.userId, 'usuario-token-de-prueba');
+  });
+
   test('SQLite conserva perfil y rol pero nunca el token', () async {
     await store.save(session('SECRETO-UNICO'));
     final db = await store.database;
