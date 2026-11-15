@@ -35,7 +35,17 @@ explícita del proveedor.
 - [Pagos de servicios y segundo factor](docs/payment-flow.md).
 - [Consultas y optimización](#revision-de-consultas).
 - [Contrato de tipos y longitudes](docs/database-lengths.md).
-- [Configuración y uso de Flutter](mobile/gestopago_app/README.md).
+- [Configuración y uso de Flutter](frontend/README.md).
+
+## Estructura del repositorio
+
+```
+backend/    API Spring Boot: código, migraciones, Gradle, Dockerfile y scripts
+frontend/   Aplicación móvil Flutter
+docs/       Documentación técnica compartida
+```
+
+Los comandos de Gradle se ejecutan desde `backend/` y los de Flutter desde `frontend/`.
 
 ## Tecnologías y organización
 
@@ -57,7 +67,7 @@ explícita del proveedor.
 
 ### Arquitectura por capas
 
-Los paquetes del backend están bajo `src/main/java/com/proyecto/servicios`.
+Los paquetes del backend están bajo `backend/src/main/java/com/proyecto/servicios`.
 
 | Capa / directorio | Responsabilidad y ejemplos |
 | --- | --- |
@@ -68,9 +78,9 @@ Los paquetes del backend están bajo `src/main/java/com/proyecto/servicios`.
 | `entity/sf` y `entity/gestopago` | Mapeos Java/PostgreSQL de los dos dominios |
 | `model` y `mapper` | Payloads, DTOs, respuestas y conversiones; no exponen hashes ni contraseñas |
 | `config`, `support`, `exception` | Configuración, validaciones compartidas y manejo de errores |
-| `src/main/resources/db/migration` | Historial de cambios de base de datos |
-| `src/main/resources/db/initial` | Una V1 consolidada, exclusiva para bases nuevas |
-| `mobile/gestopago_app` | Cliente Flutter separado del backend |
+| `backend/src/main/resources/db/migration` | Historial de cambios de base de datos |
+| `backend/src/main/resources/db/initial` | Una V1 consolidada, exclusiva para bases nuevas |
+| `frontend` | Cliente Flutter separado del backend |
 
 Se usa inyección por constructor: los campos `private final` representan
 dependencias que no cambian durante la vida del componente. La validación del
@@ -93,14 +103,14 @@ transacción. Un usuario mantiene como máximo una sesión local vigente.
 Productos y tokens de Gestopago pertenecen a la integración externa: sus IDs no
 se usan como llaves foráneas hacia clientes o cuentas bancarias.
 
-Las bases existentes usan `src/main/resources/db/migration` para el historial
-principal V1 a V16; `FlywayConfig` agrega además `src/main/resources/db/payments`
+Las bases existentes usan `backend/src/main/resources/db/migration` para el historial
+principal V1 a V16; `FlywayConfig` agrega además `backend/src/main/resources/db/payments`
 con las migraciones V17 a V23. No editar ni eliminar migraciones que ya fueron
 aplicadas.
 
 ### Instalación nueva con esquema inicial consolidado
 
-`src/main/resources/db/initial/V1__create_initial_schema.sql` crea directamente el
+`backend/src/main/resources/db/initial/V1__create_initial_schema.sql` crea directamente el
 esquema principal de clientes, cuentas y catálogo, equivalente al estado final V16.
 El perfil `new-database` selecciona esa ubicación y `FlywayConfig` agrega
 `db/payments`, por lo que Flyway aplica después las migraciones V17 a V23 de pagos
@@ -116,7 +126,7 @@ pgAdmin conectado a la base administrativa `postgres`:
 CREATE DATABASE gestopago_nueva;
 ```
 
-Después, desde la raíz del backend, seleccionar el perfil explícitamente:
+Después, desde la carpeta `backend`, seleccionar el perfil explícitamente:
 
 ```powershell
 $env:NEW_DATABASE_JDBC_URL = "jdbc:postgresql://localhost:5432/gestopago_nueva"
@@ -139,9 +149,9 @@ El perfil deshabilita el baseline automático de bases con tablas existentes.
 - Credenciales autorizadas de Gestopago para comprobar la integración real.
 - Flutter SDK y emulador Android para ejecutar la aplicación móvil.
 
-La configuración compartida está en `src/main/resources/application.properties`.
+La configuración compartida está en `backend/src/main/resources/application.properties`.
 El perfil predeterminado es `local`. Los valores privados pueden definirse en
-`src/main/resources/application-local.properties`, ignorado por Git, o mediante
+`backend/src/main/resources/application-local.properties`, ignorado por Git, o mediante
 las variables de entorno previstas en la configuración. No se publica el archivo
 privado ni se incorporan secretos a Java, Flutter, ejemplos o imágenes Docker.
 
@@ -166,7 +176,7 @@ no constituyen una garantía de tiempo total de respuesta.
 
 ### Arranque y comprobación
 
-Desde la raíz Java, donde están `build.gradle` y `gradlew.bat`:
+Desde la carpeta `backend`, donde están `build.gradle` y `gradlew.bat`:
 
 ```powershell
 .\gradlew.bat bootRun
@@ -185,7 +195,7 @@ Crear el primer ejecutivo siguiendo la sección de bootstrap de este documento,
 iniciar sesión en `/api/auth/login` y colocar su `accessToken` en **Authorize** de
 Swagger. El token de usuario no es el Bearer Token del proveedor Gestopago.
 
-Desde `mobile/gestopago_app`, con el emulador Android encendido:
+Desde `frontend`, con el emulador Android encendido:
 
 ```powershell
 flutter pub get
@@ -520,7 +530,7 @@ cada peticion: un JWT anterior no conserva permisos retirados. No se aceptan rol
 desde el formulario ni se usa Redis como autoridad de autorizacion.
 
 Para crear el primer ejecutivo, agrega temporalmente estas propiedades al archivo
-local ignorado por Git: `src/main/resources/application-local.properties`.
+local ignorado por Git: `backend/src/main/resources/application-local.properties`.
 Conserva en ese archivo tus conexiones existentes y el secreto JWT.
 
 ```properties
@@ -568,9 +578,9 @@ duplicados o concurrencia, 503 por persistencia y 500 por un error inesperado.
 Los mensajes y logs no incluyen passwords, hashes, tokens ni detalles SQL internos.
 
 ```powershell
-# Backend, desde la raiz Java
+# Backend, desde backend
 .\gradlew.bat test --console=plain
-# Flutter, desde mobile/gestopago_app
+# Flutter, desde frontend
 flutter analyze
 flutter test
 ```
