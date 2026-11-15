@@ -31,7 +31,7 @@ Respuesta ilustrativa, no usar la clave de ejemplo como secreto real:
 
 El secreto se recibe para este registro y no se puede consultar despues. En Flutter se muestra QR y clave para registro manual; el QR se genera localmente, sin enviarlo a un sitio externo. Nunca compartir capturas del QR, clave, JWT ni recuperacion.
 
-3. Sin telefono, abrir otra terminal PowerShell en la raiz del proyecto y ejecutar:
+3. Sin telefono, abrir otra terminal PowerShell en la carpeta `backend` y ejecutar:
 
 ```powershell
 .\scripts\Get-LocalTotp.ps1 -Continuo
@@ -70,6 +70,7 @@ Para cambiar el autenticador, preparar acepta contrasena mas codigoActual o codi
 ## Verificacion automatica
 
 ```powershell
+cd backend
 .\gradlew.bat --offline test --tests "*TotpCodesTest" --tests "*PagoFlowPersistenceTest" --console=plain
 ```
 
@@ -78,7 +79,7 @@ TotpCodesTest comprueba los seis vectores SHA1 oficiales RFC 6238, desfase, repl
 El generador en el mismo PC es una ayuda de desarrollo: no es un endpoint de pruebas ni una excepcion a las validaciones, pero usarlo junto con las credenciales en el mismo equipo reduce la independencia de factores. En produccion usar autenticador protegido y HTTPS; TOTP no es resistente al phishing. No se ha realizado un pago real para validar esta implementacion.
 # Perfil TOTP local protegido con Windows
 
-El generador admite `-PerfilLocal NOMBRE` para cargar un secreto previamente guardado con DPAPI CurrentUser en `data/totp-NOMBRE.secret.dpapi`. Estos archivos se excluyen de Git y solo pueden descifrarse con el usuario de Windows que los creo; no se guarda Base32 en texto plano. El perfil no se crea automaticamente ni evita el registro o la activacion del segundo factor mediante la API.
+El generador admite `-PerfilLocal NOMBRE` para cargar un secreto previamente guardado con DPAPI CurrentUser en `backend/data/totp-NOMBRE.secret.dpapi`. Estos archivos se excluyen de Git y solo pueden descifrarse con el usuario de Windows que los creo; no se guarda Base32 en texto plano. El perfil no se crea automaticamente ni evita el registro o la activacion del segundo factor mediante la API.
 
 Para el perfil de demostracion `daniel` registrado en esta maquina:
 
@@ -86,4 +87,4 @@ Para el perfil de demostracion `daniel` registrado en esta maquina:
 .\scripts\Get-LocalTotp.ps1 -PerfilLocal daniel -Continuo
 ```
 
-No pide pegar Base32. `-SoloCodigo` devuelve solo los seis digitos para una prueba local automatizada. Los codigos de recuperacion del registro se conservaron aparte, tambien protegidos con DPAPI, en `data/totp-daniel.recovery.dpapi`. No publicar ni compartir estos archivos. Este perfil es una comodidad de desarrollo: usar contrasena y autenticador en el mismo equipo no demuestra independencia de factores frente a un equipo comprometido. En produccion debe utilizarse un autenticador protegido independiente.
+No pide pegar Base32. `-SoloCodigo` devuelve solo los seis digitos para una prueba local automatizada. Los codigos de recuperacion del registro se conservaron aparte, tambien protegidos con DPAPI, en `backend/data/totp-daniel.recovery.dpapi`. No publicar ni compartir estos archivos. Este perfil es una comodidad de desarrollo: usar contrasena y autenticador en el mismo equipo no demuestra independencia de factores frente a un equipo comprometido. En produccion debe utilizarse un autenticador protegido independiente.

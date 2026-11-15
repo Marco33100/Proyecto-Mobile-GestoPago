@@ -38,8 +38,8 @@ un archivo no registra automaticamente una revision en el servidor de SonarQube.
 
 ## Archivos generados por Flutter
 
-- `mobile/gestopago_app/android/app/src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java`
-- `mobile/gestopago_app/ios/Flutter/ephemeral/flutter_lldb_helper.py`
+- `frontend/android/app/src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java`
+- `frontend/ios/Flutter/ephemeral/flutter_lldb_helper.py`
 
 Ambos archivos indican que son generados. Flutter los regenera: agregar un
 constructor privado o cambiar la firma del callback de LLDB perderia el cambio
