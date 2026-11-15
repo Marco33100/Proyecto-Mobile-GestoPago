@@ -1,12 +1,13 @@
 package com.proyecto.servicios.service;
 
+import com.proyecto.servicios.service.clientes.ClienteRegistroService;
 import com.proyecto.servicios.entity.sf.ClienteEntity;
 import com.proyecto.servicios.entity.sf.CuentaEntity;
 import com.proyecto.servicios.entity.sf.DomicilioEntity;
 import com.proyecto.servicios.entity.sf.EstadoCivil;
 import com.proyecto.servicios.entity.sf.Sexo;
 import com.proyecto.servicios.entity.sf.UserEntity;
-import com.proyecto.servicios.controller.ClienteController;
+import com.proyecto.servicios.controller.clientes.ClienteController;
 import com.proyecto.servicios.controller.ValidadorCampos;
 import com.proyecto.servicios.model.cliente.UsuarioClienteModificadoEvent;
 import com.proyecto.servicios.exception.cliente.ClienteNoEncontradoException;
@@ -27,7 +28,7 @@ import com.proyecto.servicios.repositorys.sf.DomicilioRepository;
 import com.proyecto.servicios.repositorys.sf.UserRepository;
 import com.proyecto.servicios.repositorys.sf.UserSessionRepository;
 import org.springframework.context.ApplicationEventPublisher;
-import com.proyecto.servicios.service.Impl.ClienteServiceImpl;
+import com.proyecto.servicios.service.clientes.impl.ClienteServiceImpl;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;

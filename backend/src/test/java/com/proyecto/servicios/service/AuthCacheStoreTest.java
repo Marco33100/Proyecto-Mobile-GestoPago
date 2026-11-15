@@ -1,7 +1,7 @@
 package com.proyecto.servicios.service;
 
 import com.proyecto.servicios.exception.auth.AuthCacheException;
-import com.proyecto.servicios.service.Impl.AuthCacheStore;
+import com.proyecto.servicios.service.auth.impl.AuthCacheStore;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;

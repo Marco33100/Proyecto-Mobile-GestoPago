@@ -2,8 +2,8 @@ package com.proyecto.servicios.service;
 
 import com.proyecto.servicios.entity.sf.RolUsuario;
 import com.proyecto.servicios.repositorys.sf.UserSessionRepository;
-import com.proyecto.servicios.service.Impl.ActiveSessionService;
-import com.proyecto.servicios.service.Impl.AuthCacheStore;
+import com.proyecto.servicios.service.auth.impl.ActiveSessionService;
+import com.proyecto.servicios.service.auth.impl.AuthCacheStore;
 import com.proyecto.servicios.exception.auth.AuthPersistenceException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

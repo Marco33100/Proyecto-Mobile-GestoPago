@@ -1,10 +1,10 @@
 package com.proyecto.servicios.service;
 
-import com.proyecto.servicios.config.ExecutiveBootstrapProperties;
+import com.proyecto.servicios.config.bootstrap.ExecutiveBootstrapProperties;
 import com.proyecto.servicios.entity.sf.RolUsuario;
 import com.proyecto.servicios.entity.sf.UserEntity;
 import com.proyecto.servicios.repositorys.sf.UserRepository;
-import com.proyecto.servicios.service.Impl.ExecutiveBootstrapService;
+import com.proyecto.servicios.service.auth.impl.ExecutiveBootstrapService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;

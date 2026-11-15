@@ -71,13 +71,13 @@ Los paquetes del backend están bajo `backend/src/main/java/com/proyecto/servici
 
 | Capa / directorio | Responsabilidad y ejemplos |
 | --- | --- |
-| `controller` | Contratos HTTP: `ClienteController`, `CuentaController`, `AuthController`, `ProductCatalogController`, `PagoController` y `ConciliacionPagoController` |
-| `service` y `service/Impl` | Reglas de negocio, sesiones, catálogo, pagos, TOTP, conciliación y transacciones |
+| `controller/<dominio>` | Contratos HTTP agrupados en `auth`, `clientes`, `cuentas`, `catalogo` y `pagos`; en la raíz, el manejo global de errores y validaciones |
+| `service/<dominio>` y `service/<dominio>/impl` | Interfaces y reglas de negocio por dominio: `auth` (sesiones, usuarios, TOTP), `clientes`, `cuentas`, `catalogo`, `gestopago` (token del proveedor) y `pagos` (pagos y conciliación) |
 | `client` | Comunicación con Gestopago; no contiene reglas del cliente bancario |
 | `repositorys` | Consultas de persistencia mediante Spring Data JPA |
 | `entity/sf` y `entity/gestopago` | Mapeos Java/PostgreSQL de los dos dominios |
 | `model` y `mapper` | Payloads, DTOs, respuestas y conversiones; no exponen hashes ni contraseñas |
-| `config`, `support`, `exception` | Configuración, validaciones compartidas y manejo de errores |
+| `config/<área>`, `support`, `exception` | Configuración (`seguridad`, `database`, `gestopago`, `bootstrap`), validaciones compartidas y manejo de errores |
 | `backend/src/main/resources/db/migration` | Historial de cambios de base de datos |
 | `backend/src/main/resources/db/initial` | Una V1 consolidada, exclusiva para bases nuevas |
 | `frontend` | Cliente Flutter separado del backend |

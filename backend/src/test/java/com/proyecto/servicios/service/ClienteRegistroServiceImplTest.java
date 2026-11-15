@@ -1,5 +1,6 @@
 package com.proyecto.servicios.service;
 
+import com.proyecto.servicios.service.cuentas.CuentaService;
 import com.proyecto.servicios.entity.sf.ClienteEntity;
 import com.proyecto.servicios.entity.sf.CuentaEntity;
 import com.proyecto.servicios.entity.sf.DomicilioEntity;
@@ -20,7 +21,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.mockito.ArgumentCaptor;
 import org.springframework.dao.DataAccessResourceFailureException;
 import com.proyecto.servicios.exception.cliente.ClientePersistenceException;
-import com.proyecto.servicios.service.Impl.ClienteRegistroServiceImpl;
+import com.proyecto.servicios.service.clientes.impl.ClienteRegistroServiceImpl;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;

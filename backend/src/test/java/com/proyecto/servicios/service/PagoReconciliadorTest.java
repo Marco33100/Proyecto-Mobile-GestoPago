@@ -1,8 +1,9 @@
 package com.proyecto.servicios.service;
 
+import com.proyecto.servicios.service.pagos.PagoGateway;
 import com.proyecto.servicios.config.PagoProperties;
-import com.proyecto.servicios.service.Impl.PagoLedger;
-import com.proyecto.servicios.service.Impl.PagoReconciliador;
+import com.proyecto.servicios.service.pagos.impl.PagoLedger;
+import com.proyecto.servicios.service.pagos.impl.PagoReconciliador;
 import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.UUID;

@@ -13,7 +13,7 @@ import org.springframework.data.jpa.domain.Specification;
 import com.proyecto.servicios.model.cliente.UsuarioClienteModificadoEvent;
 import com.proyecto.servicios.repositorys.sf.UserRepository;
 import com.proyecto.servicios.repositorys.sf.UserSessionRepository;
-import com.proyecto.servicios.service.Impl.UsuarioServiceImpl;
+import com.proyecto.servicios.service.auth.impl.UsuarioServiceImpl;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;

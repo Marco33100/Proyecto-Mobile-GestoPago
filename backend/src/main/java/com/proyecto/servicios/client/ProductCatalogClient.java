@@ -1,6 +1,6 @@
 package com.proyecto.servicios.client;
 
-import com.proyecto.servicios.config.ProductClientConfiguration;
+import com.proyecto.servicios.config.gestopago.ProductClientConfiguration;
 import com.proyecto.servicios.model.product.ProductListResponse;
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.http.ResponseEntity;

@@ -1,11 +1,16 @@
 package com.proyecto.servicios.controller;
 
-import com.proyecto.servicios.service.AuthService;
-import com.proyecto.servicios.service.ClienteRegistroService;
-import com.proyecto.servicios.service.ClienteService;
-import com.proyecto.servicios.service.CuentaService;
-import com.proyecto.servicios.service.ProductCatalogService;
-import com.proyecto.servicios.service.UsuarioService;
+import com.proyecto.servicios.controller.auth.AuthController;
+import com.proyecto.servicios.controller.auth.UsuarioController;
+import com.proyecto.servicios.controller.catalogo.ProductCatalogController;
+import com.proyecto.servicios.controller.clientes.ClienteController;
+import com.proyecto.servicios.controller.cuentas.CuentaController;
+import com.proyecto.servicios.service.auth.AuthService;
+import com.proyecto.servicios.service.clientes.ClienteRegistroService;
+import com.proyecto.servicios.service.clientes.ClienteService;
+import com.proyecto.servicios.service.cuentas.CuentaService;
+import com.proyecto.servicios.service.catalogo.ProductCatalogService;
+import com.proyecto.servicios.service.auth.UsuarioService;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerMapping;
@@ -25,7 +30,7 @@ class ApiRoutesTest {
                 new CuentaController(mock(CuentaService.class)),
                 new UsuarioController(mock(UsuarioService.class)),
                 new AuthController(mock(AuthService.class),
-                        mock(com.proyecto.servicios.service.Impl.LoginAttemptLimiter.class)),
+                        mock(com.proyecto.servicios.service.auth.impl.LoginAttemptLimiter.class)),
                 new ProductCatalogController(mock(ProductCatalogService.class))).build();
         var mappings = mvc.getDispatcherServlet().getWebApplicationContext()
                 .getBean(RequestMappingHandlerMapping.class).getHandlerMethods();

@@ -1,7 +1,20 @@
 package com.proyecto.servicios.controller;
 
+import com.proyecto.servicios.config.CuentaProperties;
+import com.proyecto.servicios.config.seguridad.JwtAuthenticationFilter;
+import com.proyecto.servicios.config.seguridad.LoginRateLimitProperties;
+import com.proyecto.servicios.config.seguridad.RestAuthenticationEntryPoint;
+import com.proyecto.servicios.config.seguridad.SecurityConfiguration;
+import com.proyecto.servicios.controller.clientes.ClienteController;
+import com.proyecto.servicios.controller.cuentas.CuentaController;
+import com.proyecto.servicios.controller.pagos.ConciliacionPagoController;
+import com.proyecto.servicios.controller.pagos.PagoExceptionHandler;
+import com.proyecto.servicios.service.auth.JwtTokenService;
+import com.proyecto.servicios.service.clientes.ClienteRegistroService;
+import com.proyecto.servicios.service.clientes.ClienteService;
+import com.proyecto.servicios.service.cuentas.CuentaService;
+import com.proyecto.servicios.service.pagos.ConciliacionPagoService;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.proyecto.servicios.config.*;
 import com.proyecto.servicios.entity.sf.RolUsuario;
 import com.proyecto.servicios.model.auth.AuthenticatedUser;
 import com.proyecto.servicios.exception.cliente.CuentaNoEncontradaException;
@@ -10,10 +23,9 @@ import com.proyecto.servicios.model.cliente.SaldoCuentaResponse;
 import com.proyecto.servicios.model.cliente.PaginaResponse;
 import com.proyecto.servicios.mapper.ClienteResponseMapper;
 import com.proyecto.servicios.repositorys.sf.CuentaRepository;
-import com.proyecto.servicios.service.Impl.CuentaServiceImpl;
+import com.proyecto.servicios.service.cuentas.impl.CuentaServiceImpl;
 import java.math.BigDecimal;
-import com.proyecto.servicios.service.*;
-import com.proyecto.servicios.service.Impl.ActiveSessionService;
+import com.proyecto.servicios.service.auth.impl.ActiveSessionService;
 import jakarta.servlet.Filter;
 import org.junit.jupiter.api.*;
 import org.springframework.context.annotation.Bean;
@@ -51,7 +63,7 @@ class ClienteCuentaSecurityTest {
         context.getEnvironment().getPropertySources().addFirst(
                 new MapPropertySource("test", Map.of("app.database.enabled", "true")));
         context.register(SecurityConfiguration.class, SecurityTestConfiguration.class,
-                LoginRateLimitProperties.class, com.proyecto.servicios.service.Impl.LoginAttemptLimiter.class);
+                LoginRateLimitProperties.class, com.proyecto.servicios.service.auth.impl.LoginAttemptLimiter.class);
         context.refresh();
         sessions = context.getBean(ActiveSessionService.class);
         usuario = new AuthenticatedUser(UUID.randomUUID(), UUID.randomUUID(), "uno@example.com", "uno");

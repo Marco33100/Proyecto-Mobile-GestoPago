@@ -1,16 +1,21 @@
 package com.proyecto.servicios.controller;
 
+import com.proyecto.servicios.config.seguridad.JwtAuthenticationFilter;
+import com.proyecto.servicios.config.seguridad.LoginRateLimitProperties;
+import com.proyecto.servicios.config.seguridad.RestAuthenticationEntryPoint;
+import com.proyecto.servicios.config.seguridad.SecurityConfiguration;
+import com.proyecto.servicios.controller.auth.AuthController;
+import com.proyecto.servicios.controller.auth.UsuarioController;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.proyecto.servicios.config.*;
 import com.proyecto.servicios.entity.sf.UserEntity;
 import com.proyecto.servicios.exception.auth.*;
 import com.proyecto.servicios.model.auth.AuthenticatedUser;
 import com.proyecto.servicios.repositorys.sf.UserRepository;
 import com.proyecto.servicios.repositorys.sf.UserSessionRepository;
-import com.proyecto.servicios.service.AuthService;
-import com.proyecto.servicios.service.JwtTokenService;
-import com.proyecto.servicios.service.Impl.ActiveSessionService;
-import com.proyecto.servicios.service.Impl.UsuarioServiceImpl;
+import com.proyecto.servicios.service.auth.AuthService;
+import com.proyecto.servicios.service.auth.JwtTokenService;
+import com.proyecto.servicios.service.auth.impl.ActiveSessionService;
+import com.proyecto.servicios.service.auth.impl.UsuarioServiceImpl;
 import jakarta.servlet.Filter;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.AfterEach;
@@ -52,7 +57,7 @@ class UsuarioAuthSecurityTest {
         context.getEnvironment().getPropertySources().addFirst(
                 new MapPropertySource("test", Map.of("app.database.enabled", "true")));
         context.register(SecurityConfiguration.class, SecurityTestConfiguration.class,
-                LoginRateLimitProperties.class, com.proyecto.servicios.service.Impl.LoginAttemptLimiter.class);
+                LoginRateLimitProperties.class, com.proyecto.servicios.service.auth.impl.LoginAttemptLimiter.class);
         context.refresh();
         usuarios = mock(UserRepository.class);
         sesiones = mock(UserSessionRepository.class);
@@ -66,7 +71,7 @@ class UsuarioAuthSecurityTest {
                 usuario.getId(), UUID.randomUUID(), usuario.getEmail(), usuario.getIdentifier()));
         when(active.rolVigente(any(), any())).thenReturn(com.proyecto.servicios.entity.sf.RolUsuario.CLIENTE);
         mvc = MockMvcBuilders.standaloneSetup(new AuthController(auth,
-                context.getBean(com.proyecto.servicios.service.Impl.LoginAttemptLimiter.class)), new UsuarioController(
+                context.getBean(com.proyecto.servicios.service.auth.impl.LoginAttemptLimiter.class)), new UsuarioController(
                 new UsuarioServiceImpl(usuarios, sesiones, encoder, mock(ApplicationEventPublisher.class))))
                 .setCustomArgumentResolvers(new AuthenticationPrincipalArgumentResolver())
                 .setControllerAdvice(new ValidadorCampos(), new com.proyecto.servicios.controller.GlobalApiExceptionHandler())

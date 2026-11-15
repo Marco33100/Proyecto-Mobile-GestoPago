@@ -1,5 +1,6 @@
 package com.proyecto.servicios.service;
 
+import com.proyecto.servicios.service.cuentas.CuentaService;
 import com.proyecto.servicios.config.CuentaProperties;
 import com.proyecto.servicios.mapper.ClienteResponseMapper;
 import com.proyecto.servicios.model.cliente.ActualizarEstadoCuentaRequest;
@@ -13,7 +14,7 @@ import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import com.proyecto.servicios.repositorys.sf.CuentaRepository;
-import com.proyecto.servicios.service.Impl.CuentaServiceImpl;
+import com.proyecto.servicios.service.cuentas.impl.CuentaServiceImpl;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;

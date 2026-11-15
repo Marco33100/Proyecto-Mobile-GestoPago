@@ -1,8 +1,8 @@
 package com.proyecto.servicios.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.proyecto.servicios.config.PublicSecurityConfiguration;
-import com.proyecto.servicios.config.RestAuthenticationEntryPoint;
+import com.proyecto.servicios.config.seguridad.PublicSecurityConfiguration;
+import com.proyecto.servicios.config.seguridad.RestAuthenticationEntryPoint;
 import jakarta.servlet.Filter;
 import org.junit.jupiter.api.Test;
 import org.springframework.context.annotation.Bean;

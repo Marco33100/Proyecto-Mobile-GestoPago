@@ -1,5 +1,6 @@
 package com.proyecto.servicios.config;
 
+import com.proyecto.servicios.config.seguridad.RestAuthenticationEntryPoint;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import org.junit.jupiter.params.ParameterizedTest;

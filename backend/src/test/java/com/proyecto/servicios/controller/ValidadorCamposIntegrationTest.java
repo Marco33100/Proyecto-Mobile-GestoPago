@@ -1,13 +1,16 @@
 package com.proyecto.servicios.controller;
 
+import com.proyecto.servicios.controller.auth.AuthController;
+import com.proyecto.servicios.controller.catalogo.ProductCatalogController;
+import com.proyecto.servicios.controller.clientes.ClienteController;
 import com.proyecto.servicios.exception.ProductIntegrationErrorType;
 import com.proyecto.servicios.exception.ProductIntegrationException;
 import com.proyecto.servicios.exception.cliente.ClienteNoEncontradoException;
-import com.proyecto.servicios.service.ClienteRegistroService;
-import com.proyecto.servicios.service.ClienteService;
-import com.proyecto.servicios.service.ProductCatalogService;
-import com.proyecto.servicios.service.AuthService;
-import com.proyecto.servicios.service.Impl.LoginAttemptLimiter;
+import com.proyecto.servicios.service.clientes.ClienteRegistroService;
+import com.proyecto.servicios.service.clientes.ClienteService;
+import com.proyecto.servicios.service.catalogo.ProductCatalogService;
+import com.proyecto.servicios.service.auth.AuthService;
+import com.proyecto.servicios.service.auth.impl.LoginAttemptLimiter;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.dao.OptimisticLockingFailureException;

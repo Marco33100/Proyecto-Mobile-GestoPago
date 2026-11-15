@@ -3,7 +3,7 @@ package com.proyecto.servicios.service;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.proyecto.servicios.entity.gestopago.GestoPagoToken;
 import com.proyecto.servicios.model.gestopago.GestoPagoAuthResponse;
-import com.proyecto.servicios.service.Impl.GestoPagoTokenCipher;
+import com.proyecto.servicios.service.gestopago.impl.GestoPagoTokenCipher;
 import org.junit.jupiter.api.Test;
 
 import java.util.Base64;

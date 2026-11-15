@@ -6,7 +6,7 @@ import com.proyecto.servicios.model.product.ProductDto;
 import com.proyecto.servicios.model.product.ProductListResponse;
 import com.proyecto.servicios.model.product.ProductSyncResult;
 import com.proyecto.servicios.repositorys.gestopago.ProductRepository;
-import com.proyecto.servicios.service.Impl.ProductDatabaseService;
+import com.proyecto.servicios.service.catalogo.impl.ProductDatabaseService;
 import org.mapstruct.factory.Mappers;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

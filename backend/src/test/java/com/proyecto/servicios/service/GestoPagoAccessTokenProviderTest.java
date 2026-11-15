@@ -1,9 +1,10 @@
 package com.proyecto.servicios.service;
 
-import com.proyecto.servicios.config.ProductServiceProperties;
+import com.proyecto.servicios.service.gestopago.GestoPagoTokenService;
+import com.proyecto.servicios.config.gestopago.ProductServiceProperties;
 import com.proyecto.servicios.exception.ProductIntegrationException;
 import com.proyecto.servicios.exception.GestoPagoTokenRejectedException;
-import com.proyecto.servicios.service.Impl.GestoPagoAccessTokenProvider;
+import com.proyecto.servicios.service.gestopago.impl.GestoPagoAccessTokenProvider;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.support.StaticListableBeanFactory;
 

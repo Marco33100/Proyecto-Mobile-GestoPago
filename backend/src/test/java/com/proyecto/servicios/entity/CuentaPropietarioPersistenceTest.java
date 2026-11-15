@@ -7,7 +7,7 @@ import com.proyecto.servicios.mapper.ClienteResponseMapper;
 import com.proyecto.servicios.model.auth.AuthenticatedUser;
 import com.proyecto.servicios.model.cliente.CuentaResponse;
 import com.proyecto.servicios.repositorys.sf.CuentaRepository;
-import com.proyecto.servicios.service.Impl.CuentaServiceImpl;
+import com.proyecto.servicios.service.cuentas.impl.CuentaServiceImpl;
 import org.hibernate.Session;
 import org.hibernate.SessionFactory;
 import org.hibernate.Transaction;

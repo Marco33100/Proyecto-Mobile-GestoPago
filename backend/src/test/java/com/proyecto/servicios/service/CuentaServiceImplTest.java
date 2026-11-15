@@ -10,7 +10,7 @@ import com.proyecto.servicios.mapper.ClienteResponseMapper;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.PageImpl;
 import com.proyecto.servicios.repositorys.sf.CuentaRepository;
-import com.proyecto.servicios.service.Impl.CuentaServiceImpl;
+import com.proyecto.servicios.service.cuentas.impl.CuentaServiceImpl;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;

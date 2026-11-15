@@ -1,10 +1,11 @@
 package com.proyecto.servicios.service;
 
+import com.proyecto.servicios.service.auth.UsuarioService;
 import com.proyecto.servicios.entity.sf.UserEntity;
 import com.proyecto.servicios.model.auth.UsuarioBusquedaRequest;
 import com.proyecto.servicios.repositorys.sf.UserRepository;
 import com.proyecto.servicios.repositorys.sf.UserSessionRepository;
-import com.proyecto.servicios.service.Impl.UsuarioServiceImpl;
+import com.proyecto.servicios.service.auth.impl.UsuarioServiceImpl;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;

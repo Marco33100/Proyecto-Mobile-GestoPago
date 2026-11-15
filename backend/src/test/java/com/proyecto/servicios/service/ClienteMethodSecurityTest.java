@@ -1,5 +1,8 @@
 package com.proyecto.servicios.service;
 
+import com.proyecto.servicios.service.clientes.ClienteRegistroService;
+import com.proyecto.servicios.service.clientes.ClienteService;
+import com.proyecto.servicios.service.cuentas.CuentaService;
 import com.proyecto.servicios.exception.cliente.ClienteNoEncontradoException;
 import com.proyecto.servicios.mapper.ClienteResponseMapper;
 import com.proyecto.servicios.entity.sf.ClienteEntity;
@@ -9,8 +12,8 @@ import com.proyecto.servicios.repositorys.sf.CuentaRepository;
 import com.proyecto.servicios.repositorys.sf.DomicilioRepository;
 import com.proyecto.servicios.repositorys.sf.UserRepository;
 import com.proyecto.servicios.repositorys.sf.UserSessionRepository;
-import com.proyecto.servicios.service.Impl.ClienteRegistroServiceImpl;
-import com.proyecto.servicios.service.Impl.ClienteServiceImpl;
+import com.proyecto.servicios.service.clientes.impl.ClienteRegistroServiceImpl;
+import com.proyecto.servicios.service.clientes.impl.ClienteServiceImpl;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;

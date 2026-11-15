@@ -1,16 +1,17 @@
 package com.proyecto.servicios.config;
 
+import com.proyecto.servicios.config.gestopago.ProductServiceProperties;
 import com.proyecto.servicios.client.GestoPagoAuthClient;
 import com.proyecto.servicios.client.ProductCatalogClient;
 import com.proyecto.servicios.exception.ProductIntegrationException;
 import com.proyecto.servicios.mapper.GestoPagoTokenMapper;
 import com.proyecto.servicios.repositorys.gestopago.GestoPagoTokenRepository;
-import com.proyecto.servicios.service.Impl.GestoPagoAccessTokenProvider;
-import com.proyecto.servicios.service.Impl.GestoPagoTokenServiceImpl;
-import com.proyecto.servicios.service.Impl.GestoPagoTokenCipher;
-import com.proyecto.servicios.service.Impl.GestoPagoTokenCoordinator;
+import com.proyecto.servicios.service.gestopago.impl.GestoPagoAccessTokenProvider;
+import com.proyecto.servicios.service.gestopago.impl.GestoPagoTokenServiceImpl;
+import com.proyecto.servicios.service.gestopago.impl.GestoPagoTokenCipher;
+import com.proyecto.servicios.service.gestopago.impl.GestoPagoTokenCoordinator;
 import com.proyecto.servicios.entity.gestopago.GestoPagoToken;
-import com.proyecto.servicios.service.Impl.GestopagoProductGateway;
+import com.proyecto.servicios.service.catalogo.impl.GestopagoProductGateway;
 import feign.Client;
 import feign.Response;
 import org.junit.jupiter.api.Test;

@@ -1,11 +1,14 @@
 package com.proyecto.servicios.controller;
 
+import com.proyecto.servicios.controller.catalogo.ProductCatalogController;
+import com.proyecto.servicios.controller.clientes.ClienteController;
+import com.proyecto.servicios.controller.cuentas.CuentaController;
 import com.proyecto.servicios.model.cliente.CuentaResponse;
 import com.proyecto.servicios.model.cliente.PaginaResponse;
 import com.proyecto.servicios.model.cliente.SaldoCuentaResponse;
-import com.proyecto.servicios.service.ClienteRegistroService;
-import com.proyecto.servicios.service.ClienteService;
-import com.proyecto.servicios.service.CuentaService;
+import com.proyecto.servicios.service.clientes.ClienteRegistroService;
+import com.proyecto.servicios.service.clientes.ClienteService;
+import com.proyecto.servicios.service.cuentas.CuentaService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.web.servlet.MockMvc;
@@ -67,7 +70,7 @@ class ResultadoApiContractTest {
 
     @Test
     void catalogoSinProductosTambienDevuelveSoloCodigoYMensaje() throws Exception {
-        var catalogo = mock(com.proyecto.servicios.service.ProductCatalogService.class);
+        var catalogo = mock(com.proyecto.servicios.service.catalogo.ProductCatalogService.class);
         var respuesta = new com.proyecto.servicios.model.product.ProductListResponse();
         respuesta.setProductos(new com.proyecto.servicios.model.product.ProductContainer());
         when(catalogo.obtenerProductos()).thenReturn(respuesta);

@@ -1,16 +1,17 @@
 package com.proyecto.servicios.service;
 
+import com.proyecto.servicios.service.catalogo.GestopagoProductService;
 import com.proyecto.servicios.exception.ProductCacheException;
 import com.proyecto.servicios.exception.ProductIntegrationErrorType;
 import com.proyecto.servicios.exception.ProductIntegrationException;
 import com.proyecto.servicios.model.product.ProductContainer;
 import com.proyecto.servicios.model.product.ProductListResponse;
 import com.proyecto.servicios.model.product.ProductMessage;
-import com.proyecto.servicios.service.Impl.ProductCacheStore;
-import com.proyecto.servicios.service.Impl.ProductCacheWarmupService;
-import com.proyecto.servicios.service.Impl.ProductCatalogServiceImpl;
-import com.proyecto.servicios.service.Impl.ProductCatalogRefreshLock;
-import com.proyecto.servicios.service.Impl.ProductDatabaseService;
+import com.proyecto.servicios.service.catalogo.impl.ProductCacheStore;
+import com.proyecto.servicios.service.catalogo.impl.ProductCacheWarmupService;
+import com.proyecto.servicios.service.catalogo.impl.ProductCatalogServiceImpl;
+import com.proyecto.servicios.service.catalogo.impl.ProductCatalogRefreshLock;
+import com.proyecto.servicios.service.catalogo.impl.ProductDatabaseService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;

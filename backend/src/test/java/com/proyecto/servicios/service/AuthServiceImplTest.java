@@ -1,5 +1,6 @@
 package com.proyecto.servicios.service;
 
+import com.proyecto.servicios.service.auth.JwtTokenService;
 import com.proyecto.servicios.entity.sf.UserEntity;
 import com.proyecto.servicios.exception.auth.InvalidCredentialsException;
 import com.proyecto.servicios.exception.auth.AuthPersistenceException;
@@ -9,8 +10,8 @@ import com.proyecto.servicios.model.auth.LoginRequest;
 import com.proyecto.servicios.model.auth.LoginResponse;
 import com.proyecto.servicios.model.auth.CachedUser;
 import com.proyecto.servicios.repositorys.sf.UserRepository;
-import com.proyecto.servicios.service.Impl.AuthServiceImpl;
-import com.proyecto.servicios.service.Impl.ActiveSessionService;
+import com.proyecto.servicios.service.auth.impl.AuthServiceImpl;
+import com.proyecto.servicios.service.auth.impl.ActiveSessionService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;

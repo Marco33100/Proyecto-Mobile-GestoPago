@@ -1,14 +1,16 @@
 package com.proyecto.servicios.controller;
 
+import com.proyecto.servicios.controller.clientes.ClienteController;
+import com.proyecto.servicios.controller.cuentas.CuentaController;
 import com.proyecto.servicios.exception.cliente.CuentaNoEncontradaException;
 import com.proyecto.servicios.exception.cliente.CurpDuplicadaException;
 import com.proyecto.servicios.exception.cliente.RfcDuplicadoException;
 import com.proyecto.servicios.exception.cliente.ClienteYaRegistradoException;
 import com.proyecto.servicios.model.cliente.CuentaResponse;
 import com.proyecto.servicios.model.cliente.PaginaResponse;
-import com.proyecto.servicios.service.ClienteRegistroService;
-import com.proyecto.servicios.service.ClienteService;
-import com.proyecto.servicios.service.CuentaService;
+import com.proyecto.servicios.service.clientes.ClienteRegistroService;
+import com.proyecto.servicios.service.clientes.ClienteService;
+import com.proyecto.servicios.service.cuentas.CuentaService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.web.servlet.MockMvc;

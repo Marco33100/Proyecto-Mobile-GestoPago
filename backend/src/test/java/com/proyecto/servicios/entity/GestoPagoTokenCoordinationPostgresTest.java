@@ -1,6 +1,6 @@
 package com.proyecto.servicios.entity;
 
-import com.proyecto.servicios.service.Impl.GestoPagoTokenCoordinator;
+import com.proyecto.servicios.service.gestopago.impl.GestoPagoTokenCoordinator;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;

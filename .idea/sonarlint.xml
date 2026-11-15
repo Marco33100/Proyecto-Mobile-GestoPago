@@ -5,10 +5,10 @@
       <list>
         <option value="FILE:frontend/android/app/src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java" />
         <option value="FILE:frontend/ios/Flutter/ephemeral/flutter_lldb_helper.py" />
-        <option value="FILE:backend/src/main/java/com/proyecto/servicios/service/JwtTokenService.java" />
-        <option value="FILE:backend/src/main/java/com/proyecto/servicios/config/PublicSecurityConfiguration.java" />
-        <option value="FILE:backend/src/main/java/com/proyecto/servicios/config/SecurityConfiguration.java" />
-        <option value="FILE:backend/src/main/java/com/proyecto/servicios/service/Impl/TotpCodes.java" />
+        <option value="FILE:backend/src/main/java/com/proyecto/servicios/service/auth/JwtTokenService.java" />
+        <option value="FILE:backend/src/main/java/com/proyecto/servicios/config/seguridad/PublicSecurityConfiguration.java" />
+        <option value="FILE:backend/src/main/java/com/proyecto/servicios/config/seguridad/SecurityConfiguration.java" />
+        <option value="FILE:backend/src/main/java/com/proyecto/servicios/service/auth/impl/TotpCodes.java" />
       </list>
     </option>
   </component>
