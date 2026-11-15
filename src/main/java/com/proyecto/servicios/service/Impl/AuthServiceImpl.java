@@ -83,6 +83,20 @@ public class AuthServiceImpl implements AuthService {
         activeSessionService.revokeSession(usuario.userId(), usuario.sessionId());
     }
 
+    @Override
+    @Transactional(transactionManager = "sfTransactionManager", readOnly = true)
+    public UserProfileResponse perfilActual(AuthenticatedUser usuario) {
+        try {
+            UserEntity user = userRepository.findById(usuario.userId()).orElseThrow(UsuarioNoEncontradoException::new);
+            if (!user.isEnabled() || (user.getCliente() != null && !user.getCliente().isActivo())) {
+                throw new UsuarioInactivoException();
+            }
+            return new UserProfileResponse(user.getId(), user.getEmail(), user.getIdentifier(), user.getFullName(), user.getRol());
+        } catch (DataAccessException exception) {
+            throw new AuthPersistenceException("El servicio de autenticacion no esta disponible", exception);
+        }
+    }
+
     private CachedUser toCachedUser(UserEntity user) {
         return new CachedUser(
                 user.getId(), user.getEmail(), user.getIdentifier(), user.getPasswordHash(),

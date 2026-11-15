@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
-import 'storage/session_database.dart';
+import 'storage/secure_session_store.dart';
 import 'storage/session_store.dart';
 import 'models/login_session.dart';
 import 'screens/home_page.dart';
@@ -66,7 +66,8 @@ class _SessionGateState extends State<SessionGate> {
   bool _loading = true;
   bool _loggingOut = false;
 
-  SessionStore get _store => widget.sessionStore ?? SessionDatabase.instance;
+  late final SessionStore _store =
+      widget.sessionStore ?? SecureSessionStore(widget.authApi);
 
   @override
   void initState() {

@@ -41,6 +41,17 @@ class AuthServiceImplTest {
         org.mockito.Mockito.verifyNoInteractions(userRepository, jwtTokenService);
     }
 
+    @Test
+    void perfilActualLeeElUsuarioDelPrincipalYRechazaInactivos() {
+        UserEntity user = user("marti@example.com", passwordEncoder.encode("Password1"));
+        var principal = new com.proyecto.servicios.model.auth.AuthenticatedUser(
+                user.getId(), UUID.randomUUID(), "otro@example.com", "otro");
+        when(userRepository.findById(user.getId())).thenReturn(java.util.Optional.of(user));
+        assertThat(service.perfilActual(principal).email()).isEqualTo("marti@example.com");
+        user.desactivar();
+        assertThatThrownBy(() -> service.perfilActual(principal)).isInstanceOf(UsuarioInactivoException.class);
+    }
+
     @Mock
     private UserRepository userRepository;
     @Mock

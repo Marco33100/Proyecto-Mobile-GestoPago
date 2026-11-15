@@ -1,6 +1,6 @@
 # Aplicacion Flutter de Gestopago
 
-Este modulo contiene login, registro bancario completo para ejecutivos y manejo de errores HTTP. SQLite (`sqflite`) conserva el perfil; `flutter_secure_storage` conserva el JWT mediante Android Keystore / iOS Keychain. No guarda la contrasena del usuario.
+Este modulo contiene login, registro bancario completo para ejecutivos y manejo de errores HTTP. PostgreSQL conserva los usuarios y sesiones; `flutter_secure_storage` conserva la credencial y su vencimiento mediante Android Keystore / iOS Keychain. No guarda la contrasena del usuario.
 
 ## Flujo de acceso y registro
 
@@ -33,30 +33,21 @@ Verificacion realizada: `flutter analyze` sin problemas y pruebas Flutter aproba
 
 `10.0.2.2` corresponde al localhost de Windows visto desde el emulador Android. Para un telefono fisico se debe usar la IP local de la computadora, por ejemplo `http://192.168.1.20:8080`, y ambos dispositivos deben estar en la misma red.
 
-La base SQLite se inicializa en `SessionDatabase._open()`. Crea `user_session`
-con perfil, rol, vencimiento y una referencia aleatoria, sin columna de JWT.
-`SessionTokenStore` guarda token y referencia en almacenamiento seguro; en iOS
-se restringe al dispositivo y a cuando esta desbloqueado. `save()`, `current()`
-y `clear()` se serializan, ya que SQLite y el almacen seguro no comparten una
-transaccion. Una referencia distinta, token ausente o sesion vencida invalida
-ambas partes; una escritura fallida limpia la sesion parcial.
-
-La version 5 retira las sesiones SQLite antiguas que contenian tokens en texto
-plano y compacta esa base. Al actualizar hay que iniciar sesion una vez mas;
-los datos del servidor no se borran. Esto no elimina copias antiguas que ya se
-hayan exportado. Android desactiva el respaldo y excluye bases y preferencias
-de transferencia; iOS configura los entitlements de Keychain del Runner.
-El rol local solo controla la interfaz: el backend valida sesion y permisos
-en cada peticion protegida. HTTP 429 muestra un aviso para esperar antes de reintentar.
+La app consulta `GET /api/auth/sesion` al recuperar la credencial segura y obtiene
+el perfil vigente del backend. Un fallo temporal no borra la credencial; una
+sesion vencida o rechazada si se retira. La version nueva requiere iniciar sesion
+otra vez. El archivo SQLite de instalaciones anteriores no se elimina automaticamente.
+Los pagos pendientes usan almacenamiento independiente. El backend debe desplegarse
+antes de distribuir esta version de la app.
 
 ## Cierre de sesion y fallos locales
 
 La accion **Cerrar sesion** llama a `POST /api/auth/logout` con el JWT y luego
-borra el perfil en SQLite y el token en el almacen seguro. Un 401 se considera una sesion ya invalida; errores de
+borra el token en el almacen seguro. Un 401 se considera una sesion ya invalida; errores de
 red o del servidor muestran un aviso de que la revocacion remota no fue confirmada.
-Un fallo de SQLite muestra un mensaje y permite volver al login sin quedar cargando.
+Un fallo del almacenamiento muestra un mensaje y permite volver al login sin quedar cargando.
 El almacenamiento se abstrae mediante `SessionStore` para probar esos fallos sin
 necesitar un emulador. Las pruebas verifican persistencia, limpieza, concurrencia,
-actualizacion de SQLite y el contrato del almacen seguro con un sustituto de prueba;
+restauracion del perfil y el contrato del almacen seguro con un sustituto de prueba;
 no sustituyen verificar Keychain en un dispositivo iOS. El backend debe utilizar
 HTTPS fuera del entorno local.

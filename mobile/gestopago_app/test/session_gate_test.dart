@@ -29,7 +29,7 @@ class FakeSessionStore implements SessionStore {
   int clears = 0;
   @override
   Future<LoginSession?> current() async {
-    if (failRead) throw StateError('SQLite no disponible');
+    if (failRead) throw StateError('Almacenamiento no disponible');
     return session;
   }
 
@@ -38,13 +38,13 @@ class FakeSessionStore implements SessionStore {
   @override
   Future<void> clear() async {
     clears++;
-    if (failClear) throw StateError('SQLite no disponible');
+    if (failClear) throw StateError('Almacenamiento no disponible');
     session = null;
   }
 }
 
 void main() {
-  testWidgets('fallo al restaurar SQLite siempre termina la carga', (
+  testWidgets('fallo al restaurar la sesion siempre termina la carga', (
     tester,
   ) async {
     final store = FakeSessionStore()..failRead = true;
@@ -63,7 +63,7 @@ void main() {
   });
 
   testWidgets(
-    'logout revoca en API antes de borrar SQLite y evita doble envio',
+    'logout revoca en API antes de borrar la credencial y evita doble envio',
     (tester) async {
       final store = FakeSessionStore()..session = testSession();
       final response = Completer<http.Response>();
@@ -142,7 +142,7 @@ void main() {
     },
   );
 
-  testWidgets('fallo al borrar SQLite no deja al usuario atrapado en inicio', (
+  testWidgets('fallo al borrar la credencial no deja al usuario atrapado en inicio', (
     tester,
   ) async {
     final store = FakeSessionStore()

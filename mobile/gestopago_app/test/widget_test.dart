@@ -413,27 +413,4 @@ void main() {
       client.close();
     }
   });
-
-  test(
-    'perfil y rol sobreviven ida y vuelta SQLite; perfiles anteriores no son ejecutivos',
-    () {
-      final original = session();
-      expect(
-        LoginSession.fromDatabaseMap(
-          original.toDatabaseMap(sessionReference: 'fixture'),
-          accessToken: original.accessToken,
-        ).isExecutive,
-        isTrue,
-      );
-      final legacy = original.toDatabaseMap(sessionReference: 'fixture')
-        ..remove('rol');
-      expect(
-        LoginSession.fromDatabaseMap(
-          legacy,
-          accessToken: original.accessToken,
-        ).isExecutive,
-        isFalse,
-      );
-    },
-  );
 }

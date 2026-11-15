@@ -3,6 +3,7 @@ package com.proyecto.servicios.controller;
 import com.proyecto.servicios.model.auth.LoginRequest;
 import com.proyecto.servicios.model.auth.LoginResponse;
 import com.proyecto.servicios.model.auth.AuthenticatedUser;
+import com.proyecto.servicios.model.auth.UserProfileResponse;
 import com.proyecto.servicios.model.GenericResponse;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
@@ -15,6 +16,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -48,5 +50,12 @@ public class AuthController {
     public ResponseEntity<Void> logout(@AuthenticationPrincipal AuthenticatedUser usuario) {
         authService.logout(usuario);
         return ResponseEntity.noContent().build();
+    }
+
+    @GetMapping("/sesion")
+    @SecurityRequirement(name = "bearerAuth")
+    @Operation(summary = "Consulta el perfil de la sesion autenticada")
+    public ResponseEntity<GenericResponse<UserProfileResponse>> sesion(@AuthenticationPrincipal AuthenticatedUser usuario) {
+        return ResponseEntity.ok(GenericResponse.exito("Sesion consultada correctamente", authService.perfilActual(usuario)));
     }
 }

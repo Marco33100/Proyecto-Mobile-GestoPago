@@ -121,6 +121,18 @@ class UsuarioAuthSecurityTest {
     }
 
     @Test
+    void sesionExigeAutenticacionYObtienePerfilDelPrincipal() throws Exception {
+        when(auth.perfilActual(any())).thenReturn(new com.proyecto.servicios.model.auth.UserProfileResponse(
+                usuario.getId(), usuario.getEmail(), usuario.getIdentifier(), usuario.getFullName(),
+                com.proyecto.servicios.entity.sf.RolUsuario.CLIENTE));
+        mvc.perform(get("/api/auth/sesion")).andExpect(status().isUnauthorized());
+        mvc.perform(get("/api/auth/sesion").header("Authorization", "Bearer token-valido"))
+                .andExpect(status().isOk()).andExpect(jsonPath("datos.id").value(usuario.getId().toString()))
+                .andExpect(jsonPath("datos.passwordHash").doesNotExist());
+        verify(auth).perfilActual(argThat(principal -> principal.userId().equals(usuario.getId())));
+    }
+
+    @Test
     void autenticacionYUsuariosSinPrefijoApiYaNoEstanExpuestos() throws Exception {
         for (String ruta : List.of("/auth/login", "/auth/logout")) {
             mvc.perform(post(ruta).header("Authorization", "Bearer token-valido")

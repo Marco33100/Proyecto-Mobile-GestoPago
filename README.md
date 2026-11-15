@@ -52,7 +52,7 @@ explícita del proveedor.
 | Spring Security / JWT / BCrypt | Autenticación, autorización y hashes de contraseñas |
 | Gradle Wrapper | Compilación y ejecución reproducible sin instalar Gradle aparte |
 | JUnit / Mockito / H2 | Pruebas unitarias y transaccionales; PostgreSQL para verificar el esquema real |
-| Flutter / Dart / sqflite | Aplicación móvil y persistencia local de sesión |
+| Flutter / Dart | Aplicación móvil y almacenamiento seguro de sesión |
 | Swagger / OpenAPI / Actuator | Documentación de endpoints y comprobación de salud |
 
 ### Arquitectura por capas
@@ -552,15 +552,12 @@ su contenido. Inicia sesion en Flutter con el correo y contrasena elegidos.
    ejecutivo y solo puede consultar su perfil de usuario o cambiar su propia
    contrasena; el catalogo Gestopago sigue disponible con autenticacion.
 
-La pantalla de Login ya no ofrece el registro basico anonimo. La sesion se guarda
-con el perfil, rol y vencimiento en SQLite, sin contrasena ni JWT. El token se
-almacena mediante `flutter_secure_storage`: cifrado respaldado por Android
-Keystore y Keychain en iOS. Una referencia aleatoria vincula ambos almacenes;
-las operaciones se serializan y una escritura fallida retira la sesion parcial.
-La version 5 elimina sesiones locales antiguas que guardaban el token en texto
-plano y exige iniciar sesion otra vez, sin modificar clientes ni cuentas del servidor.
-Android excluye estos datos de las copias de seguridad. La API vuelve a comprobar
-permisos, aunque alguien altere SQLite; debe usarse HTTPS fuera del entorno local.
+La pantalla de Login no ofrece registro basico anonimo. Flutter guarda la credencial
+y su vencimiento mediante `flutter_secure_storage`; al abrir la app consulta el
+perfil vigente con `GET /api/auth/sesion`. El backend valida la sesion en PostgreSQL.
+La primera actualizacion requiere iniciar sesion nuevamente. El archivo SQLite
+antiguo permanece en el dispositivo y no se utiliza. La API comprueba permisos en
+cada peticion; debe usarse HTTPS fuera del entorno local.
 
 ### Manejo centralizado y verificacion
 
@@ -603,10 +600,10 @@ sesion nueva creada por otro login. Redis se invalida despues del commit con una
 comparacion y borrado atomicos; una falla del cache no vuelve a autorizar el token.
 La firma JWT por si sola no basta: se sigue comprobando la sesion vigente.
 
-Flutter solicita esa revocacion antes de borrar el perfil SQLite y el token del
-almacen seguro, y bloquea envios repetidos.
+Flutter solicita esa revocacion antes de borrar el token del almacen seguro, y
+bloquea envios repetidos.
 Si la red falla, borra la sesion local y advierte que no pudo confirmar el cierre
-remoto. Si SQLite falla al restaurar o borrar, muestra un aviso y vuelve al login,
+remoto. Si el almacenamiento falla al restaurar o borrar, muestra un aviso y vuelve al login,
 sin dejar una carga indefinida. No se afirma que el cierre remoto haya ocurrido
 si el servidor no pudo confirmarlo.
 

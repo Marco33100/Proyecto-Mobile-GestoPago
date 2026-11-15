@@ -50,6 +50,56 @@ class AuthApiService {
     parse: LoginSession.fromJson,
   );
 
+  Future<LoginSession> restoreSession(String token, DateTime expiresAt) async {
+    try {
+      final response = await _client
+          .get(
+            Uri.parse('${ApiConfig.baseUrl}/api/auth/sesion'),
+            headers: {'Authorization': 'Bearer $token'},
+          )
+          .timeout(requestTimeout);
+      if (response.statusCode != 200) {
+        throw ApiException(
+          statusCode: response.statusCode,
+          code: 'SESSION_RESTORE_FAILED',
+          message: response.statusCode == 401
+              ? 'Tu sesion expiro. Inicia sesion nuevamente.'
+              : 'No fue posible recuperar la sesion. Intenta nuevamente.',
+        );
+      }
+      final body = _decodeBody(response.body);
+      final user = body['datos'];
+      if (body['codigo'] != 1 || user is! Map<String, dynamic>) {
+        throw _invalidResponse;
+      }
+      return LoginSession.fromJson({
+        'accessToken': token,
+        'tokenType': 'Bearer',
+        'expiresAt': expiresAt.toUtc().toIso8601String(),
+        'user': user,
+      });
+    } on TimeoutException {
+      throw const ApiException(
+        code: 'CONNECTION_TIMEOUT',
+        message: 'No fue posible recuperar la sesion.',
+      );
+    } on SocketException {
+      throw const ApiException(
+        code: 'NO_CONNECTION',
+        message: 'No fue posible conectarse con el servidor.',
+      );
+    } on http.ClientException {
+      throw const ApiException(
+        code: 'NETWORK_ERROR',
+        message: 'No fue posible conectarse con el servidor.',
+      );
+    } on FormatException {
+      throw _invalidResponse;
+    } on TypeError {
+      throw _invalidResponse;
+    }
+  }
+
   // Una sesion ya expirada/revocada (401) no necesita revocarse otra vez.
   Future<void> logout(LoginSession session) => _post<void>(
     path: '/api/auth/logout',
