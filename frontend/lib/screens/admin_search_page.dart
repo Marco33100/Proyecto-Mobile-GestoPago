@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import '../services/admin_api_service.dart';
 import '../services/auth_api_service.dart';
 import '../services/payment_api_service.dart';
+import '../theme.dart';
 import '../utils/money_format.dart';
 import '../utils/date_only.dart';
 import '../widgets/management_layout.dart';
+import '../widgets/responsive.dart';
 import 'register_page.dart';
 
 class AdminSearchPage extends StatefulWidget {
@@ -138,22 +140,30 @@ class _AdminSearchPageState extends State<AdminSearchPage> {
     title: _clients ? 'Clientes' : 'Usuarios',
     busy: _busy,
     error: _error,
+    maxWidth: ContentWidth.wide,
     children: [
       Form(
         key: _form,
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            _field('nombre', 'Nombre', max: _clients ? 50 : 203),
-            _field('correo', 'Correo exacto', max: _clients ? 100 : 254),
-            if (_clients) ...[
-              _field('rfc', 'RFC', max: 13),
-              _field('curp', 'CURP', max: 18),
-              _field('numeroCuenta', 'Número de cuenta', max: 24),
-              _field('id', 'ID de cliente', max: 18),
-              _field('desde', 'Registro desde (AAAA-MM-DD)', max: 10),
-              _field('hasta', 'Registro hasta (AAAA-MM-DD)', max: 10),
-            ] else
-              _field('telefono', 'Teléfono móvil', max: 10),
+            ResponsiveGrid(
+              minItemWidth: 260,
+              spacing: 16,
+              children: [
+                _field('nombre', 'Nombre', max: _clients ? 50 : 203),
+                _field('correo', 'Correo exacto', max: _clients ? 100 : 254),
+                if (_clients) ...[
+                  _field('rfc', 'RFC', max: 13),
+                  _field('curp', 'CURP', max: 18),
+                  _field('numeroCuenta', 'Número de cuenta', max: 24),
+                  _field('id', 'ID de cliente', max: 18),
+                  _field('desde', 'Registro desde (AAAA-MM-DD)', max: 10),
+                  _field('hasta', 'Registro hasta (AAAA-MM-DD)', max: 10),
+                ] else
+                  _field('telefono', 'Teléfono móvil', max: 10),
+              ],
+            ),
             DropdownButtonFormField<String>(
               initialValue: 'todos',
               decoration: const InputDecoration(labelText: 'Estado'),
@@ -177,10 +187,16 @@ class _AdminSearchPageState extends State<AdminSearchPage> {
                   : 'Los filtros se combinan: se muestran usuarios que cumplen todos los criterios enviados.',
             ),
             const SizedBox(height: 18),
-            FilledButton.icon(
-              onPressed: _busy ? null : _search,
-              icon: const Icon(Icons.search),
-              label: const Text('Buscar'),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 360),
+                child: FilledButton.icon(
+                  onPressed: _busy ? null : _search,
+                  icon: const Icon(Icons.search),
+                  label: const Text('Buscar'),
+                ),
+              ),
             ),
           ],
         ),
@@ -193,58 +209,44 @@ class _AdminSearchPageState extends State<AdminSearchPage> {
         ),
         const SizedBox(height: 12),
         if (result.items.isEmpty) const Text('No se encontraron datos.'),
-        for (final item in result.items)
-          ManagementCard(
-            children: [
-              Text(
-                _clients ? clientName(item) : '${item['nombre'] ?? ''}',
-                style: Theme.of(context).textTheme.titleLarge,
-              ),
-              const SizedBox(height: 6),
-              Text('${item['correo'] ?? ''}'),
-              Text(item['activo'] == true ? 'Activo' : 'Inactivo'),
-              if (_clients)
-                Text('RFC: ${item['rfc'] ?? ''} · CURP: ${item['curp'] ?? ''}'),
-              if (!_clients) ...[
-                SelectableText('ID: ${item['id'] ?? ''}'),
-                Text(
-                  'Teléfono: ${item['telefono'] ?? 'Sin teléfono asociado'}',
-                ),
-              ],
-              if (_clients)
-                TextButton.icon(
-                  onPressed: _busy ? null : () => _detail(item),
-                  icon: const Icon(Icons.arrow_forward),
-                  label: const Text('Ver cliente'),
-                ),
-            ],
-          ),
-        Row(
-          children: [
-            Expanded(
-              child: OutlinedButton(
-                onPressed: _busy || result.page == 0
-                    ? null
-                    : () => _load(result.page - 1),
-                child: const Text('Anterior'),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: OutlinedButton(
-                onPressed: _busy || result.last
-                    ? null
-                    : () => _load(result.page + 1),
-                child: const Text('Siguiente'),
-              ),
-            ),
-          ],
+        ResponsiveGrid(
+          children: [for (final item in result.items) _resultCard(item)],
+        ),
+        PaginationBar(
+          page: result.page,
+          isLast: result.last,
+          busy: _busy,
+          onPage: _load,
         ),
       ],
       if (_error != null)
         TextButton(
           onPressed: _busy ? null : () => _load(0),
           child: const Text('Reintentar consulta'),
+        ),
+    ],
+  );
+
+  Widget _resultCard(Map<String, dynamic> item) => ManagementCard(
+    children: [
+      Text(
+        _clients ? clientName(item) : '${item['nombre'] ?? ''}',
+        style: Theme.of(context).textTheme.titleLarge,
+      ),
+      const SizedBox(height: 6),
+      Text('${item['correo'] ?? ''}'),
+      Text(item['activo'] == true ? 'Activo' : 'Inactivo'),
+      if (_clients)
+        Text('RFC: ${item['rfc'] ?? ''} · CURP: ${item['curp'] ?? ''}'),
+      if (!_clients) ...[
+        SelectableText('ID: ${item['id'] ?? ''}'),
+        Text('Teléfono: ${item['telefono'] ?? 'Sin teléfono asociado'}'),
+      ],
+      if (_clients)
+        TextButton.icon(
+          onPressed: _busy ? null : () => _detail(item),
+          icon: const Icon(Icons.arrow_forward),
+          label: const Text('Ver cliente'),
         ),
     ],
   );
@@ -330,85 +332,105 @@ class _ClientDetailPageState extends State<ClientDetailPage> {
       title: 'Detalle del cliente',
       busy: _busy,
       error: _error,
+      maxWidth: ContentWidth.wide,
       children: [
         Text(
           clientName(client),
           style: Theme.of(context).textTheme.headlineSmall,
         ),
         const SizedBox(height: 12),
-        ManagementCard(
+        ResponsiveGrid(
+          minItemWidth: 340,
+          maxColumns: 2,
           children: [
-            for (final field in [
-              ('correo', 'Correo'),
-              ('telefonoMovil', 'Teléfono móvil'),
-              ('telefonoAlternativo', 'Teléfono alternativo'),
-              ('curp', 'CURP'),
-              ('rfc', 'RFC'),
-              ('fechaNacimiento', 'Fecha de nacimiento'),
-              ('sexo', 'Sexo'),
-              ('estadoCivil', 'Estado civil'),
-              ('nacionalidad', 'Nacionalidad'),
-              ('ocupacion', 'Ocupación'),
-              ('empresa', 'Empresa'),
-            ])
-              Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: SelectableText(
-                  '${field.$2}: ${client[field.$1] ?? 'Sin dato'}',
+            ManagementCard(
+              children: [
+                for (final field in [
+                  ('correo', 'Correo'),
+                  ('telefonoMovil', 'Teléfono móvil'),
+                  ('telefonoAlternativo', 'Teléfono alternativo'),
+                  ('curp', 'CURP'),
+                  ('rfc', 'RFC'),
+                  ('fechaNacimiento', 'Fecha de nacimiento'),
+                  ('sexo', 'Sexo'),
+                  ('estadoCivil', 'Estado civil'),
+                  ('nacionalidad', 'Nacionalidad'),
+                  ('ocupacion', 'Ocupación'),
+                  ('empresa', 'Empresa'),
+                ])
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: SelectableText(
+                      '${field.$2}: ${client[field.$1] ?? 'Sin dato'}',
+                    ),
+                  ),
+                Text(
+                  'Ingreso mensual: ${MoneyFormat.mxn(client['ingresoMensual'])}',
                 ),
-              ),
-            Text(
-              'Ingreso mensual: ${MoneyFormat.mxn(client['ingresoMensual'])}',
+              ],
             ),
+            if (client['domicilio'] case final Map address)
+              ManagementCard(
+                children: [
+                  Text(
+                    'Domicilio',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                  Text(
+                    [
+                          'calle',
+                          'numeroExterior',
+                          'numeroInterior',
+                          'colonia',
+                          'municipio',
+                          'estado',
+                          'codigoPostal',
+                          'pais',
+                        ]
+                        .map((key) => address[key]?.toString() ?? '')
+                        .where((v) => v.isNotEmpty)
+                        .join(', '),
+                  ),
+                ],
+              ),
+            for (final account in accounts)
+              ManagementCard(
+                children: [
+                  SelectableText('${account['numeroCuenta']}'),
+                  Text(
+                    'Disponible: ${MoneyFormat.mxn(account['saldoDisponible'])}',
+                  ),
+                  Text(
+                    'Retenido: ${MoneyFormat.mxn(account['saldoRetenido'])}',
+                  ),
+                  Text(
+                    account['activa'] == true
+                        ? 'Cuenta activa'
+                        : 'Cuenta inactiva',
+                  ),
+                  if (account['activa'] == true)
+                    TextButton(
+                      onPressed: _busy
+                          ? null
+                          : () => _deactivate(
+                              account: account['numeroCuenta'] as String,
+                            ),
+                      child: const Text('Desactivar cuenta'),
+                    ),
+                ],
+              ),
           ],
         ),
-        if (client['domicilio'] case final Map address)
-          ManagementCard(
-            children: [
-              Text('Domicilio', style: Theme.of(context).textTheme.titleMedium),
-              Text(
-                [
-                      'calle',
-                      'numeroExterior',
-                      'numeroInterior',
-                      'colonia',
-                      'municipio',
-                      'estado',
-                      'codigoPostal',
-                      'pais',
-                    ]
-                    .map((key) => address[key]?.toString() ?? '')
-                    .where((v) => v.isNotEmpty)
-                    .join(', '),
-              ),
-            ],
+        Align(
+          alignment: Alignment.centerLeft,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 360),
+            child: FilledButton.icon(
+              onPressed: _busy ? null : _edit,
+              icon: const Icon(Icons.edit_outlined),
+              label: const Text('Editar información'),
+            ),
           ),
-        for (final account in accounts)
-          ManagementCard(
-            children: [
-              SelectableText('${account['numeroCuenta']}'),
-              Text(
-                'Disponible: ${MoneyFormat.mxn(account['saldoDisponible'])}',
-              ),
-              Text('Retenido: ${MoneyFormat.mxn(account['saldoRetenido'])}'),
-              Text(
-                account['activa'] == true ? 'Cuenta activa' : 'Cuenta inactiva',
-              ),
-              if (account['activa'] == true)
-                TextButton(
-                  onPressed: _busy
-                      ? null
-                      : () => _deactivate(
-                          account: account['numeroCuenta'] as String,
-                        ),
-                  child: const Text('Desactivar cuenta'),
-                ),
-            ],
-          ),
-        FilledButton.icon(
-          onPressed: _busy ? null : _edit,
-          icon: const Icon(Icons.edit_outlined),
-          label: const Text('Editar información'),
         ),
         if (client['activo'] == true)
           TextButton(

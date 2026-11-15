@@ -8,8 +8,9 @@ import '../services/payment_api_service.dart';
 import '../theme.dart';
 import '../utils/date_only.dart';
 import '../validation/cliente_validators.dart';
-import '../widgets/brand_wordmark.dart';
 import '../widgets/paper_background.dart';
+import '../widgets/responsive.dart';
+import '../widgets/status_message.dart';
 
 /// The backend creates the client, address, account, and login in one request.
 class RegisterPage extends StatefulWidget {
@@ -479,6 +480,8 @@ class _RegisterPageState extends State<RegisterPage> {
   @override
   Widget build(BuildContext context) {
     final canPop = _currentStep == 0 || _loading;
+    final wide = Breakpoints.isExpanded(context);
+    final maxWidth = wide ? ContentWidth.form + 260 : ContentWidth.form;
     return PopScope<Object?>(
       canPop: canPop,
       onPopInvokedWithResult: (didPop, result) {
@@ -504,15 +507,12 @@ class _RegisterPageState extends State<RegisterPage> {
                           sliver: SliverToBoxAdapter(
                             child: Center(
                               child: ConstrainedBox(
-                                constraints: const BoxConstraints(
-                                  maxWidth: 560,
-                                ),
+                                constraints: BoxConstraints(maxWidth: maxWidth),
                                 child: Column(
                                   crossAxisAlignment:
                                       CrossAxisAlignment.stretch,
                                   children: [
-                                    const BrandWordmark(compact: true),
-                                    const SizedBox(height: 26),
+                                    const SizedBox(height: 8),
                                     Text(
                                       _editing
                                           ? 'Actualizar información'
@@ -563,7 +563,18 @@ class _RegisterPageState extends State<RegisterPage> {
                                       ).textTheme.titleLarge,
                                     ),
                                     const SizedBox(height: 18),
-                                    _currentFields(),
+                                    if (wide)
+                                      TwoPane(
+                                        secondaryFirst: true,
+                                        secondaryWidth: 220,
+                                        primary: _currentFields(),
+                                        secondary: _StepList(
+                                          names: _stepNames,
+                                          current: _currentStep,
+                                        ),
+                                      )
+                                    else
+                                      _currentFields(),
                                   ],
                                 ),
                               ),
@@ -587,7 +598,7 @@ class _RegisterPageState extends State<RegisterPage> {
                   child: Center(
                     heightFactor: 1,
                     child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 560),
+                      constraints: BoxConstraints(maxWidth: maxWidth),
                       child: Row(
                         children: [
                           if (_currentStep > 0) ...[
@@ -647,15 +658,84 @@ class _AccountCreationNote extends StatelessWidget {
   const _AccountCreationNote();
 
   @override
-  Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.all(15),
-    decoration: BoxDecoration(
-      color: sage,
-      borderRadius: BorderRadius.circular(16),
-    ),
-    child: const Text(
-      'Al registrar al cliente, el sistema crea su cuenta y acceso. El correo será su usuario.',
-      style: TextStyle(height: 1.4, color: ink),
-    ),
+  Widget build(BuildContext context) => const StatusMessage(
+    icon: Icons.info_outline_rounded,
+    message:
+        'Al registrar al cliente, el sistema crea su cuenta y acceso. El correo será su usuario.',
   );
+}
+
+/// Lista de pasos del registro, visible al costado en pantallas anchas.
+class _StepList extends StatelessWidget {
+  const _StepList({required this.names, required this.current});
+
+  final List<String> names;
+  final int current;
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 6),
+      decoration: BoxDecoration(
+        color: warmSurface,
+        borderRadius: BorderRadius.circular(AppRadius.md),
+        border: Border.all(color: outlineColor),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (var index = 0; index < names.length; index++)
+            Semantics(
+              selected: index == current,
+              label:
+                  'Paso ${index + 1} de ${names.length}: ${names[index]}'
+                  '${index < current ? ', completado' : ''}',
+              child: ExcludeSemantics(
+                child: Container(
+                  margin: const EdgeInsets.symmetric(vertical: 2),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 12,
+                  ),
+                  decoration: BoxDecoration(
+                    color: index == current ? sage : null,
+                    borderRadius: BorderRadius.circular(AppRadius.sm),
+                  ),
+                  child: Row(
+                    children: [
+                      CircleAvatar(
+                        radius: 13,
+                        backgroundColor: index <= current ? ink : sage,
+                        foregroundColor: index <= current
+                            ? warmSurface
+                            : mutedInk,
+                        child: index < current
+                            ? const Icon(Icons.check_rounded, size: 16)
+                            : Text(
+                                '${index + 1}',
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          names[index],
+                          style: index == current
+                              ? textTheme.titleMedium
+                              : textTheme.bodyMedium,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
 }
