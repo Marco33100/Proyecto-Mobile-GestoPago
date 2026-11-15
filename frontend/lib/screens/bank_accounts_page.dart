@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import '../services/admin_api_service.dart';
 import '../services/payment_api_service.dart';
+import '../theme.dart';
 import '../utils/money_format.dart';
 import '../widgets/management_layout.dart';
+import '../widgets/responsive.dart';
 
 class BankAccountsPage extends StatefulWidget {
   const BankAccountsPage({super.key, required this.api});
@@ -90,6 +92,7 @@ class _BankAccountsPageState extends State<BankAccountsPage> {
     title: 'Cuentas bancarias',
     busy: _busy,
     error: _error,
+    maxWidth: ContentWidth.wide,
     children: [
       const Text(
         'Consulta una cuenta por su número o selecciona una cuenta activa del listado.',
@@ -98,6 +101,7 @@ class _BankAccountsPageState extends State<BankAccountsPage> {
       Form(
         key: _form,
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             TextFormField(
               key: const ValueKey('account-number'),
@@ -117,10 +121,13 @@ class _BankAccountsPageState extends State<BankAccountsPage> {
                   ? null
                   : 'Escribe CTA- y los 20 caracteres de la cuenta',
             ),
-            FilledButton.icon(
-              onPressed: _busy ? null : () => _lookup(),
-              icon: const Icon(Icons.search),
-              label: const Text('Consultar cuenta'),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 360),
+              child: FilledButton.icon(
+                onPressed: _busy ? null : () => _lookup(),
+                icon: const Icon(Icons.search),
+                label: const Text('Consultar cuenta'),
+              ),
             ),
           ],
         ),
@@ -173,39 +180,31 @@ class _BankAccountsPageState extends State<BankAccountsPage> {
         const SizedBox(height: 14),
         if (page.items.isEmpty)
           const Text('No se encontraron cuentas activas.'),
-        for (final item in page.items)
-          ManagementCard(
-            children: [
-              SelectableText('${item['numeroCuenta']}'),
-              Text('Disponible: ${MoneyFormat.mxn(item['saldoDisponible'])}'),
-              TextButton(
-                onPressed: _busy
-                    ? null
-                    : () => _lookup(item['numeroCuenta'] as String),
-                child: const Text('Ver cuenta y saldo'),
-              ),
-            ],
-          ),
-        Row(
+        ResponsiveGrid(
+          minItemWidth: 300,
           children: [
-            Expanded(
-              child: OutlinedButton(
-                onPressed: _busy || page.page == 0
-                    ? null
-                    : () => _load(page.page - 1),
-                child: const Text('Anterior'),
+            for (final item in page.items)
+              ManagementCard(
+                children: [
+                  SelectableText('${item['numeroCuenta']}'),
+                  Text(
+                    'Disponible: ${MoneyFormat.mxn(item['saldoDisponible'])}',
+                  ),
+                  TextButton(
+                    onPressed: _busy
+                        ? null
+                        : () => _lookup(item['numeroCuenta'] as String),
+                    child: const Text('Ver cuenta y saldo'),
+                  ),
+                ],
               ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: OutlinedButton(
-                onPressed: _busy || page.last
-                    ? null
-                    : () => _load(page.page + 1),
-                child: const Text('Siguiente'),
-              ),
-            ),
           ],
+        ),
+        PaginationBar(
+          page: page.page,
+          isLast: page.last,
+          busy: _busy,
+          onPage: _load,
         ),
       ],
     ],

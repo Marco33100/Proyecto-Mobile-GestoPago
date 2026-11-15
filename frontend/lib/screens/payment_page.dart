@@ -7,9 +7,11 @@ import '../models/login_session.dart';
 import '../services/payment_api_service.dart';
 import '../theme.dart';
 import '../utils/money_format.dart';
-import '../widgets/brand_wordmark.dart';
+
 import '../widgets/paper_background.dart';
 import '../widgets/catalog_product_picker.dart';
+import '../widgets/responsive.dart';
+import '../widgets/status_message.dart';
 
 class PaymentPage extends StatefulWidget {
   const PaymentPage({
@@ -328,15 +330,29 @@ class _PaymentPageState extends State<PaymentPage> {
       ..showSnackBar(SnackBar(content: Text(message)));
   }
 
+  /// El formulario de pago es el único estado con resumen lateral.
+  bool get _showingPaymentForm =>
+      !_hasUnresolvedPayment &&
+      !_paymentsUnavailable &&
+      _factorSetup == null &&
+      _recoveryCodes.isEmpty &&
+      _enrolled &&
+      !_changingFactor &&
+      _accounts.isNotEmpty &&
+      _products.isNotEmpty;
+
   @override
   Widget build(BuildContext context) {
+    final wideForm = _showingPaymentForm && Breakpoints.isExpanded(context);
     return Scaffold(
       appBar: AppBar(title: const Text('Pagar un servicio')),
       body: PaperBackground(
         child: SafeArea(
           child: Center(
             child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 640),
+              constraints: BoxConstraints(
+                maxWidth: wideForm ? ContentWidth.wide : ContentWidth.form,
+              ),
               child: CustomScrollView(
                 controller: _scrollController,
                 keyboardDismissBehavior:
@@ -348,8 +364,7 @@ class _PaymentPageState extends State<PaymentPage> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          const BrandWordmark(compact: true),
-                          const SizedBox(height: 28),
+                          const SizedBox(height: 12),
                           Text(
                             _hasUnresolvedPayment
                                 ? 'Estado de tu pago'
@@ -372,12 +387,14 @@ class _PaymentPageState extends State<PaymentPage> {
                               ),
                             ),
                           if (_error != null) ...[
-                            _MessageCard(
+                            StatusMessage(
                               icon: _paymentsUnavailable
                                   ? Icons.pause_circle_outline_rounded
                                   : Icons.info_outline_rounded,
                               message: _error!,
-                              isError: !_paymentsUnavailable,
+                              tone: _paymentsUnavailable
+                                  ? StatusTone.info
+                                  : StatusTone.error,
                             ),
                             const SizedBox(height: 14),
                             if (_hasUnresolvedPayment)
@@ -397,7 +414,8 @@ class _PaymentPageState extends State<PaymentPage> {
                           if (_hasUnresolvedPayment)
                             _buildPaymentStatus()
                           else if (_paymentsUnavailable)
-                            const _EmptyStateCard(
+                            const StatusMessage(
+                              tone: StatusTone.neutral,
                               icon: Icons.pause_circle_outline_rounded,
                               title: 'Pagos no disponibles',
                               message: 'Vuelve a intentarlo más tarde.',
@@ -408,6 +426,13 @@ class _PaymentPageState extends State<PaymentPage> {
                             _buildRecoveryCodes()
                           else if (!_enrolled || _changingFactor)
                             _buildFactorPreparation()
+                          else if (wideForm)
+                            TwoPane(
+                              primary: _buildPaymentForm(),
+                              secondary: _buildPaymentSummary(),
+                              secondaryWidth: 340,
+                              showSecondaryWhenNarrow: false,
+                            )
                           else
                             _buildPaymentForm(),
                         ],
@@ -425,7 +450,8 @@ class _PaymentPageState extends State<PaymentPage> {
 
   Widget _buildPaymentForm() {
     if (_accounts.isEmpty && !_busy) {
-      return _EmptyStateCard(
+      return StatusMessage(
+        tone: StatusTone.neutral,
         icon: Icons.account_balance_wallet_outlined,
         title: 'No hay cuentas activas',
         message: 'Necesitas una cuenta activa para preparar un pago.',
@@ -437,7 +463,8 @@ class _PaymentPageState extends State<PaymentPage> {
       );
     }
     if (_products.isEmpty && !_busy) {
-      return _EmptyStateCard(
+      return StatusMessage(
+        tone: StatusTone.neutral,
         icon: Icons.receipt_long_outlined,
         title: 'Catálogo sin productos disponibles',
         message: 'En este momento no hay productos que se puedan pagar.',
@@ -585,7 +612,7 @@ class _PaymentPageState extends State<PaymentPage> {
           ],
           const SizedBox(height: 24),
           if (!_enrolled)
-            const _MessageCard(
+            const StatusMessage(
               icon: Icons.lock_outline_rounded,
               message:
                   'Configura el código de autenticación antes de continuar.',
@@ -613,6 +640,73 @@ class _PaymentPageState extends State<PaymentPage> {
     );
   }
 
+  /// Resumen lateral del pago en pantallas anchas. Se actualiza mientras se
+  /// llena el formulario; el cargo real se confirma al revisar el pago.
+  Widget _buildPaymentSummary() {
+    final textTheme = Theme.of(context).textTheme;
+    final product = _product;
+    return ListenableBuilder(
+      listenable: _amountController,
+      builder: (context, _) {
+        final amount = product == null
+            ? null
+            : product['tipoFront'] == 1
+            ? product['precio']
+            : _amountController.text.trim();
+        return Container(
+          padding: const EdgeInsets.fromLTRB(20, 18, 20, 12),
+          decoration: BoxDecoration(
+            color: warmSurface,
+            borderRadius: BorderRadius.circular(AppRadius.lg),
+            border: Border.all(color: outlineColor),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text('Resumen', style: textTheme.titleLarge),
+              const SizedBox(height: 4),
+              _DetailLine(
+                label: 'Cuenta',
+                value: _account == null
+                    ? 'Sin seleccionar'
+                    : _maskedAccount(_account!['numeroCuenta']),
+              ),
+              if (_account != null) ...[
+                const Divider(height: 1),
+                _DetailLine(
+                  label: 'Disponible',
+                  value: MoneyFormat.mxn(_account!['saldoDisponible']),
+                ),
+              ],
+              const Divider(height: 1),
+              _DetailLine(
+                label: 'Servicio',
+                value: product == null
+                    ? 'Sin seleccionar'
+                    : '${_text(product['servicio'])} · ${_text(product['producto'])}',
+              ),
+              const Divider(height: 1),
+              _DetailLine(
+                label: 'Importe',
+                value: amount == null || _text(amount).isEmpty
+                    ? 'Por capturar'
+                    : MoneyFormat.mxn(amount),
+                emphasis: true,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'La comisión y el total se muestran al revisar el pago. '
+                'No se cobra nada hasta que lo autorices con tu código.',
+                style: textTheme.bodySmall,
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   String? _validateAmount(String? value) {
     final text = value?.trim() ?? '';
     if (!RegExp(r'^\d+(\.\d{1,2})?$').hasMatch(text)) {
@@ -627,7 +721,8 @@ class _PaymentPageState extends State<PaymentPage> {
   Widget _buildPaymentStatus() {
     final payment = _payment;
     if (payment == null) {
-      return _EmptyStateCard(
+      return StatusMessage(
+        tone: StatusTone.neutral,
         icon: Icons.hourglass_top_rounded,
         title: 'Solicitud por confirmar',
         message:
@@ -657,11 +752,11 @@ class _PaymentPageState extends State<PaymentPage> {
         Container(
           padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
-            color: success ? const Color(0xFFE6EBDD) : warmSurface,
+            color: success ? successSurface : warmSurface,
             border: Border.all(
               color: success ? ink.withValues(alpha: .24) : outlineColor,
             ),
-            borderRadius: BorderRadius.circular(24),
+            borderRadius: BorderRadius.circular(AppRadius.lg),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -713,7 +808,7 @@ class _PaymentPageState extends State<PaymentPage> {
           if (payment['autorizacionDisponible'] == false &&
               _text(payment['reglaImporteReferencia']).isNotEmpty) ...[
             const SizedBox(height: 10),
-            _MessageCard(
+            StatusMessage(
               icon: Icons.info_outline_rounded,
               message: _referenceRuleMessage(payment['reglaImporteReferencia']),
             ),
@@ -733,7 +828,7 @@ class _PaymentPageState extends State<PaymentPage> {
           ),
         ] else ...[
           const SizedBox(height: 18),
-          const _MessageCard(
+          const StatusMessage(
             icon: Icons.schedule_rounded,
             message:
                 'No inicies otro pago todavía. Puedes consultar nuevamente cuando el proveedor confirme el resultado.',
@@ -789,7 +884,7 @@ class _PaymentPageState extends State<PaymentPage> {
       padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
       decoration: BoxDecoration(
         color: warmSurface,
-        borderRadius: BorderRadius.circular(22),
+        borderRadius: BorderRadius.circular(AppRadius.lg),
         border: Border.all(color: outlineColor),
       ),
       child: Column(
@@ -845,7 +940,7 @@ class _PaymentPageState extends State<PaymentPage> {
               'Vincula una aplicación de autenticación para autorizar tus pagos.',
         ),
         const SizedBox(height: 14),
-        _MessageCard(
+        StatusMessage(
           icon: Icons.verified_user_outlined,
           message: _changingFactor
               ? 'Confirma tu identidad para reemplazar la clave del autenticador.'
@@ -957,7 +1052,7 @@ class _PaymentPageState extends State<PaymentPage> {
           decoration: BoxDecoration(
             color: warmSurface,
             border: Border.all(color: outlineColor),
-            borderRadius: BorderRadius.circular(22),
+            borderRadius: BorderRadius.circular(AppRadius.lg),
           ),
           child: Column(
             children: [
@@ -965,7 +1060,7 @@ class _PaymentPageState extends State<PaymentPage> {
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
                   color: Colors.white,
-                  borderRadius: BorderRadius.circular(16),
+                  borderRadius: BorderRadius.circular(AppRadius.md),
                 ),
                 child: QrImageView(
                   data: uri,
@@ -991,7 +1086,7 @@ class _PaymentPageState extends State<PaymentPage> {
           ),
         ),
         const SizedBox(height: 14),
-        _MessageCard(
+        StatusMessage(
           icon: Icons.schedule_rounded,
           message: expiration.isEmpty
               ? 'No compartas esta clave. Usa los datos de configuración cuanto antes.'
@@ -1039,7 +1134,7 @@ class _PaymentPageState extends State<PaymentPage> {
           padding: const EdgeInsets.all(18),
           decoration: BoxDecoration(
             color: warmSurface,
-            borderRadius: BorderRadius.circular(18),
+            borderRadius: BorderRadius.circular(AppRadius.md),
             border: Border.all(color: outlineColor),
           ),
           child: SelectableText(
@@ -1171,79 +1266,6 @@ class _SectionLabel extends StatelessWidget {
   );
 }
 
-class _MessageCard extends StatelessWidget {
-  const _MessageCard({
-    required this.icon,
-    required this.message,
-    this.isError = false,
-  });
-
-  final IconData icon;
-  final String message;
-  final bool isError;
-
-  @override
-  Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.all(15),
-    decoration: BoxDecoration(
-      color: isError ? const Color(0xFFF6E6DF) : sage,
-      borderRadius: BorderRadius.circular(17),
-    ),
-    child: Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Icon(icon, color: isError ? const Color(0xFF8F352D) : ink),
-        const SizedBox(width: 11),
-        Expanded(
-          child: Text(message, style: Theme.of(context).textTheme.bodyMedium),
-        ),
-      ],
-    ),
-  );
-}
-
-class _EmptyStateCard extends StatelessWidget {
-  const _EmptyStateCard({
-    required this.icon,
-    required this.title,
-    required this.message,
-    this.action,
-  });
-
-  final IconData icon;
-  final String title;
-  final String message;
-  final Widget? action;
-
-  @override
-  Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.all(22),
-    decoration: BoxDecoration(
-      color: warmSurface,
-      border: Border.all(color: outlineColor),
-      borderRadius: BorderRadius.circular(23),
-    ),
-    child: Column(
-      children: [
-        Icon(icon, size: 42, color: terracotta),
-        const SizedBox(height: 12),
-        Text(
-          title,
-          textAlign: TextAlign.center,
-          style: Theme.of(context).textTheme.titleLarge,
-        ),
-        const SizedBox(height: 6),
-        Text(
-          message,
-          textAlign: TextAlign.center,
-          style: Theme.of(context).textTheme.bodyMedium,
-        ),
-        if (action != null) ...[const SizedBox(height: 14), action!],
-      ],
-    ),
-  );
-}
-
 class _FixedPriceCard extends StatelessWidget {
   const _FixedPriceCard({required this.price});
 
@@ -1254,7 +1276,7 @@ class _FixedPriceCard extends StatelessWidget {
     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
     decoration: BoxDecoration(
       color: sage,
-      borderRadius: BorderRadius.circular(17),
+      borderRadius: BorderRadius.circular(AppRadius.md),
     ),
     child: Row(
       children: [

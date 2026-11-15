@@ -8,11 +8,20 @@ import '../theme.dart';
 import '../utils/money_format.dart';
 import '../widgets/brand_wordmark.dart';
 import '../widgets/paper_background.dart';
+import '../widgets/responsive.dart';
+import '../widgets/status_message.dart';
 import 'account_page.dart';
 import 'payment_page.dart';
 import 'register_page.dart';
 import 'management_page.dart';
 
+/// Contenedor principal de la sesión: navegación adaptable con pestañas.
+///
+/// - Teléfono (< 600 px): barra de navegación inferior.
+/// - Tablet y escritorio: barra lateral, con etiquetas completas desde 1200 px.
+///
+/// Cada pestaña se construye la primera vez que se visita y conserva su estado
+/// al cambiar de pestaña.
 class HomePage extends StatefulWidget {
   const HomePage({
     super.key,
@@ -32,11 +41,20 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
+  static const _homeTab = 0;
+  static const _operationsTab = 1;
+  static const _accountTab = 2;
+
   late final http.Client _client;
   late final HomeDataService _data;
   late Future<List<Map<String, dynamic>>> _accounts;
   late Future<List<Map<String, dynamic>>> _products;
-  int _selectedDestination = 0;
+  int _selectedTab = _homeTab;
+  final Set<int> _visitedTabs = {_homeTab};
+  int _paymentGeneration = 0;
+  String? _paymentService;
+
+  bool get _isExecutive => widget.session.isExecutive;
 
   @override
   void initState() {
@@ -53,7 +71,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   void _refresh() {
-    if (widget.session.isExecutive) {
+    if (_isExecutive) {
       _accounts = Future.value(const []);
       _products = Future.value(const []);
       return;
@@ -71,29 +89,28 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  String get _firstName {
-    final parts = widget.session.fullName.trim().split(RegExp(r'\s+'));
-    return parts.isEmpty || parts.first.isEmpty ? 'bienvenido' : parts.first;
+  void _selectTab(int index) {
+    if (index == _selectedTab) return;
+    final leavingOperations = _selectedTab == _operationsTab;
+    setState(() {
+      _selectedTab = index;
+      _visitedTabs.add(index);
+      // Al volver de pagar, los saldos pudieron cambiar.
+      if (index == _homeTab && leavingOperations && !_isExecutive) _refresh();
+    });
   }
 
-  Future<void> _openPayment({String? service}) async {
-    setState(() => _selectedDestination = 1);
-    await Navigator.of(context).push<void>(
-      MaterialPageRoute(
-        builder: (_) =>
-            PaymentPage(session: widget.session, initialService: service),
-      ),
-    );
-    if (mounted) {
-      setState(() {
-        _selectedDestination = 0;
-        _refresh();
-      });
+  /// Abre la pestaña de pagos; con [service] reinicia el formulario filtrado
+  /// por ese servicio. Un pago pendiente se recupera de su almacenamiento.
+  void _openPayment({String? service}) {
+    if (service != null) {
+      _paymentService = service;
+      _paymentGeneration++;
     }
+    _selectTab(_operationsTab);
   }
 
   Future<void> _openRegister() async {
-    setState(() => _selectedDestination = 1);
     final result = await Navigator.of(context).push<String>(
       MaterialPageRoute(
         builder: (_) => RegisterPage(
@@ -104,7 +121,6 @@ class _HomePageState extends State<HomePage> {
       ),
     );
     if (!mounted) return;
-    setState(() => _selectedDestination = 0);
     if (result != null) {
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
@@ -112,43 +128,196 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  Future<void> _openManagement() async {
-    setState(() => _selectedDestination = 1);
-    await Navigator.of(context).push<void>(
-      MaterialPageRoute(
-        builder: (_) =>
-            ManagementPage(session: widget.session, authApi: widget.authApi),
+  List<_Destination> get _destinations => [
+    const _Destination(
+      label: 'Inicio',
+      icon: Icons.home_outlined,
+      selectedIcon: Icons.home_rounded,
+    ),
+    _isExecutive
+        ? const _Destination(
+            label: 'Gestión',
+            icon: Icons.manage_accounts_outlined,
+            selectedIcon: Icons.manage_accounts_rounded,
+          )
+        : const _Destination(
+            label: 'Servicios',
+            icon: Icons.grid_view_outlined,
+            selectedIcon: Icons.grid_view_rounded,
+          ),
+    const _Destination(
+      label: 'Cuenta',
+      icon: Icons.person_outline_rounded,
+      selectedIcon: Icons.person_rounded,
+    ),
+  ];
+
+  Widget _tab(int index, {required bool showBrand}) {
+    if (!_visitedTabs.contains(index)) return const SizedBox.shrink();
+    return switch (index) {
+      _homeTab => _HomeDashboard(
+        session: widget.session,
+        firstName: _firstName,
+        showBrand: showBrand,
+        accounts: _accounts,
+        products: _products,
+        onReload: _reload,
+        onPay: _openPayment,
+        onRegister: _openRegister,
+        onManage: () => _selectTab(_operationsTab),
       ),
-    );
-    if (mounted) setState(() => _selectedDestination = 0);
+      _operationsTab =>
+        _isExecutive
+            ? ManagementPage(session: widget.session, authApi: widget.authApi)
+            : PaymentPage(
+                key: ValueKey('payment-$_paymentGeneration'),
+                session: widget.session,
+                initialService: _paymentService,
+              ),
+      _accountTab => AccountPage(
+        session: widget.session,
+        onLogout: widget.onLogout,
+        isLoggingOut: widget.isLoggingOut,
+      ),
+      _ => const SizedBox.shrink(),
+    };
   }
 
-  Future<void> _openAccount() async {
-    setState(() => _selectedDestination = 2);
-    await Navigator.of(context).push<void>(
-      MaterialPageRoute(
-        builder: (_) => AccountPage(
-          session: widget.session,
-          onLogout: () async {
-            Navigator.of(context).pop();
-            await widget.onLogout();
-          },
-          isLoggingOut: widget.isLoggingOut,
-        ),
-      ),
-    );
-    if (mounted) setState(() => _selectedDestination = 0);
+  String get _firstName {
+    final parts = widget.session.fullName.trim().split(RegExp(r'\s+'));
+    return parts.isEmpty || parts.first.isEmpty ? 'bienvenido' : parts.first;
   }
 
   @override
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
+      final useRail = constraints.maxWidth >= Breakpoints.medium;
+      final extendedRail = constraints.maxWidth >= Breakpoints.large;
+      final tabs = IndexedStack(
+        index: _selectedTab,
+        children: [
+          for (var index = 0; index < 3; index++)
+            _tab(index, showBrand: !useRail),
+        ],
+      );
+      final destinations = _destinations;
+
+      if (!useRail) {
+        return Scaffold(
+          body: tabs,
+          bottomNavigationBar: NavigationBar(
+            selectedIndex: _selectedTab,
+            onDestinationSelected: _selectTab,
+            destinations: [
+              for (final destination in destinations)
+                NavigationDestination(
+                  icon: Icon(destination.icon),
+                  selectedIcon: Icon(destination.selectedIcon),
+                  label: destination.label,
+                ),
+            ],
+          ),
+        );
+      }
+
+      return Scaffold(
+        body: Row(
+          children: [
+            SafeArea(
+              right: false,
+              child: NavigationRail(
+                extended: extendedRail,
+                minExtendedWidth: 232,
+                labelType: extendedRail
+                    ? NavigationRailLabelType.none
+                    : NavigationRailLabelType.all,
+                selectedIndex: _selectedTab,
+                onDestinationSelected: _selectTab,
+                leading: Padding(
+                  padding: const EdgeInsets.fromLTRB(8, 20, 8, 28),
+                  child: extendedRail
+                      ? const SizedBox(
+                          width: 184,
+                          child: BrandWordmark(compact: true),
+                        )
+                      : Semantics(
+                          label: 'Gestopago',
+                          child: const ExcludeSemantics(
+                            child: Text(
+                              'G',
+                              style: TextStyle(
+                                color: ink,
+                                fontSize: 26,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ),
+                        ),
+                ),
+                destinations: [
+                  for (final destination in destinations)
+                    NavigationRailDestination(
+                      icon: Icon(destination.icon),
+                      selectedIcon: Icon(destination.selectedIcon),
+                      label: Text(destination.label),
+                    ),
+                ],
+              ),
+            ),
+            const VerticalDivider(width: 1, color: outlineColor),
+            Expanded(child: tabs),
+          ],
+        ),
+      );
+    },
+  );
+}
+
+class _Destination {
+  const _Destination({
+    required this.label,
+    required this.icon,
+    required this.selectedIcon,
+  });
+
+  final String label;
+  final IconData icon;
+  final IconData selectedIcon;
+}
+
+class _HomeDashboard extends StatelessWidget {
+  const _HomeDashboard({
+    required this.session,
+    required this.firstName,
+    required this.showBrand,
+    required this.accounts,
+    required this.products,
+    required this.onReload,
+    required this.onPay,
+    required this.onRegister,
+    required this.onManage,
+  });
+
+  final LoginSession session;
+  final String firstName;
+  final bool showBrand;
+  final Future<List<Map<String, dynamic>>> accounts;
+  final Future<List<Map<String, dynamic>>> products;
+  final Future<void> Function() onReload;
+  final void Function({String? service}) onPay;
+  final Future<void> Function() onRegister;
+  final VoidCallback onManage;
+
+  @override
   Widget build(BuildContext context) {
-    final isExecutive = widget.session.isExecutive;
+    final isExecutive = session.isExecutive;
+    final textTheme = Theme.of(context).textTheme;
     return Scaffold(
       body: PaperBackground(
         child: SafeArea(
           child: RefreshIndicator(
             color: terracotta,
-            onRefresh: _reload,
+            onRefresh: onReload,
             child: CustomScrollView(
               physics: const AlwaysScrollableScrollPhysics(),
               slivers: [
@@ -157,22 +326,29 @@ class _HomePageState extends State<HomePage> {
                   sliver: SliverToBoxAdapter(
                     child: Center(
                       child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 620),
+                        constraints: BoxConstraints(
+                          maxWidth: isExecutive
+                              ? ContentWidth.page
+                              : ContentWidth.wide,
+                        ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
-                            const BrandWordmark(compact: true),
-                            const SizedBox(height: 36),
+                            if (showBrand) ...[
+                              const BrandWordmark(compact: true),
+                              const SizedBox(height: 36),
+                            ] else
+                              const SizedBox(height: 16),
                             Text(
-                              'Hola, $_firstName',
-                              style: Theme.of(context).textTheme.bodyLarge,
+                              'Hola, $firstName',
+                              style: textTheme.bodyLarge,
                             ),
                             const SizedBox(height: 8),
                             Text(
                               isExecutive
                                   ? 'Atención a clientes'
                                   : 'Tus servicios,\nen un solo lugar',
-                              style: Theme.of(context).textTheme.headlineLarge,
+                              style: textTheme.headlineLarge,
                             ),
                             const SizedBox(height: 12),
                             Container(
@@ -188,69 +364,110 @@ class _HomePageState extends State<HomePage> {
                               isExecutive
                                   ? 'Registra los datos del cliente para crear su acceso.'
                                   : 'Consulta tus cuentas y prepara tus pagos con claridad.',
-                              style: Theme.of(context).textTheme.bodyLarge,
+                              style: textTheme.bodyLarge,
                             ),
                             const SizedBox(height: 24),
-                            FilledButton.icon(
-                              onPressed: isExecutive
-                                  ? _openRegister
-                                  : () => _openPayment(),
-                              icon: Icon(
-                                isExecutive
-                                    ? Icons.person_add_alt_1_rounded
-                                    : Icons.receipt_long_rounded,
+                            Align(
+                              alignment: Alignment.centerLeft,
+                              child: ConstrainedBox(
+                                constraints: const BoxConstraints(
+                                  maxWidth: 420,
+                                ),
+                                child: FilledButton.icon(
+                                  onPressed: isExecutive
+                                      ? onRegister
+                                      : () => onPay(),
+                                  icon: Icon(
+                                    isExecutive
+                                        ? Icons.person_add_alt_1_rounded
+                                        : Icons.receipt_long_rounded,
+                                  ),
+                                  label: Text(
+                                    isExecutive
+                                        ? 'Registrar cliente'
+                                        : 'Pagar un servicio',
+                                  ),
+                                  iconAlignment: IconAlignment.start,
+                                ),
                               ),
-                              label: Text(
-                                isExecutive
-                                    ? 'Registrar cliente'
-                                    : 'Pagar un servicio',
-                              ),
-                              iconAlignment: IconAlignment.start,
                             ),
                             if (!isExecutive) ...[
                               const SizedBox(height: 32),
-                              _SectionHeading(
-                                title: 'Saldo disponible para pagos',
-                                trailing: IconButton(
-                                  tooltip: 'Actualizar cuentas',
-                                  onPressed: _reload,
-                                  icon: const Icon(Icons.refresh_rounded),
-                                ),
-                              ),
-                              const SizedBox(height: 12),
-                              _AccountsSummary(
-                                future: _accounts,
-                                onRetry: _reload,
-                              ),
-                              const SizedBox(height: 32),
-                              _SectionHeading(
-                                title: 'Servicios',
-                                trailing: TextButton(
-                                  onPressed: () => _openPayment(),
-                                  child: const Text('Ver catálogo'),
-                                ),
-                              ),
-                              const SizedBox(height: 12),
-                              _ServiceShortcuts(
-                                future: _products,
-                                onRetry: _reload,
-                                onSelected: (service) =>
-                                    _openPayment(service: service),
+                              ResponsiveGrid(
+                                minItemWidth: 380,
+                                maxColumns: 2,
+                                spacing: 32,
+                                children: [
+                                  Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.stretch,
+                                    children: [
+                                      _SectionHeading(
+                                        title: 'Saldo disponible para pagos',
+                                        trailing: IconButton(
+                                          tooltip: 'Actualizar cuentas',
+                                          onPressed: onReload,
+                                          icon: const Icon(
+                                            Icons.refresh_rounded,
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(height: 12),
+                                      _AccountsSummary(
+                                        future: accounts,
+                                        onRetry: onReload,
+                                      ),
+                                      const SizedBox(height: 32),
+                                    ],
+                                  ),
+                                  Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.stretch,
+                                    children: [
+                                      _SectionHeading(
+                                        title: 'Servicios',
+                                        trailing: TextButton(
+                                          onPressed: () => onPay(),
+                                          child: const Text('Ver catálogo'),
+                                        ),
+                                      ),
+                                      const SizedBox(height: 12),
+                                      _ServiceShortcuts(
+                                        future: products,
+                                        onRetry: onReload,
+                                        onSelected: (service) =>
+                                            onPay(service: service),
+                                      ),
+                                    ],
+                                  ),
+                                ],
                               ),
                             ],
                             if (isExecutive) ...[
                               const SizedBox(height: 12),
-                              OutlinedButton.icon(
-                                onPressed: _openManagement,
-                                icon: const Icon(
-                                  Icons.manage_accounts_outlined,
-                                ),
-                                label: const Text(
-                                  'Gestionar clientes y operaciones',
+                              Align(
+                                alignment: Alignment.centerLeft,
+                                child: ConstrainedBox(
+                                  constraints: const BoxConstraints(
+                                    maxWidth: 420,
+                                  ),
+                                  child: OutlinedButton.icon(
+                                    onPressed: onManage,
+                                    icon: const Icon(
+                                      Icons.manage_accounts_outlined,
+                                    ),
+                                    label: const Text(
+                                      'Gestionar clientes y operaciones',
+                                    ),
+                                  ),
                                 ),
                               ),
                               const SizedBox(height: 28),
-                              const _ExecutiveNote(),
+                              const StatusMessage(
+                                icon: Icons.info_outline_rounded,
+                                message:
+                                    'El registro crea el acceso y la cuenta del cliente en una sola operación.',
+                              ),
                             ],
                           ],
                         ),
@@ -263,46 +480,14 @@ class _HomePageState extends State<HomePage> {
           ),
         ),
       ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _selectedDestination,
-        onDestinationSelected: (index) {
-          if (index == 0) {
-            setState(() => _selectedDestination = 0);
-          } else if (index == 1) {
-            isExecutive ? _openManagement() : _openPayment();
-          } else {
-            _openAccount();
-          }
-        },
-        destinations: [
-          const NavigationDestination(
-            icon: Icon(Icons.home_outlined),
-            selectedIcon: Icon(Icons.home_rounded),
-            label: 'Inicio',
-          ),
-          NavigationDestination(
-            icon: Icon(
-              isExecutive
-                  ? Icons.person_add_alt_1_outlined
-                  : Icons.grid_view_rounded,
-            ),
-            selectedIcon: Icon(
-              isExecutive
-                  ? Icons.person_add_alt_1_rounded
-                  : Icons.grid_view_rounded,
-            ),
-            label: isExecutive ? 'Gestión' : 'Servicios',
-          ),
-          const NavigationDestination(
-            icon: Icon(Icons.person_outline_rounded),
-            selectedIcon: Icon(Icons.person_rounded),
-            label: 'Cuenta',
-          ),
-        ],
-      ),
     );
   }
 }
+
+/// Mensaje para el usuario a partir de un error de carga del inicio.
+String _friendlyError(Object? error) => error is HomeDataException
+    ? error.message
+    : 'No fue posible cargar la información. Inténtalo de nuevo.';
 
 class _AccountsSummary extends StatelessWidget {
   const _AccountsSummary({required this.future, required this.onRetry});
@@ -316,20 +501,24 @@ class _AccountsSummary extends StatelessWidget {
         future: future,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return const _LoadingSurface(label: 'Cargando cuentas');
+            return const StatusMessage.loading(message: 'Cargando cuentas');
           }
           if (snapshot.hasError) {
-            return _InlineState(
+            return StatusMessage(
               icon: Icons.wifi_off_rounded,
-              message: snapshot.error.toString(),
-              actionLabel: 'Reintentar',
-              onPressed: onRetry,
+              tone: StatusTone.neutral,
+              message: _friendlyError(snapshot.error),
+              action: TextButton(
+                onPressed: onRetry,
+                child: const Text('Reintentar'),
+              ),
             );
           }
           final accounts = snapshot.data ?? const [];
           if (accounts.isEmpty) {
-            return const _InlineState(
+            return const StatusMessage(
               icon: Icons.account_balance_wallet_outlined,
+              tone: StatusTone.neutral,
               message: 'No hay cuentas activas disponibles para pagar.',
             );
           }
@@ -338,7 +527,7 @@ class _AccountsSummary extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 6),
             decoration: BoxDecoration(
               color: warmSurface,
-              borderRadius: BorderRadius.circular(22),
+              borderRadius: BorderRadius.circular(AppRadius.lg),
               border: Border.all(color: outlineColor),
             ),
             child: Column(
@@ -375,7 +564,7 @@ class _AccountBalanceRow extends StatelessWidget {
             height: 42,
             decoration: BoxDecoration(
               color: sage,
-              borderRadius: BorderRadius.circular(14),
+              borderRadius: BorderRadius.circular(AppRadius.sm),
             ),
             child: const Icon(
               Icons.account_balance_wallet_outlined,
@@ -428,14 +617,17 @@ class _ServiceShortcuts extends StatelessWidget {
     future: future,
     builder: (context, snapshot) {
       if (snapshot.connectionState == ConnectionState.waiting) {
-        return const _LoadingSurface(label: 'Cargando catálogo');
+        return const StatusMessage.loading(message: 'Cargando catálogo');
       }
       if (snapshot.hasError) {
-        return _InlineState(
+        return StatusMessage(
           icon: Icons.search_off_rounded,
-          message: snapshot.error.toString(),
-          actionLabel: 'Reintentar',
-          onPressed: onRetry,
+          tone: StatusTone.neutral,
+          message: _friendlyError(snapshot.error),
+          action: TextButton(
+            onPressed: onRetry,
+            child: const Text('Reintentar'),
+          ),
         );
       }
       final groups = <String, int>{};
@@ -446,8 +638,9 @@ class _ServiceShortcuts extends StatelessWidget {
         }
       }
       if (groups.isEmpty) {
-        return const _InlineState(
+        return const StatusMessage(
           icon: Icons.receipt_long_outlined,
+          tone: StatusTone.neutral,
           message:
               'El catálogo no tiene servicios disponibles en este momento.',
         );
@@ -459,9 +652,9 @@ class _ServiceShortcuts extends StatelessWidget {
               padding: const EdgeInsets.only(bottom: 10),
               child: Material(
                 color: warmSurface,
-                borderRadius: BorderRadius.circular(19),
+                borderRadius: BorderRadius.circular(AppRadius.md),
                 child: InkWell(
-                  borderRadius: BorderRadius.circular(19),
+                  borderRadius: BorderRadius.circular(AppRadius.md),
                   onTap: () => onSelected(entry.key),
                   child: Container(
                     constraints: const BoxConstraints(minHeight: 68),
@@ -470,7 +663,7 @@ class _ServiceShortcuts extends StatelessWidget {
                       vertical: 12,
                     ),
                     decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(19),
+                      borderRadius: BorderRadius.circular(AppRadius.md),
                       border: Border.all(color: outlineColor),
                     ),
                     child: Row(
@@ -540,101 +733,7 @@ class _SectionHeading extends StatelessWidget {
       Expanded(
         child: Text(title, style: Theme.of(context).textTheme.titleLarge),
       ),
-      if (trailing != null) trailing!,
+      ?trailing,
     ],
-  );
-}
-
-class _LoadingSurface extends StatelessWidget {
-  const _LoadingSurface({required this.label});
-  final String label;
-
-  @override
-  Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.all(18),
-    decoration: BoxDecoration(
-      color: warmSurface,
-      borderRadius: BorderRadius.circular(19),
-      border: Border.all(color: outlineColor),
-    ),
-    child: Row(
-      children: [
-        const SizedBox.square(
-          dimension: 18,
-          child: CircularProgressIndicator(strokeWidth: 2),
-        ),
-        const SizedBox(width: 12),
-        Text(label),
-      ],
-    ),
-  );
-}
-
-class _InlineState extends StatelessWidget {
-  const _InlineState({
-    required this.icon,
-    required this.message,
-    this.actionLabel,
-    this.onPressed,
-  });
-
-  final IconData icon;
-  final String message;
-  final String? actionLabel;
-  final Future<void> Function()? onPressed;
-
-  @override
-  Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.all(18),
-    decoration: BoxDecoration(
-      color: warmSurface,
-      borderRadius: BorderRadius.circular(19),
-      border: Border.all(color: outlineColor),
-    ),
-    child: Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Icon(icon, color: terracotta),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(message, style: Theme.of(context).textTheme.bodyMedium),
-              if (actionLabel != null && onPressed != null) ...[
-                const SizedBox(height: 6),
-                TextButton(onPressed: onPressed, child: Text(actionLabel!)),
-              ],
-            ],
-          ),
-        ),
-      ],
-    ),
-  );
-}
-
-class _ExecutiveNote extends StatelessWidget {
-  const _ExecutiveNote();
-
-  @override
-  Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.all(18),
-    decoration: BoxDecoration(
-      color: sage,
-      borderRadius: BorderRadius.circular(20),
-    ),
-    child: Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Icon(Icons.info_outline_rounded, color: ink),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Text(
-            'El registro crea el acceso y la cuenta del cliente en una sola operación.',
-            style: Theme.of(context).textTheme.bodyMedium,
-          ),
-        ),
-      ],
-    ),
   );
 }

@@ -8,6 +8,7 @@ import '../theme.dart';
 import '../validation/login_validators.dart';
 import '../widgets/brand_wordmark.dart';
 import '../widgets/paper_background.dart';
+import '../widgets/status_message.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({
@@ -85,7 +86,7 @@ class _LoginPageState extends State<LoginPage> {
           child: SingleChildScrollView(
             padding: const EdgeInsets.fromLTRB(24, 36, 24, 32),
             child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 440),
+              constraints: const BoxConstraints(maxWidth: ContentWidth.auth),
               child: AutofillGroup(
                 child: Form(
                   key: _formKey,
@@ -150,9 +151,10 @@ class _LoginPageState extends State<LoginPage> {
                       ),
                       if (_errorMessage != null) ...[
                         const SizedBox(height: 18),
-                        _InlineMessage(
+                        StatusMessage(
                           message: _errorMessage!,
                           icon: Icons.error_outline_rounded,
+                          tone: StatusTone.error,
                         ),
                       ],
                       const SizedBox(height: 24),
@@ -182,36 +184,6 @@ class _LoginPageState extends State<LoginPage> {
           ),
         ),
       ),
-    ),
-  );
-}
-
-class _InlineMessage extends StatelessWidget {
-  const _InlineMessage({required this.message, required this.icon});
-
-  final String message;
-  final IconData icon;
-
-  @override
-  Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.all(14),
-    decoration: BoxDecoration(
-      color: const Color(0xFFF4E3DE),
-      borderRadius: BorderRadius.circular(16),
-      border: Border.all(color: const Color(0xFFD9B4A9)),
-    ),
-    child: Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Icon(icon, color: const Color(0xFF8A382E), size: 21),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Text(
-            message,
-            style: const TextStyle(color: Color(0xFF6F3028), height: 1.4),
-          ),
-        ),
-      ],
     ),
   );
 }
