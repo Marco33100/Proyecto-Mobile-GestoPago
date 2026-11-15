@@ -5,10 +5,12 @@ import com.proyecto.servicios.config.ProductServiceProperties;
 import com.proyecto.servicios.service.PagoGateway;
 import org.springframework.stereotype.Component;
 import org.apache.hc.client5.http.classic.methods.HttpPost;
+import org.apache.hc.client5.http.config.ConnectionConfig;
 import org.apache.hc.client5.http.config.RequestConfig;
 import org.apache.hc.client5.http.entity.UrlEncodedFormEntity;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
 import org.apache.hc.client5.http.impl.classic.HttpClients;
+import org.apache.hc.client5.http.impl.io.PoolingHttpClientConnectionManagerBuilder;
 import org.apache.hc.core5.http.message.BasicNameValuePair;
 import org.apache.hc.core5.util.Timeout;
 import org.springframework.beans.factory.DisposableBean;
@@ -35,8 +37,11 @@ public class GestopagoPagoGateway implements PagoGateway, DisposableBean {
     public GestopagoPagoGateway(GestoPagoAccessTokenProvider tokens, ProductServiceProperties properties,
                                PagoCrypto crypto, ObjectMapper json) {
         this.tokens = tokens; this.properties = properties; this.crypto = crypto; this.json = json;
-        http = HttpClients.custom().disableAutomaticRetries().disableRedirectHandling()
-                .setDefaultRequestConfig(RequestConfig.custom().setConnectTimeout(Timeout.ofSeconds(5))
+        var conexiones = PoolingHttpClientConnectionManagerBuilder.create()
+                .setDefaultConnectionConfig(ConnectionConfig.custom().setConnectTimeout(Timeout.ofSeconds(5)).build())
+                .build();
+        http = HttpClients.custom().setConnectionManager(conexiones).disableAutomaticRetries().disableRedirectHandling()
+                .setDefaultRequestConfig(RequestConfig.custom()
                         .setConnectionRequestTimeout(Timeout.ofSeconds(5)).setResponseTimeout(Timeout.ofSeconds(70)).build()).build();
     }
     @Override public Respuesta enviar(String payload) { return invocar("sendTx", payload, false); }
