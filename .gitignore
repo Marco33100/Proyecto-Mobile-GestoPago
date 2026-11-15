@@ -5,7 +5,7 @@ build/
 !**/src/test/**/build/
 .kotlin
 data/
-src/main/resources/application-local.properties
+**/application-local.properties
 .local-db-backups/
 .env
 .env.*

@@ -1,23 +1,29 @@
-# Catálogo Gestopago y onboarding de clientes
+# Catálogo, onboarding y pagos de servicios con Gestopago
 
 Documento técnico de la solución implementada.
 
-Servicio Spring Boot que consulta y sincroniza el catálogo de Gestopago usando
-PostgreSQL como almacenamiento permanente y Redis como caché de lectura.
+Backend Spring Boot y aplicación móvil Flutter para registrar clientes, administrar
+cuentas internas, consultar el catálogo de Gestopago y pagar servicios, recargas o
+tarjetas de regalo mediante el proveedor externo. PostgreSQL conserva los datos y
+Redis funciona como caché de lectura del catálogo.
 
 ## Objetivo y alcance
 
 Registrar clientes personas físicas con sus datos personales, contacto, domicilio
-e información laboral; crear automáticamente una cuenta y un usuario de acceso;
-consultar y actualizar información y realizar bajas lógicas. La misma API integra
-el catálogo externo de Gestopago, con persistencia, caché y sincronización diaria.
-Flutter consume la API para login, perfil, cierre de sesión y registro de clientes
+e información laboral; crear automáticamente una cuenta interna y un usuario de
+acceso; consultar y actualizar información y realizar bajas lógicas. La API integra
+el catálogo externo de Gestopago, con persistencia, caché y sincronización diaria,
+y contiene un flujo para preparar, autorizar y consultar pagos de servicios.
+Flutter consume la API para login, cuentas, catálogo, pagos y registro de clientes
 por un ejecutivo autenticado.
 
 Se trata de una implementación académica: la cuenta asignada es interna, no una
-cuenta real provisionada por una institución financiera. No incluye pagos,
-transferencias, historial de movimientos ni reconocimiento facial; para este
-último solo existe una referencia opcional preparada para una integración futura.
+cuenta real provisionada por una institución financiera. Los pagos son compras
+externas de servicios, recargas y tarjetas de regalo mediante Gestopago; no son
+transferencias bancarias. No hay un historial general de movimientos bancarios ni
+reconocimiento facial. La autorización de pagos usa un segundo factor TOTP de seis
+dígitos. El módulo de pagos está deshabilitado por defecto y requiere configuración
+explícita del proveedor.
 
 ### Índice de documentación
 
@@ -26,9 +32,20 @@ transferencias, historial de movimientos ni reconocimiento facial; para este
 - [Solución y decisiones técnicas](#resumen-de-la-solución-y-decisiones-técnicas).
 - [Catálogo y errores de integración](#endpoints-del-catálogo).
 - [Clientes, cuentas, usuarios y seguridad](#clientes-personas-físicas).
+- [Pagos de servicios y segundo factor](docs/payment-flow.md).
 - [Consultas y optimización](#revision-de-consultas).
 - [Contrato de tipos y longitudes](docs/database-lengths.md).
-- [Configuración y uso de Flutter](mobile/gestopago_app/README.md).
+- [Configuración y uso de Flutter](frontend/README.md).
+
+## Estructura del repositorio
+
+```
+backend/    API Spring Boot: código, migraciones, Gradle, Dockerfile y scripts
+frontend/   Aplicación móvil Flutter
+docs/       Documentación técnica compartida
+```
+
+Los comandos de Gradle se ejecutan desde `backend/` y los de Flutter desde `frontend/`.
 
 ## Tecnologías y organización
 
@@ -38,32 +55,32 @@ transferencias, historial de movimientos ni reconocimiento facial; para este
 | Spring Boot 3.3.6 | API REST, configuración y ciclo de vida |
 | Spring Data JPA / Hibernate | Repositorios, entidades y transacciones |
 | PostgreSQL | Persistencia, integridad e índices; pruebas locales con PostgreSQL 18 |
-| Flyway | V1 consolidada para instalaciones nuevas; historial V1 a V16 para bases existentes |
+| Flyway | Esquema principal V1 a V16; pagos y conciliación V17 a V23 en `db/payments` |
 | Redis / Spring Data Redis | Caché del catálogo, con TTL configurable |
 | OpenFeign / Jackson XML | Consumo HTTP y conversión XML a modelos Java |
 | MapStruct | Conversión del modelo de productos a entidades y DTOs |
 | Spring Security / JWT / BCrypt | Autenticación, autorización y hashes de contraseñas |
 | Gradle Wrapper | Compilación y ejecución reproducible sin instalar Gradle aparte |
 | JUnit / Mockito / H2 | Pruebas unitarias y transaccionales; PostgreSQL para verificar el esquema real |
-| Flutter / Dart / sqflite | Aplicación móvil y persistencia local de sesión |
+| Flutter / Dart | Aplicación móvil y almacenamiento seguro de sesión |
 | Swagger / OpenAPI / Actuator | Documentación de endpoints y comprobación de salud |
 
 ### Arquitectura por capas
 
-Los paquetes del backend están bajo `src/main/java/com/proyecto/servicios`.
+Los paquetes del backend están bajo `backend/src/main/java/com/proyecto/servicios`.
 
 | Capa / directorio | Responsabilidad y ejemplos |
 | --- | --- |
-| `controller` | Contratos HTTP, entrada y respuestas: `ClienteController`, `CuentaController`, `AuthController`, `ProductCatalogController` |
-| `service` y `service/Impl` | Reglas de negocio, transacciones, sesiones, fallback y sincronización |
+| `controller` | Contratos HTTP: `ClienteController`, `CuentaController`, `AuthController`, `ProductCatalogController`, `PagoController` y `ConciliacionPagoController` |
+| `service` y `service/Impl` | Reglas de negocio, sesiones, catálogo, pagos, TOTP, conciliación y transacciones |
 | `client` | Comunicación con Gestopago; no contiene reglas del cliente bancario |
 | `repositorys` | Consultas de persistencia mediante Spring Data JPA |
 | `entity/sf` y `entity/gestopago` | Mapeos Java/PostgreSQL de los dos dominios |
 | `model` y `mapper` | Payloads, DTOs, respuestas y conversiones; no exponen hashes ni contraseñas |
 | `config`, `support`, `exception` | Configuración, validaciones compartidas y manejo de errores |
-| `src/main/resources/db/migration` | Historial de cambios de base de datos |
-| `src/main/resources/db/initial` | Una V1 consolidada, exclusiva para bases nuevas |
-| `mobile/gestopago_app` | Cliente Flutter separado del backend |
+| `backend/src/main/resources/db/migration` | Historial de cambios de base de datos |
+| `backend/src/main/resources/db/initial` | Una V1 consolidada, exclusiva para bases nuevas |
+| `frontend` | Cliente Flutter separado del backend |
 
 Se usa inyección por constructor: los campos `private final` representan
 dependencias que no cambian durante la vida del componente. La validación del
@@ -71,8 +88,11 @@ formulario Flutter mejora la experiencia, pero el backend vuelve a validar todo.
 
 ### Modelo de persistencia
 
-Las siete tablas funcionales actuales son `clientes`, `domicilios`, `cuentas`,
-`app_users`, `user_sessions`, `gestopago_products` y `gestopago_tokens`.
+El esquema principal de onboarding y catálogo comprende `clientes`, `domicilios`,
+`cuentas`, `app_users`, `user_sessions`, `gestopago_products` y `gestopago_tokens`.
+El módulo de pagos extiende `cuentas` con el saldo retenido y agrega tablas para
+órdenes, evidencias, factores TOTP y conciliaciones. Se conserva `payment_biometric_keys`
+como estructura histórica; el flujo actual autoriza pagos con TOTP.
 `flyway_schema_history` es una tabla técnica. Las tablas `legacy_*`, si existen,
 son archivo del flujo anterior y no participan en los endpoints actuales.
 
@@ -83,16 +103,21 @@ transacción. Un usuario mantiene como máximo una sesión local vigente.
 Productos y tokens de Gestopago pertenecen a la integración externa: sus IDs no
 se usan como llaves foráneas hacia clientes o cuentas bancarias.
 
-Las bases existentes siguen usando `src/main/resources/db/migration`, sin cambiar
-su historial V1 a V16. No editar ni eliminar migraciones que ya fueron aplicadas.
+Las bases existentes usan `backend/src/main/resources/db/migration` para el historial
+principal V1 a V16; `FlywayConfig` agrega además `backend/src/main/resources/db/payments`
+con las migraciones V17 a V23. No editar ni eliminar migraciones que ya fueron
+aplicadas.
 
-### Instalación nueva con una sola V1
+### Instalación nueva con esquema inicial consolidado
 
-`src/main/resources/db/initial/V1__create_initial_schema.sql` crea directamente las
-siete tablas funcionales, relaciones, restricciones, índices y triggers del estado
-final V16. No carga datos reales ni crea registros artificiales en el historial:
-Flyway registra únicamente esta V1. No crea las tablas retiradas `personas` y
-`accounts`; conserva `id_anterior` para mantener la misma estructura de clientes.
+`backend/src/main/resources/db/initial/V1__create_initial_schema.sql` crea directamente el
+esquema principal de clientes, cuentas y catálogo, equivalente al estado final V16.
+El perfil `new-database` selecciona esa ubicación y `FlywayConfig` agrega
+`db/payments`, por lo que Flyway aplica después las migraciones V17 a V23 de pagos
+y conciliación. No se ejecuta también el historial principal V1 a V16.
+La instalación no carga datos reales ni crea registros artificiales en el historial.
+No crea las tablas retiradas `personas` y `accounts`; conserva `id_anterior` para
+mantener la estructura de clientes.
 
 Crear primero una base **nueva y vacía**, por ejemplo `gestopago_nueva`, desde
 pgAdmin conectado a la base administrativa `postgres`:
@@ -101,7 +126,7 @@ pgAdmin conectado a la base administrativa `postgres`:
 CREATE DATABASE gestopago_nueva;
 ```
 
-Después, desde la raíz del backend, seleccionar el perfil explícitamente:
+Después, desde la carpeta `backend`, seleccionar el perfil explícitamente:
 
 ```powershell
 $env:NEW_DATABASE_JDBC_URL = "jdbc:postgresql://localhost:5432/gestopago_nueva"
@@ -113,11 +138,6 @@ El usuario y la contraseña siguen viniendo de la configuración local o de
 obligatoria, sin valor por defecto, para no apuntar accidentalmente a `Database-1`.
 El perfil deshabilita el baseline automático de bases con tablas existentes.
 
-No combinar las dos rutas de migraciones, ejecutar `repair` ni borrar
-`flyway_schema_history` para cambiar de historial. La V1 consolidada **no actualiza
-una base V16 ni copia sus datos**. Para volver a usar la base actual, arrancar sin
-el perfil `new-database`. Las pruebas PostgreSQL comparan la estructura obtenida
-por ambas rutas y validan que repetir el arranque no vuelva a ejecutar V1.
 
 ## Configuración y ejecución local
 
@@ -129,9 +149,9 @@ por ambas rutas y validan que repetir el arranque no vuelva a ejecutar V1.
 - Credenciales autorizadas de Gestopago para comprobar la integración real.
 - Flutter SDK y emulador Android para ejecutar la aplicación móvil.
 
-La configuración compartida está en `src/main/resources/application.properties`.
+La configuración compartida está en `backend/src/main/resources/application.properties`.
 El perfil predeterminado es `local`. Los valores privados pueden definirse en
-`src/main/resources/application-local.properties`, ignorado por Git, o mediante
+`backend/src/main/resources/application-local.properties`, ignorado por Git, o mediante
 las variables de entorno previstas en la configuración. No se publica el archivo
 privado ni se incorporan secretos a Java, Flutter, ejemplos o imágenes Docker.
 
@@ -156,7 +176,7 @@ no constituyen una garantía de tiempo total de respuesta.
 
 ### Arranque y comprobación
 
-Desde la raíz Java, donde están `build.gradle` y `gradlew.bat`:
+Desde la carpeta `backend`, donde están `build.gradle` y `gradlew.bat`:
 
 ```powershell
 .\gradlew.bat bootRun
@@ -175,7 +195,7 @@ Crear el primer ejecutivo siguiendo la sección de bootstrap de este documento,
 iniciar sesión en `/api/auth/login` y colocar su `accessToken` en **Authorize** de
 Swagger. El token de usuario no es el Bearer Token del proveedor Gestopago.
 
-Desde `mobile/gestopago_app`, con el emulador Android encendido:
+Desde `frontend`, con el emulador Android encendido:
 
 ```powershell
 flutter pub get
@@ -226,6 +246,13 @@ Finalmente, se crearon pruebas unitarias con respuestas simuladas para comprobar
 caso exitoso, los fallos del servicio externo, los timeouts, el XML inválido y el
 orden de fallback entre Redis, PostgreSQL y Gestopago. Estas decisiones buscan
 mantener el código legible, comprobable y preparado para futuras ampliaciones.
+
+El backend también implementa pagos externos de productos del catálogo. El cliente
+selecciona una cuenta y un producto, prepara la operación, la autoriza con TOTP y
+puede consultar su estado. Las órdenes pendientes no se reenvían automáticamente;
+la conciliación de casos inciertos tiene endpoints separados y doble aprobación.
+El módulo se deshabilita por defecto mediante `GESTOPAGO_PAYMENTS_ENABLED`.
+El flujo completo y sus límites están descritos en [Pagos con segundo factor TOTP](docs/payment-flow.md).
 
 ## Endpoints del catálogo
 
@@ -290,21 +317,21 @@ Flyway V6 a V16, junto con el historial previo). Se habilita con `app.database.e
 válido de ejecutivo para llamar a `/api/clientes`.
 
 El ID del cliente es numérico (`Long` / `BIGINT`) y PostgreSQL lo genera automáticamente.
-El registro devuelve, por ejemplo, `"id": 1`; las consultas, actualización y baja usan
-`/api/clientes/1`. No se envía un ID en el POST. La migración V9 conserva los clientes
-anteriores y convierte las referencias de domicilios y cuentas al nuevo ID. Los IDs
-internos de domicilio y cuenta mantienen su tipo UUID.
+El registro devuelve, por ejemplo, `"id": 1`. Las consultas, actualización y baja
+reciben el identificador en el cuerpo JSON; no se usa `/api/clientes/{id}`. La
+migración V9 conserva los clientes anteriores y convierte las referencias de
+domicilios y cuentas al nuevo ID. Los IDs internos de domicilio y cuenta mantienen
+su tipo UUID.
 
-- `POST /api/clientes`: valida los datos y guarda cliente, domicilio, cuenta y usuario en una
-  sola transacción. La cuenta se crea activa con el saldo inicial de
+- `POST /api/clientes`: valida los datos y guarda cliente, domicilio, cuenta y usuario
+  en una sola transacción. La cuenta se crea activa con el saldo inicial de
   `cliente.cuenta.saldo-inicial` (por defecto `0.00`).
-- `GET /api/clientes?pagina=0&tamanio=20`: consulta paginada; máximo 100 por página.
-- `GET /api/clientes/{id}`, `/curp/{curp}`, `/rfc/{rfc}` y
-  `/cuenta/{numeroCuenta}`: consultas individuales.
-- `PUT /api/clientes/{id}`: actualiza los datos modificables. CURP, RFC y número de
-  cuenta no forman parte del cuerpo de actualización.
-- `DELETE /api/clientes/{id}`: baja lógica. Marca al cliente y todas sus cuentas
-  como inactivos dentro de la misma transacción; no borra filas ni historial.
+- `POST /api/clientes/consulta`: busca clientes de forma paginada con filtros JSON;
+  es una operación para ejecutivos.
+- `PUT /api/clientes`: actualiza los datos modificables usando `id` y `datos` en el
+  cuerpo. CURP, RFC y número de cuenta no forman parte de los datos editables.
+- `DELETE /api/clientes`: baja lógica con el ID en el cuerpo. Marca al cliente y sus
+  cuentas como inactivos dentro de la misma transacción; no borra filas ni historial.
 
 El registro verifica mayoría de edad, formatos de CURP/RFC/correo, teléfonos de
 10 dígitos, código postal de 5 dígitos, ingreso mensual positivo y nombres con
@@ -314,27 +341,26 @@ Las consultas históricas incluyen clientes desactivados, identificados por `act
 
 ### Consultas de clientes y cuentas
 
-Todos los endpoints de negocio usan exclusivamente el prefijo `/api`.
-Las rutas sin ese prefijo se retiraron para evitar duplicados en Swagger.
-Flutter y los clientes HTTP deben usar las rutas documentadas aqui.
-Ambas variantes requieren un JWT, una sesion activa y el rol `EJECUTIVO`.
-Un usuario `CLIENTE` recibe HTTP 403 al intentar administrar clientes o cuentas.
-El perfil propio y el cambio de contrasena verifican ademas el propietario.
+Todos los endpoints de negocio usan el prefijo `/api`. Las consultas de clientes,
+cuentas y usuarios reciben filtros en cuerpos JSON, no en parámetros de ruta o
+consulta. Los endpoints protegidos requieren un JWT y una sesión activa; las
+operaciones administrativas requieren el rol `EJECUTIVO`. El cliente solo consulta
+sus propias cuentas y el backend verifica la titularidad.
 
-| Consulta | Ejemplo |
-| --- | --- |
-| Cliente por correo | `GET /api/clientes/correo?correo=marco@example.com` |
-| Clientes activos | `GET /api/clientes?activo=true&pagina=0&tamanio=20` |
-| Clientes por fechas de registro | `GET /api/clientes?desde=2026-10-01&hasta=2026-10-31` |
-| Cuenta por numero | `GET /api/cuentas/CTA-0123456789ABCDEF0123` |
-| Cuentas activas | `GET /api/cuentas/activas?pagina=0&tamanio=20` |
-| Saldo disponible | `GET /api/cuentas/CTA-0123456789ABCDEF0123/saldo` |
+| Operación | Ruta actual | Acceso / uso |
+| --- | --- | --- |
+| Consultar clientes | `POST /api/clientes/consulta` | Ejecutivo; filtros y paginación en JSON |
+| Consultar cuenta por número | `POST /api/cuentas/consulta` | Cliente consulta una cuenta propia; ejecutivo tiene acceso administrativo |
+| Listar cuentas activas | `POST /api/cuentas/activas/consulta` | Consulta paginada |
+| Consultar cuentas propias | `POST /api/cuentas/mias/consulta` | Cliente autenticado; el servidor obtiene su identidad de la sesión |
+| Consultar saldo disponible | `POST /api/cuentas/saldo/consulta` | Cliente consulta cuentas propias; ejecutivo tiene acceso administrativo |
 
-Los filtros `activo`, `desde` y `hasta` pueden combinarse y son opcionales.
-Las fechas usan `AAAA-MM-DD`, dias UTC e incluyen todo el dia final; un rango
-invertido o un parametro con formato incorrecto devuelve HTTP 400.
-Las listas tienen un maximo de 100 registros por pagina y orden estable.
-Los filtros se aplican en SQL, no cargando toda la tabla en memoria.
+La búsqueda de clientes combina nombre, RFC y CURP parciales con OR; filtros como
+ID, correo y número de cuenta se comparan de forma exacta. También admite estado,
+rango de fechas de registro y paginación. Las fechas usan `AAAA-MM-DD`, días UTC e
+incluyen todo el día final; un rango invertido o formato incorrecto devuelve HTTP
+400. La paginación usa `pagina` y `tamanio` (20 por defecto, máximo 100), con orden
+estable. Los filtros se aplican en SQL, no cargando toda la tabla en memoria.
 La migracion V10 agrega un indice parcial para el listado de cuentas activas.
 
 Los conflictos devuelven HTTP 409 y los codigos `DUPLICATE_CURP`,
@@ -356,19 +382,30 @@ Se mantiene Gradle porque Maven aparece como tecnologia sugerida, no obligatoria
 
 ### Desactivacion de cuenta y baja del cliente
 
-`DELETE /api/cuentas/{numeroCuenta}` permite
-al ejecutivo desactivar solamente esa cuenta: devuelve `activa=false` y conserva
-saldo, cliente, usuario y sesiones. Repetir la baja es idempotente. Las consultas
-de cuenta y perfil no requieren que la cuenta este activa.
+`PATCH /api/cuentas` permite al ejecutivo desactivar una cuenta enviando su número y
+`cambios.activa=false`; conserva saldo, cliente, usuario y sesiones. Repetir la baja
+es idempotente. `DELETE /api/cuentas` se conserva por compatibilidad, pero está
+deprecado. Las consultas de cuenta y perfil no requieren que la cuenta esté activa.
 
-`DELETE /api/clientes/{id}` desactiva al cliente, sus cuentas y su usuario, y revoca
-su sesion. El login y los endpoints protegidos rechazan clientes inactivos,
-incluso con un JWT anterior. La suspension de una cuenta no bloquea el login.
+`DELETE /api/clientes` desactiva al cliente, sus cuentas y su usuario, y revoca su
+sesión. El login y los endpoints protegidos rechazan clientes inactivos, incluso
+con un JWT anterior. La suspensión de una cuenta no bloquea el login.
 
-No hay servicios de pagos, transferencias ni historial de movimientos en esta
-implementacion. Cuando se agreguen, cada operacion monetaria debera comprobar
-la titularidad y el estado activo de la cuenta dentro de su transaccion antes
-de modificar saldos; no basta con ocultar botones en Flutter.
+### Pagos de servicios y recargas
+
+El backend incluye pagos de servicios, recargas y tarjetas de regalo del catálogo
+Gestopago; no implementa transferencias bancarias. Solo un `CLIENTE` puede operar
+con sus propias cuentas. El flujo prepara la operación sin cobrar, la autoriza con
+TOTP y permite consultar el estado; cancelar solo funciona antes de enviar el pago.
+Una respuesta incierta no debe provocar un reintento de cobro.
+
+Las rutas principales son `POST /api/pagos/segundo-factor/estado`,
+`/segundo-factor/preparar`, `/segundo-factor/activar`, `/preparar`, `/autorizar`,
+`/consulta` y `/cancelar`, bajo el prefijo `/api/pagos`. Los casos de conciliación
+para ejecutivos habilitados usan `/api/pagos/conciliacion/*` y requieren doble
+aprobación. El módulo de pagos y la conciliación están deshabilitados por defecto.
+Consulta [la guía de pagos](docs/payment-flow.md) para los contratos, configuración,
+estados y tratamiento de operaciones pendientes.
 
 ### Usuario de acceso automatico
 
@@ -418,27 +455,23 @@ Reinicia el backend con PostgreSQL habilitado para aplicar la migracion.
 - `POST /api/auth/login`: correo y contrasena. Verifica el hash
   BCrypt, el usuario activo y, si esta asociado, el cliente activo. Devuelve
   `accessToken`, `tokenType`, `expiresAt` y el perfil `user`.
-- `GET /api/usuarios/{id}`: devuelve el perfil propio, sin
-  contrasena ni hash. El ID del usuario es UUID (campo `user.id` del login), no
-  el ID numerico del cliente.
-- `PUT /api/usuarios/{id}/password`: exige el JWT
-  del propietario y la contrasena actual. Guarda el nuevo hash y revoca la
-  sesion en una sola transaccion. Devuelve HTTP 204 y se debe iniciar sesion de nuevo.
+- `POST /api/usuarios/consulta`: consulta el perfil propio con nombre completo y
+  correo exactos; la identidad de sesión limita el resultado.
+- `POST /api/usuarios/busqueda`: búsqueda paginada exclusiva para ejecutivos.
+- `PUT /api/usuarios/password`: cambia la contraseña del usuario autenticado,
+  requiere la contraseña actual y revoca la sesión. Devuelve HTTP 204; se debe
+  iniciar sesión de nuevo. No recibe un ID en la ruta.
 
-Ejemplo del cuerpo para cambiar la contrasena:
-
-```json
-{
-  "contrasenaActual": "TuContrasenaElegida1!",
-  "nuevaContrasena": "OtraContrasenaSegura2!"
-}
-```
+El cuerpo de cambio incluye el correo del usuario y un objeto `credenciales` con
+la contraseña actual y la nueva. El formato exacto está disponible en Swagger.
 
 Los servicios protegidos requieren `Authorization: Bearer <accessToken>`.
 El JWT se verifica por firma, emisor y expiracion; tambien se comprueba en
 PostgreSQL que su sesion siga vigente. Un nuevo login reemplaza la sesion anterior.
 Los bloqueos de escritura por usuario coordinan login, baja y cambio de contrasena.
-El acceso a otro usuario devuelve 403, incluso con un JWT valido.
+La consulta de perfil solo devuelve el usuario de la sesión; un selector que no
+corresponde devuelve 404. Un cliente que intente la búsqueda administrativa recibe
+403.
 
 En login se usa el mismo error HTTP 401 `AUTH_INVALID_CREDENTIALS` para correo
 inexistente, contrasena incorrecta o usuario inactivo, evitando revelar cuentas.
@@ -469,8 +502,8 @@ correo, `password_hash` la contrasena hasheada, `enabled` el booleano activo y
 Si hay duplicados historicos por mayusculas o espacios, Flyway se detiene:
 no elimina usuarios automaticamente; esos datos deben corregirse antes de migrar.
 
-Se retiro el registro basico independiente. `/api/auth/register` queda bloqueado:
-todos los nuevos clientes se registran mediante `POST /api/clientes`.
+No existe un endpoint de registro independiente en `/api/auth/register`: los nuevos
+clientes se registran mediante `POST /api/clientes`.
 Flutter permite al ejecutivo capturar el formulario completo y envia su JWT;
 el alta no reemplaza la sesion del ejecutivo por la del cliente nuevo.
 Los usuarios y las cuentas historicas (archivadas en `legacy_accounts` por V16 si existen) se conservan; no se migran
@@ -497,7 +530,7 @@ cada peticion: un JWT anterior no conserva permisos retirados. No se aceptan rol
 desde el formulario ni se usa Redis como autoridad de autorizacion.
 
 Para crear el primer ejecutivo, agrega temporalmente estas propiedades al archivo
-local ignorado por Git: `src/main/resources/application-local.properties`.
+local ignorado por Git: `backend/src/main/resources/application-local.properties`.
 Conserva en ese archivo tus conexiones existentes y el secreto JWT.
 
 ```properties
@@ -529,15 +562,12 @@ su contenido. Inicia sesion en Flutter con el correo y contrasena elegidos.
    ejecutivo y solo puede consultar su perfil de usuario o cambiar su propia
    contrasena; el catalogo Gestopago sigue disponible con autenticacion.
 
-La pantalla de Login ya no ofrece el registro basico anonimo. La sesion se guarda
-con el perfil, rol y vencimiento en SQLite, sin contrasena ni JWT. El token se
-almacena mediante `flutter_secure_storage`: cifrado respaldado por Android
-Keystore y Keychain en iOS. Una referencia aleatoria vincula ambos almacenes;
-las operaciones se serializan y una escritura fallida retira la sesion parcial.
-La version 5 elimina sesiones locales antiguas que guardaban el token en texto
-plano y exige iniciar sesion otra vez, sin modificar clientes ni cuentas del servidor.
-Android excluye estos datos de las copias de seguridad. La API vuelve a comprobar
-permisos, aunque alguien altere SQLite; debe usarse HTTPS fuera del entorno local.
+La pantalla de Login no ofrece registro basico anonimo. Flutter guarda la credencial
+y su vencimiento mediante `flutter_secure_storage`; al abrir la app consulta el
+perfil vigente con `GET /api/auth/sesion`. El backend valida la sesion en PostgreSQL.
+La primera actualizacion requiere iniciar sesion nuevamente. El archivo SQLite
+antiguo permanece en el dispositivo y no se utiliza. La API comprueba permisos en
+cada peticion; debe usarse HTTPS fuera del entorno local.
 
 ### Manejo centralizado y verificacion
 
@@ -548,18 +578,18 @@ duplicados o concurrencia, 503 por persistencia y 500 por un error inesperado.
 Los mensajes y logs no incluyen passwords, hashes, tokens ni detalles SQL internos.
 
 ```powershell
-# Backend, desde la raiz Java
+# Backend, desde backend
 .\gradlew.bat test --console=plain
-# Flutter, desde mobile/gestopago_app
+# Flutter, desde frontend
 flutter analyze
 flutter test
 ```
 
-Las pruebas incluyen autorizacion ejecutivo/cliente, rutas unicas con prefijo /api, bloqueo del
-registro antiguo, cambios de rol, bootstrap sin elevacion de usuarios existentes,
-JSON de errores, alta atomica, BCrypt, sesiones y rollback. Las pruebas Flutter
-verifican el payload completo, el JWT del ejecutivo, normalizacion de nombres,
-validaciones, duplicados y persistencia del rol.
+Las pruebas incluyen autorización ejecutivo/cliente, rutas con prefijo `/api`,
+cambios de rol, bootstrap, respuestas de error, altas atómicas, BCrypt, sesiones,
+pagos, TOTP, retenciones, conciliación y rollback. Las pruebas Flutter cubren
+autenticación, registro, almacenamiento de sesión, validaciones y estados de pagos
+pendientes; no sustituyen una comprobación interactiva en dispositivo.
 
 Por defecto las pruebas transaccionales usan H2. Para repetirlas en PostgreSQL,
 puedes definir `ONBOARDING_TEST_JDBC_URL`, `ONBOARDING_TEST_DB_USER` y
@@ -580,10 +610,10 @@ sesion nueva creada por otro login. Redis se invalida despues del commit con una
 comparacion y borrado atomicos; una falla del cache no vuelve a autorizar el token.
 La firma JWT por si sola no basta: se sigue comprobando la sesion vigente.
 
-Flutter solicita esa revocacion antes de borrar el perfil SQLite y el token del
-almacen seguro, y bloquea envios repetidos.
+Flutter solicita esa revocacion antes de borrar el token del almacen seguro, y
+bloquea envios repetidos.
 Si la red falla, borra la sesion local y advierte que no pudo confirmar el cierre
-remoto. Si SQLite falla al restaurar o borrar, muestra un aviso y vuelve al login,
+remoto. Si el almacenamiento falla al restaurar o borrar, muestra un aviso y vuelve al login,
 sin dejar una carga indefinida. No se afirma que el cierre remoto haya ocurrido
 si el servidor no pudo confirmarlo.
 
