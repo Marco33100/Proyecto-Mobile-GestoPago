@@ -1,6 +1,6 @@
 package com.proyecto.servicios.service;
 
-import AES.AesEncryption;
+import com.proyecto.servicios.service.Impl.AesEncryption;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledOnOs;

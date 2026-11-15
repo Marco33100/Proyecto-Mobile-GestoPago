@@ -1,6 +1,6 @@
 package com.proyecto.servicios.service;
 
-import AES.AesEncryption;
+import com.proyecto.servicios.service.Impl.AesEncryption;
 import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.*;
 
