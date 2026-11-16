@@ -97,6 +97,18 @@ void main() {
             },
           ],
         }),
+        '/api/pagos/consulta' => http.Response(
+          jsonEncode({
+            'codigo': '02',
+            'datos': {
+              'pagoId': jsonDecode(request.body)['pagoId'],
+              'estado': 'PENDIENTE',
+              'concepto': 'CFE Pago de luz',
+              'monto': 250,
+            },
+          }),
+          200,
+        ),
         _ => throw StateError('Ruta inesperada ${request.url.path}'),
       };
     });
@@ -208,6 +220,21 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byType(PaymentPage), findsNothing);
       expect(paths.where((p) => p.startsWith('/api/pagos')), isEmpty);
+
+      // "Ver estado del pago" abre el pago anterior, nunca uno nuevo.
+      await tester.tap(find.text('Recarga 10'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Comprar'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Ver estado del pago'));
+      await tester.pumpAndSettle();
+      expect(find.byType(PaymentPage), findsOneWidget);
+      expect(find.text('Estado de tu pago'), findsOneWidget);
+      expect(find.text('Compra pendiente'), findsOneWidget);
+      expect(find.byKey(const ValueKey('chosen-product')), findsNothing);
+      expect(paths.where((p) => p.startsWith('/api/pagos')), [
+        '/api/pagos/consulta',
+      ]);
     },
   );
 

@@ -503,6 +503,7 @@ class _PaymentPageState extends State<PaymentPage> {
       );
     }
 
+    final chosen = _fromCatalog && _product != null;
     return Form(
       key: _formKey,
       child: Column(
@@ -547,23 +548,17 @@ class _PaymentPageState extends State<PaymentPage> {
                 value == null ? 'Selecciona una cuenta' : null,
           ),
           const SizedBox(height: 26),
-          _fromCatalog && _product != null
-              ? const _SectionLabel(
-                  eyebrow: '02',
-                  title: 'Producto elegido',
-                  description:
-                      'Lo elegiste en el catálogo. Puedes cambiarlo si lo necesitas.',
-                )
-              : const _SectionLabel(
-                  eyebrow: '02',
-                  title: 'Selecciona un servicio',
-                  description:
-                      'Elige un producto tal como aparece en el catálogo.',
-                ),
+          _SectionLabel(
+            eyebrow: '02',
+            title: chosen ? 'Producto elegido' : 'Selecciona un servicio',
+            description: chosen
+                ? 'Lo elegiste en el catálogo. Puedes cambiarlo si lo necesitas.'
+                : 'Elige un producto tal como aparece en el catálogo.',
+          ),
           const SizedBox(height: 12),
           // Desde el catálogo el producto ya viene elegido: cambiarlo es
           // volver al catálogo, no abrir un segundo buscador.
-          if (_fromCatalog && _product != null)
+          if (chosen)
             _ChosenProductCard(
               product: _product!,
               onChange: _busy ? null : () => Navigator.of(context).pop(),
@@ -597,8 +592,8 @@ class _PaymentPageState extends State<PaymentPage> {
                     ).copyWith(
                       helperText:
                           _product?['showAyuda'] == true &&
-                              _text(_product?['legend']).isNotEmpty
-                          ? _text(_product?['legend'])
+                              textOf(_product?['legend']).isNotEmpty
+                          ? textOf(_product?['legend'])
                           : null,
                     ),
                 validator: (value) {
@@ -726,12 +721,12 @@ class _PaymentPageState extends State<PaymentPage> {
                 label: 'Servicio',
                 value: product == null
                     ? 'Sin seleccionar'
-                    : '${_text(product['servicio'])} · ${_text(product['producto'])}',
+                    : '${textOf(product['servicio'])} · ${textOf(product['producto'])}',
               ),
               const Divider(height: 1),
               _DetailLine(
                 label: 'Importe',
-                value: amount == null || _text(amount).isEmpty
+                value: amount == null || textOf(amount).isEmpty
                     ? 'Por capturar'
                     : MoneyFormat.mxn(amount),
                 emphasis: true,
@@ -804,7 +799,7 @@ class _PaymentPageState extends State<PaymentPage> {
       );
     }
 
-    final state = _text(payment['estado']);
+    final state = textOf(payment['estado']);
     final style = _OutcomeStyle.of(state);
 
     return Column(
@@ -822,9 +817,9 @@ class _PaymentPageState extends State<PaymentPage> {
                     ) ??
                     MoneyFormat.mxn(payment['monto'])
               : null,
-          detail: _text(payment['aviso']).isEmpty
+          detail: textOf(payment['aviso']).isEmpty
               ? null
-              : _text(payment['aviso']),
+              : textOf(payment['aviso']),
         ),
         const SizedBox(height: 16),
         _paymentDetails(payment),
@@ -850,7 +845,7 @@ class _PaymentPageState extends State<PaymentPage> {
             label: const Text('Autorizar pago'),
           ),
           if (payment['autorizacionDisponible'] == false &&
-              _text(payment['reglaImporteReferencia']).isNotEmpty) ...[
+              textOf(payment['reglaImporteReferencia']).isNotEmpty) ...[
             const SizedBox(height: 10),
             StatusMessage(
               icon: Icons.info_outline_rounded,
@@ -938,13 +933,13 @@ class _PaymentPageState extends State<PaymentPage> {
             if (index > 0) const Divider(height: 1),
             lines[index],
           ],
-          if (_text(payment['pin']).isNotEmpty) ...[
+          if (textOf(payment['pin']).isNotEmpty) ...[
             const Divider(height: 1),
             ListTile(
               contentPadding: EdgeInsets.zero,
               title: const Text('PIN de la tarjeta'),
               subtitle: Text(
-                _revealPin ? _text(payment['pin']) : 'Oculto por seguridad',
+                _revealPin ? textOf(payment['pin']) : 'Oculto por seguridad',
               ),
               trailing: IconButton(
                 tooltip: _revealPin ? 'Ocultar PIN' : 'Mostrar PIN',
@@ -957,13 +952,13 @@ class _PaymentPageState extends State<PaymentPage> {
               ),
             ),
           ],
-          if (_text(payment['leyenda']).isNotEmpty) ...[
+          if (textOf(payment['leyenda']).isNotEmpty) ...[
             const Divider(height: 1),
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 14),
               child: Align(
                 alignment: Alignment.centerLeft,
-                child: SelectableText(_text(payment['leyenda'])),
+                child: SelectableText(textOf(payment['leyenda'])),
               ),
             ),
           ],
@@ -1080,8 +1075,8 @@ class _PaymentPageState extends State<PaymentPage> {
 
   Widget _buildFactorActivation() {
     final setup = _factorSetup!;
-    final uri = _text(setup['uri']);
-    final secret = _text(setup['secreto']);
+    final uri = textOf(setup['uri']);
+    final secret = textOf(setup['secreto']);
     final expiration = formatDateTime(setup['venceEn']) ?? '';
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1250,7 +1245,7 @@ class _PaymentPageState extends State<PaymentPage> {
     };
   }
 
-  String _referenceRuleMessage(Object? rule) => switch (_text(rule)) {
+  String _referenceRuleMessage(Object? rule) => switch (textOf(rule)) {
     'IMPORTE_EXACTO' =>
       'El importe debe coincidir con el saldo que informó el proveedor.',
     'PARCIAL_HASTA_SALDO' || 'HASTA_SALDO_SIN_POLITICA' =>
@@ -1258,8 +1253,6 @@ class _PaymentPageState extends State<PaymentPage> {
     _ =>
       'El proveedor aún no confirma que este importe pueda autorizarse. Consulta su estado o revisa la referencia.',
   };
-
-  String _text(Object? value) => value?.toString().trim() ?? '';
 }
 
 class _SectionLabel extends StatelessWidget {
@@ -1487,7 +1480,6 @@ class _ChosenProductCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    String text(Object? value) => value?.toString().trim() ?? '';
     return Container(
       key: const ValueKey('chosen-product'),
       padding: const EdgeInsets.fromLTRB(18, 14, 8, 14),
@@ -1505,11 +1497,11 @@ class _ChosenProductCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  text(product['producto']),
+                  textOf(product['producto']),
                   style: theme.textTheme.titleMedium,
                 ),
                 Text(
-                  '${text(product['servicio'])} · ${priceLabel(product)}',
+                  '${textOf(product['servicio'])} · ${priceLabel(product)}',
                   style: theme.textTheme.bodySmall?.copyWith(color: mutedInk),
                 ),
               ],
