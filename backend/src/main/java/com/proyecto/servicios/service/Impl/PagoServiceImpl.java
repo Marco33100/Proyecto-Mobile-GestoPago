@@ -3,6 +3,8 @@ package com.proyecto.servicios.service.Impl;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.proyecto.servicios.config.PagoProperties;
 import com.proyecto.servicios.exception.PagoException;
+import com.proyecto.servicios.model.cliente.PaginaResponse;
+import com.proyecto.servicios.model.cliente.PaginacionRequest;
 import com.proyecto.servicios.model.pago.PagoDtos.*;
 import com.proyecto.servicios.service.*;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -61,6 +63,10 @@ public class PagoServiceImpl implements PagoService {
     }
     @Override public PagoResponse consultar(ConsultaRequest request) {
         habilitado(); return ledger.consultar(request.pagoId(), PagoIdentidad.actual().userId());
+    }
+    // Solo lee el registro propio: no depende de que el proveedor de pagos este habilitado.
+    @Override public PaginaResponse<CompraResponse> historial(PaginacionRequest request) {
+        return ledger.historial(PagoIdentidad.actual().userId(), request.getPagina(), request.getTamanio());
     }
     @Override public PagoResponse cancelar(ConsultaRequest request) {
         habilitado(); return ledger.cancelar(request.pagoId(), PagoIdentidad.actual().userId());
