@@ -1,6 +1,8 @@
 package com.proyecto.servicios.service.Impl;
 
+import com.proyecto.servicios.entity.sf.PlataformaSesion;
 import com.proyecto.servicios.entity.sf.SegundoFactorEntity;
+import com.proyecto.servicios.exception.auth.SesionActivaException;
 import com.proyecto.servicios.entity.sf.UserEntity;
 import com.proyecto.servicios.exception.auth.AuthPersistenceException;
 import com.proyecto.servicios.exception.auth.CodigoSegundoFactorInvalidoException;
@@ -101,7 +103,7 @@ public class LoginSegundoFactorServiceImpl implements LoginSegundoFactorService 
     }
 
     @Override
-    public LoginResponse verificar(VerificarLoginRequest request) {
+    public LoginResponse verificar(VerificarLoginRequest request, PlataformaSesion plataforma) {
         requireSecrets();
         JwtTokenService.LoginChallenge challenge;
         try {
@@ -121,7 +123,7 @@ public class LoginSegundoFactorServiceImpl implements LoginSegundoFactorService 
             if (resultado == null) {
                 throw new CodigoSegundoFactorInvalidoException();
             }
-            LoginResponse sesion = authService.emitirSesion(resultado.user());
+            LoginResponse sesion = authService.emitirSesion(resultado.user(), plataforma);
             return resultado.codigosRecuperacion() == null
                     ? sesion : sesion.conCodigosRecuperacion(resultado.codigosRecuperacion());
         } catch (DataAccessException exception) {
@@ -145,6 +147,9 @@ public class LoginSegundoFactorServiceImpl implements LoginSegundoFactorService 
         authorization.checkLoginLock(factor);
 
         if (factor.getSecretoCifrado() != null) {
+            if (authorization.accepts(factor, request.codigo(), request.codigoRecuperacion())) {
+                exigirConfirmacionSiHaySesion(user, request);
+            }
             boolean ok = request.codigoRecuperacion() != null
                     ? authorization.consumeRecovery(factor, request.codigoRecuperacion().toUpperCase(Locale.ROOT))
                     : authorization.consume(factor, request.codigo());
@@ -163,7 +168,21 @@ public class LoginSegundoFactorServiceImpl implements LoginSegundoFactorService 
             authorization.failed(factor);
             return null;
         }
+        exigirConfirmacionSiHaySesion(user, request);
         return new Resultado(user, authorization.activate(factor, secret, step));
+    }
+
+    /**
+     * Con un codigo correcto y otra sesion abierta, pide confirmacion antes de reemplazarla.
+     * Se lanza antes de consumir el codigo, asi que el mismo codigo sirve al confirmar.
+     */
+    private void exigirConfirmacionSiHaySesion(UserEntity user, VerificarLoginRequest request) {
+        if (request.confirmaCerrarSesionAnterior()) {
+            return;
+        }
+        authService.sesionActiva(user.getId()).ifPresent(sesion -> {
+            throw new SesionActivaException(sesion);
+        });
     }
 
     private void requireSecrets() {

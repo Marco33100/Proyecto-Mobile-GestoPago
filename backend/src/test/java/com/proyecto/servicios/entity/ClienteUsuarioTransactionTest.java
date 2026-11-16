@@ -142,7 +142,7 @@ class ClienteUsuarioTransactionTest {
                 "token-de-prueba", Instant.now().plusSeconds(300)));
         AuthService auth = proxy(new AuthServiceImpl(usuarios, encoder,
                 jwt, mock(ActiveSessionService.class)), AuthService.class);
-        assertThat(auth.emitirSesion(auth.verificarCredenciales(new LoginRequest("marco@example.com", request().contrasena()))).accessToken())
+        assertThat(auth.emitirSesion(auth.verificarCredenciales(new LoginRequest("marco@example.com", request().contrasena())), com.proyecto.servicios.entity.sf.PlataformaSesion.MOVIL).accessToken())
                 .isEqualTo("token-de-prueba");
         var credencialesInvalidas = new LoginRequest("marco@example.com", "Incorrecta1");
         assertThatThrownBy(() -> auth.verificarCredenciales(credencialesInvalidas))
@@ -302,7 +302,7 @@ class ClienteUsuarioTransactionTest {
                 "token-de-prueba", Instant.now().plusSeconds(300)));
         AuthService auth = proxy(new AuthServiceImpl(usuarios, encoder, jwt,
                 mock(ActiveSessionService.class)), AuthService.class);
-        assertThat(auth.emitirSesion(auth.verificarCredenciales(new LoginRequest(usuario.getEmail(), request().contrasena()))).accessToken())
+        assertThat(auth.emitirSesion(auth.verificarCredenciales(new LoginRequest(usuario.getEmail(), request().contrasena())), com.proyecto.servicios.entity.sf.PlataformaSesion.MOVIL).accessToken())
                 .isEqualTo("token-de-prueba");
         org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(
                 org.springframework.security.authentication.UsernamePasswordAuthenticationToken.authenticated(
@@ -394,7 +394,7 @@ class ClienteUsuarioTransactionTest {
         assertThat(sesionValida(usuario.getId(), nueva)).isTrue();
         new TransactionTemplate(transactionManager).executeWithoutResult(status ->
                 sesiones.saveAndFlush(new UserSessionEntity(usuario.getId(), nueva,
-                        Instant.now().minusSeconds(1), Instant.now())));
+                        Instant.now().minusSeconds(1), Instant.now(), com.proyecto.servicios.entity.sf.PlataformaSesion.MOVIL)));
         assertThat(sesionValida(usuario.getId(), nueva)).isFalse();
     }
 
@@ -623,7 +623,7 @@ class ClienteUsuarioTransactionTest {
     private UUID crearSesion(UUID id) {
         UUID sesion = UUID.randomUUID();
         new TransactionTemplate(transactionManager).executeWithoutResult(status ->
-                sesiones.saveAndFlush(new UserSessionEntity(id, sesion, Instant.now().plusSeconds(300), Instant.now())));
+                sesiones.saveAndFlush(new UserSessionEntity(id, sesion, Instant.now().plusSeconds(300), Instant.now(), com.proyecto.servicios.entity.sf.PlataformaSesion.MOVIL)));
         return sesion;
     }
 

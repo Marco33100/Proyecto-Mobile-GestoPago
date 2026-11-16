@@ -180,6 +180,70 @@ void main() {
     expect(store.saved, isNull);
   });
 
+  http.Response sesionAbierta() => http.Response(
+    jsonEncode({
+      'codigo': 2,
+      'mensaje': 'Ya tienes una sesion abierta en la plataforma web.',
+      'datos': {'plataforma': 'WEB', 'iniciadaEn': '2030-01-01T10:00:00Z'},
+    }),
+    409,
+  );
+
+  final desafio = _ok({
+    'desafio': 'd',
+    'segundoFactorConfigurado': true,
+    'venceEn': '2030-01-01T00:05:00Z',
+  });
+
+  testWidgets(
+    'sesion abierta en otro dispositivo pide confirmar y reenvia el mismo codigo',
+    (tester) async {
+      final bodies = <Object?>[];
+      await pumpLogin(tester, (request) async {
+        if (request.url.path == '/api/auth/login') return desafio;
+        bodies.add(jsonDecode(request.body));
+        return bodies.length == 1 ? sesionAbierta() : _ok(_session());
+      });
+      await enterCredentials(tester);
+      await tester.enterText(find.byKey(const ValueKey('totp-code')), '123456');
+      await tapVisible(tester, find.text('Verificar'));
+
+      expect(find.text('Ya tienes una sesión abierta'), findsOneWidget);
+      expect(find.textContaining('la plataforma web'), findsOneWidget);
+      expect(authenticated, isNull);
+
+      await tester.tap(find.text('Cerrar la otra sesión y entrar'));
+      await tester.pumpAndSettle();
+
+      expect(bodies, [
+        {'desafio': 'd', 'codigo': '123456'},
+        {'desafio': 'd', 'codigo': '123456', 'cerrarSesionAnterior': true},
+      ]);
+      expect(authenticated?.accessToken, 'jwt-sesion');
+      expect(store.saved?.accessToken, 'jwt-sesion');
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('cancelar deja la otra sesion abierta y no entra', (
+    tester,
+  ) async {
+    await pumpLogin(tester, (request) async {
+      if (request.url.path == '/api/auth/login') return desafio;
+      return sesionAbierta();
+    });
+    await enterCredentials(tester);
+    await tester.enterText(find.byKey(const ValueKey('totp-code')), '123456');
+    await tapVisible(tester, find.text('Verificar'));
+    await tester.tap(find.text('Cancelar'));
+    await tester.pumpAndSettle();
+
+    expect(paths, ['/api/auth/login', '/api/auth/login/verificar']);
+    expect(find.textContaining('Tu otra sesión sigue abierta'), findsOneWidget);
+    expect(authenticated, isNull);
+    expect(store.saved, isNull);
+  });
+
   testWidgets('valida el formato del codigo antes de llamar al servidor', (
     tester,
   ) async {

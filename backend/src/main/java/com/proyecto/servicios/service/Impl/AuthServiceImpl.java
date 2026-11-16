@@ -1,6 +1,8 @@
 package com.proyecto.servicios.service.Impl;
 
+import com.proyecto.servicios.entity.sf.PlataformaSesion;
 import com.proyecto.servicios.entity.sf.UserEntity;
+import com.proyecto.servicios.model.auth.SesionActivaResponse;
 import com.proyecto.servicios.exception.auth.AuthPersistenceException;
 import com.proyecto.servicios.exception.auth.UsuarioNoEncontradoException;
 import com.proyecto.servicios.exception.auth.UsuarioInactivoException;
@@ -22,6 +24,7 @@ import org.springframework.transaction.annotation.Transactional;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.Locale;
+import java.util.Optional;
 import java.util.UUID;
 
 @Slf4j
@@ -74,17 +77,23 @@ public class AuthServiceImpl implements AuthService {
     }
 
     @Override
-    public LoginResponse emitirSesion(UserEntity user) {
+    public LoginResponse emitirSesion(UserEntity user, PlataformaSesion plataforma) {
         try {
             UUID sessionId = UUID.randomUUID();
             JwtTokenService.TokenResult token = jwtTokenService.generate(toCachedUser(user), sessionId);
-            activeSessionService.replaceActiveSession(user.getId(), sessionId, token.expiresAt());
+            activeSessionService.replaceActiveSession(user.getId(), sessionId, token.expiresAt(), plataforma);
             return new LoginResponse(token.value(), "Bearer", token.expiresAt(),
                     new UserProfileResponse(user.getId(), user.getEmail(), user.getIdentifier(),
                             user.getFullName(), user.getRol()));
         } catch (DataAccessException exception) {
             throw new AuthPersistenceException("El servicio de autenticacion no esta disponible", exception);
         }
+    }
+
+    @Override
+    public Optional<SesionActivaResponse> sesionActiva(UUID userId) {
+        return activeSessionService.sesionVigente(userId)
+                .map(s -> new SesionActivaResponse(s.getPlataforma(), s.getUpdatedAt()));
     }
 
     @Override

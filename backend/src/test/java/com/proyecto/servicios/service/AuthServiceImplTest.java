@@ -88,7 +88,7 @@ class AuthServiceImplTest {
         when(jwtTokenService.generate(any(CachedUser.class), any(UUID.class)))
                 .thenReturn(new JwtTokenService.TokenResult("jwt-token", expiration));
 
-        LoginResponse response = service.emitirSesion(user);
+        LoginResponse response = service.emitirSesion(user, com.proyecto.servicios.entity.sf.PlataformaSesion.WEB);
 
         assertThat(response.accessToken()).isEqualTo("jwt-token");
         assertThat(response.tokenType()).isEqualTo("Bearer");
@@ -96,7 +96,8 @@ class AuthServiceImplTest {
         assertThat(response.user().email()).isEqualTo("marti@example.com");
         verify(activeSessionService).replaceActiveSession(
                 org.mockito.ArgumentMatchers.eq(user.getId()), any(UUID.class),
-                org.mockito.ArgumentMatchers.eq(expiration)
+                org.mockito.ArgumentMatchers.eq(expiration),
+                org.mockito.ArgumentMatchers.eq(com.proyecto.servicios.entity.sf.PlataformaSesion.WEB)
         );
     }
 

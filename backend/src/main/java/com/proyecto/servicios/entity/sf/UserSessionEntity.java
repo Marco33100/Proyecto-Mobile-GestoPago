@@ -2,6 +2,8 @@ package com.proyecto.servicios.entity.sf;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 
@@ -25,18 +27,25 @@ public class UserSessionEntity {
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "plataforma", nullable = false, length = 5)
+    private PlataformaSesion plataforma;
+
     protected UserSessionEntity() {
     }
 
-    public UserSessionEntity(UUID userId, UUID sessionId, Instant expiresAt, Instant updatedAt) {
+    public UserSessionEntity(UUID userId, UUID sessionId, Instant expiresAt, Instant updatedAt,
+                             PlataformaSesion plataforma) {
         this.userId = userId;
         this.sessionId = sessionId;
         this.expiresAt = expiresAt;
         this.updatedAt = updatedAt;
+        this.plataforma = plataforma;
     }
 
     public UUID getUserId() { return userId; }
     public UUID getSessionId() { return sessionId; }
     public Instant getExpiresAt() { return expiresAt; }
     public Instant getUpdatedAt() { return updatedAt; }
+    public PlataformaSesion getPlataforma() { return plataforma; }
 }

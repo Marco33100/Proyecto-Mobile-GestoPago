@@ -60,10 +60,15 @@ class AuthApiService {
 
   /// Paso 2: verifica el código del autenticador (o uno de recuperación) y
   /// crea la sesión. En web la sesión llega en una cookie HttpOnly.
+  ///
+  /// Si la cuenta ya tiene una sesión abierta en otro dispositivo lanza
+  /// [ActiveSessionException] sin gastar el código; se repite con
+  /// [closePrevious] para cerrarla y entrar.
   Future<VerifiedLogin> verifyLogin({
     required LoginChallenge challenge,
     String? code,
     String? recoveryCode,
+    bool closePrevious = false,
   }) async {
     final result = await _post(
       path: '/api/auth/login/verificar',
@@ -71,6 +76,7 @@ class AuthApiService {
         'desafio': challenge.token,
         'codigo': ?code,
         'codigoRecuperacion': ?recoveryCode,
+        if (closePrevious) 'cerrarSesionAnterior': true,
       },
       timeout: requestTimeout,
       successStatuses: const {200},
@@ -133,6 +139,34 @@ class AuthApiService {
     final session = await _restore(const {}, '', expiresAt);
     await refreshCsrfToken();
     return session;
+  }
+
+  /// Revisa que la sesión siga vigente. Devuelve el aviso para el usuario si
+  /// terminó (otro dispositivo la reemplazó o expiró) y `null` si sigue activa
+  /// o no se pudo comprobar (sin red no se cierra nada).
+  Future<String?> endedSessionMessage(LoginSession session) async {
+    try {
+      final response = await _client
+          .get(
+            Uri.parse('${ApiConfig.baseUrl}/api/auth/sesion'),
+            headers: AuthHeaders.of(session),
+          )
+          .timeout(requestTimeout);
+      if (response.statusCode != 401) return null;
+      Object? data;
+      try {
+        data = _decodeBody(response.body)['datos'];
+      } on FormatException {
+        data = null;
+      }
+      final platform = data is Map ? data['plataforma'] : null;
+      return platform is String
+          ? 'Tu sesión se cerró porque iniciaste sesión en '
+                '${sessionPlatformLabel(platform)}.'
+          : 'Tu sesión expiró. Inicia sesión nuevamente.';
+    } on Exception {
+      return null;
+    }
   }
 
   Future<LoginSession> restoreSession(String token, DateTime expiresAt) =>
@@ -245,6 +279,19 @@ class AuthApiService {
       } on FormatException {
         body = const {};
       }
+      final data = body['datos'];
+      if (response.statusCode == 409 &&
+          data is Map &&
+          data['plataforma'] is String) {
+        final startedAt = data['iniciadaEn'];
+        throw ActiveSessionException(
+          platform: data['plataforma'] as String,
+          startedAt: startedAt is String
+              ? DateTime.tryParse(startedAt)?.toLocal()
+              : null,
+          message: _friendlyMessage(response.statusCode, body),
+        );
+      }
       throw ApiException(
         statusCode: response.statusCode,
         code: body['code'] is String
@@ -336,3 +383,20 @@ class ApiException implements Exception {
   @override
   String toString() => message;
 }
+
+/// La cuenta ya tiene una sesión abierta en otro dispositivo (HTTP 409).
+class ActiveSessionException extends ApiException {
+  const ActiveSessionException({
+    required this.platform,
+    required super.message,
+    this.startedAt,
+  }) : super(code: 'ACTIVE_SESSION', statusCode: 409);
+
+  /// `WEB` o `MOVIL`.
+  final String platform;
+  final DateTime? startedAt;
+}
+
+/// Nombre legible de la plataforma de una sesión (`WEB` o `MOVIL`).
+String sessionPlatformLabel(String platform) =>
+    platform == 'WEB' ? 'la plataforma web' : 'la app móvil';

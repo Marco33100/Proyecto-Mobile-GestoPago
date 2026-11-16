@@ -1,5 +1,6 @@
 package com.proyecto.servicios.service.Impl;
 
+import com.proyecto.servicios.entity.sf.PlataformaSesion;
 import com.proyecto.servicios.entity.sf.UserSessionEntity;
 import com.proyecto.servicios.entity.sf.RolUsuario;
 import com.proyecto.servicios.model.auth.SesionRevocadaEvent;
@@ -15,6 +16,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.Optional;
 import java.util.UUID;
 
 @Slf4j
@@ -46,10 +48,21 @@ public class ActiveSessionService {
         }
     }
 
-    @Transactional(transactionManager = "sfTransactionManager")
-    public void replaceActiveSession(UUID userId, UUID sessionId, Instant expiresAt) {
+    /** Sesion guardada del usuario si aun no vence (la de cualquier dispositivo). */
+    @Transactional(transactionManager = "sfTransactionManager", readOnly = true)
+    public Optional<UserSessionEntity> sesionVigente(UUID userId) {
         try {
-            sessionRepository.saveAndFlush(new UserSessionEntity(userId, sessionId, expiresAt, Instant.now()));
+            return sessionRepository.findById(userId).filter(s -> s.getExpiresAt().isAfter(Instant.now()));
+        } catch (DataAccessException exception) {
+            log.error("No fue posible consultar la sesion en PostgreSQL: {}", exception.getClass().getSimpleName());
+            throw new AuthPersistenceException("El servicio de autenticacion no esta disponible", exception);
+        }
+    }
+
+    @Transactional(transactionManager = "sfTransactionManager")
+    public void replaceActiveSession(UUID userId, UUID sessionId, Instant expiresAt, PlataformaSesion plataforma) {
+        try {
+            sessionRepository.saveAndFlush(new UserSessionEntity(userId, sessionId, expiresAt, Instant.now(), plataforma));
         } catch (DataAccessException exception) {
             log.error("No fue posible guardar la sesion en PostgreSQL: {}", exception.getClass().getSimpleName());
             throw new AuthPersistenceException("No fue posible crear la sesion del usuario", exception);

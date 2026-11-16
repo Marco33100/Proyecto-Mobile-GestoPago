@@ -480,7 +480,8 @@ class PagoFlowPersistenceTest {
                 .isInstanceOf(PagoException.class);
         saldo("100", "20");
         assertThat(ledger.consultar(b.pagoId(), actor).estado()).isEqualTo("PREPARADO");
-        assertThat(claves.findById(actor).orElseThrow().getIntentos()).isEqualTo(1);
+        // Repetir el codigo recien aceptado se rechaza, pero no penaliza al usuario.
+        assertThat(claves.findById(actor).orElseThrow().getIntentos()).isZero();
     }
     @Test void cincoCodigosIncorrectosPersistenBloqueoAunqueLaRespuestaSeaError() {
         var pago = ledger.preparar(request("20"), actor).pago();

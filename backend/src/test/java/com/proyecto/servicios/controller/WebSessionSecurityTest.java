@@ -7,9 +7,14 @@ import com.proyecto.servicios.config.RestAuthenticationEntryPoint;
 import com.proyecto.servicios.config.SecurityConfiguration;
 import com.proyecto.servicios.config.WebSessionCookies;
 import com.proyecto.servicios.config.WebSessionProperties;
+import com.proyecto.servicios.entity.sf.PlataformaSesion;
 import com.proyecto.servicios.entity.sf.RolUsuario;
+import com.proyecto.servicios.entity.sf.UserSessionEntity;
+import com.proyecto.servicios.exception.auth.SesionActivaException;
 import com.proyecto.servicios.model.auth.AuthenticatedUser;
 import com.proyecto.servicios.model.auth.LoginResponse;
+import com.proyecto.servicios.model.auth.SesionActivaResponse;
+import com.proyecto.servicios.model.auth.VerificarLoginRequest;
 import com.proyecto.servicios.model.auth.UserProfileResponse;
 import com.proyecto.servicios.service.AuthService;
 import com.proyecto.servicios.service.JwtTokenService;
@@ -35,6 +40,7 @@ import org.springframework.web.servlet.config.annotation.EnableWebMvc;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -73,7 +79,7 @@ class WebSessionSecurityTest {
         loginService = mock(com.proyecto.servicios.service.LoginSegundoFactorService.class);
         when(loginService.iniciar(any())).thenReturn(new com.proyecto.servicios.model.auth.LoginDesafioResponse(
                 "desafio-firmado", true, Instant.now().plusSeconds(300), null));
-        when(loginService.verificar(any())).thenReturn(new LoginResponse(
+        when(loginService.verificar(any(), any())).thenReturn(new LoginResponse(
                 "jwt-emitido", "Bearer", Instant.now().plusSeconds(3600), perfil));
         when(auth.perfilActual(any())).thenReturn(perfil);
 
@@ -109,6 +115,7 @@ class WebSessionSecurityTest {
                 .andExpect(header().string("Cache-Control", "no-store"))
                 .andExpect(jsonPath("datos.accessToken").doesNotExist())
                 .andExpect(jsonPath("datos.user.id").value(userId.toString()));
+        verify(loginService).verificar(any(), eq(PlataformaSesion.WEB));
     }
 
     @Test
@@ -117,6 +124,53 @@ class WebSessionSecurityTest {
                 .andExpect(status().isOk())
                 .andExpect(header().doesNotExist("Set-Cookie"))
                 .andExpect(jsonPath("datos.accessToken").value("jwt-emitido"));
+        verify(loginService).verificar(any(), eq(PlataformaSesion.MOVIL));
+    }
+
+    @Test
+    void sesionAbiertaEnOtroDispositivoResponde409ConSuPlataformaYSinCookie() throws Exception {
+        when(loginService.verificar(any(), any())).thenThrow(new SesionActivaException(
+                new SesionActivaResponse(PlataformaSesion.MOVIL, Instant.parse("2026-11-15T10:00:00Z"))));
+        mvc.perform(post("/api/auth/login/verificar").header("X-Auth-Mode", "cookie")
+                        .contentType("application/json").content(VERIFICAR))
+                .andExpect(status().isConflict())
+                .andExpect(header().doesNotExist("Set-Cookie"))
+                .andExpect(jsonPath("codigo").value(2))
+                .andExpect(jsonPath("mensaje").value(containsString("app movil")))
+                .andExpect(jsonPath("datos.plataforma").value("MOVIL"))
+                .andExpect(jsonPath("datos.iniciadaEn").exists());
+    }
+
+    @Test
+    void confirmarCierreSoloAceptaUnBooleanoReal() throws Exception {
+        mvc.perform(post("/api/auth/login/verificar").contentType("application/json")
+                        .content("{\"desafio\":\"d\",\"codigo\":\"123456\",\"cerrarSesionAnterior\":true}"))
+                .andExpect(status().isOk());
+        verify(loginService).verificar(argThat(VerificarLoginRequest::confirmaCerrarSesionAnterior), any());
+
+        mvc.perform(post("/api/auth/login/verificar").contentType("application/json")
+                        .content("{\"desafio\":\"d\",\"codigo\":\"123456\",\"cerrarSesionAnterior\":\"true\"}"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void sesionReemplazadaExplicaDondeSeInicioLaNueva() throws Exception {
+        ActiveSessionService sesiones = context.getBean(ActiveSessionService.class);
+        when(sesiones.rolVigente(any(), any())).thenReturn(null);
+        when(sesiones.sesionVigente(userId)).thenReturn(Optional.of(new UserSessionEntity(userId, UUID.randomUUID(),
+                Instant.now().plusSeconds(3600), Instant.now(), PlataformaSesion.WEB)));
+        mvc.perform(get("/api/auth/sesion").header("Authorization", "Bearer token-valido"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("mensaje").value(containsString("plataforma web")))
+                .andExpect(jsonPath("datos.plataforma").value("WEB"));
+    }
+
+    @Test
+    void sesionVencidaOCerradaConservaElMensajeGenerico() throws Exception {
+        when(context.getBean(ActiveSessionService.class).rolVigente(any(), any())).thenReturn(null);
+        mvc.perform(get("/api/auth/sesion").header("Authorization", "Bearer token-valido"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("datos").doesNotExist());
     }
 
     @Test
@@ -129,7 +183,7 @@ class WebSessionSecurityTest {
                 .andExpect(jsonPath("datos.accessToken").doesNotExist())
                 .andExpect(jsonPath("datos.desafio").value("desafio-firmado"))
                 .andExpect(jsonPath("datos.segundoFactorConfigurado").value(true));
-        verify(loginService, never()).verificar(any());
+        verify(loginService, never()).verificar(any(), any());
     }
 
     @Test
@@ -147,7 +201,7 @@ class WebSessionSecurityTest {
         mvc.perform(post("/api/auth/login/verificar").contentType("application/json")
                         .content("{\"desafio\":\"d\",\"codigo\":\"12ab\"}"))
                 .andExpect(status().isBadRequest());
-        verify(loginService, never()).verificar(any());
+        verify(loginService, never()).verificar(any(), any());
     }
 
     @Test
