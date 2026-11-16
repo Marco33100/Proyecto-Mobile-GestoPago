@@ -29,15 +29,19 @@ class GestoPagoTokenLogTest {
             var coordinator = mock(GestoPagoTokenCoordinator.class);
             when(coordinator.execute(anyInt(), anyString(), any())).thenAnswer(call ->
                     ((java.util.function.Supplier<?>) call.getArgument(2)).get());
-            new GestoPagoTokenServiceImpl(client, repository, mock(GestoPagoTokenMapper.class),
+            var servicio = new GestoPagoTokenServiceImpl(client, repository, mock(GestoPagoTokenMapper.class),
                     123, "equipo-prueba", "clave-prueba", java.time.Clock.systemUTC(),
-                    mock(GestoPagoTokenCipher.class), coordinator).renovarToken();
+                    mock(GestoPagoTokenCipher.class), coordinator);
+            // La renovacion real (tras un rechazo) falla de forma segura y sin secretos.
+            assertThatThrownBy(() -> servicio.renovarTokenRechazado("token-rechazado"))
+                    .isInstanceOf(com.proyecto.servicios.exception.ProductIntegrationException.class)
+                    .hasMessageNotContaining("clave-prueba");
             assertThat(appender.list).isNotEmpty();
             appender.list.forEach(event -> {
                 assertThat(event.getFormattedMessage()).doesNotContain("clave-prueba", "token-secreto", "password=");
                 assertThat(event.getThrowableProxy()).isNull();
             });
-            verifyNoInteractions(repository);
+            verify(repository, never()).saveAndFlush(any());
         } finally {
             logger.detachAppender(appender);
             appender.stop();

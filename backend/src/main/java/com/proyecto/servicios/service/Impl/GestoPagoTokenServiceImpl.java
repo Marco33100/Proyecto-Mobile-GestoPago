@@ -88,15 +88,6 @@ public class GestoPagoTokenServiceImpl implements GestoPagoTokenService {
                 .orElseGet(this::authenticate));
     }
 
-    @Override
-    public void renovarToken() {
-        // Operacion administrativa existente; no hay cron horario que incumpla el contrato diario.
-        try {
-            coordinated(this::authenticate);
-        } catch (Exception exception) {
-            // coordinated ya sanea y registra el fallo sin mensajes del proveedor.
-        }
-    }
 
     @Override
     public Optional<GestoPagoToken> obtenerTokenActivo(Integer idDistribuidor, String codigoDispositivo) {
