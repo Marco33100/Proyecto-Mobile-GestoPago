@@ -23,6 +23,7 @@ class PaymentPage extends StatefulWidget {
     this.pendingStore,
     this.initialService,
     this.initialProductId,
+    this.securityOnly = false,
   });
 
   final LoginSession session;
@@ -32,6 +33,9 @@ class PaymentPage extends StatefulWidget {
 
   /// Producto elegido en el catálogo: el formulario abre con él seleccionado.
   final int? initialProductId;
+
+  /// Solo muestra y cambia el autenticador ("Seguridad de pagos").
+  final bool securityOnly;
 
   @override
   State<PaymentPage> createState() => _PaymentPageState();
@@ -68,6 +72,9 @@ class _PaymentPageState extends State<PaymentPage> {
   String? _error;
   bool _busy = false;
   bool _enrolled = false;
+
+  /// Ya se leyó el estado del autenticador (si falla, no se adivina).
+  bool _factorKnown = false;
   bool _changingFactor = false;
   bool _revealPin = false;
   bool _paymentsUnavailable = false;
@@ -139,6 +146,12 @@ class _PaymentPageState extends State<PaymentPage> {
   }
 
   Future<void> _load() async {
+    if (widget.securityOnly) {
+      final factor = await _api.request('/api/pagos/segundo-factor/estado', {});
+      _enrolled = factor['activo'] == true;
+      _factorKnown = true;
+      return;
+    }
     _pendingId = await _pending.read(widget.session.userId);
     if (_pendingId != null) {
       await _consult();
@@ -371,7 +384,11 @@ class _PaymentPageState extends State<PaymentPage> {
   Widget build(BuildContext context) {
     final wideForm = _showingPaymentForm && Breakpoints.isExpanded(context);
     return Scaffold(
-      appBar: AppBar(title: const Text('Pagar un servicio')),
+      appBar: AppBar(
+        title: Text(
+          widget.securityOnly ? 'Seguridad de pagos' : 'Pagar un servicio',
+        ),
+      ),
       body: PaperBackground(
         child: SafeArea(
           child: Center(
@@ -392,14 +409,18 @@ class _PaymentPageState extends State<PaymentPage> {
                         children: [
                           const SizedBox(height: 12),
                           Text(
-                            _hasUnresolvedPayment
+                            widget.securityOnly
+                                ? 'Tu autenticador'
+                                : _hasUnresolvedPayment
                                 ? 'Estado de tu pago'
                                 : 'Paga tus servicios',
                             style: Theme.of(context).textTheme.headlineMedium,
                           ),
                           const SizedBox(height: 8),
                           Text(
-                            _hasUnresolvedPayment
+                            widget.securityOnly
+                                ? 'Con él autorizas tus pagos y entras a tu cuenta.'
+                                : _hasUnresolvedPayment
                                 ? 'Conservamos esta solicitud hasta conocer el resultado.'
                                 : 'Selecciona una cuenta y un producto del catálogo disponible.',
                             style: Theme.of(context).textTheme.bodyLarge,
@@ -447,12 +468,16 @@ class _PaymentPageState extends State<PaymentPage> {
                               title: 'Pagos no disponibles',
                               message: 'Vuelve a intentarlo más tarde.',
                             )
+                          else if (widget.securityOnly && !_factorKnown)
+                            const SizedBox.shrink()
                           else if (_factorSetup != null)
                             _buildFactorActivation()
                           else if (_recoveryCodes.isNotEmpty)
                             _buildRecoveryCodes()
                           else if (!_enrolled || _changingFactor)
                             _buildFactorPreparation()
+                          else if (widget.securityOnly)
+                            _buildFactorStatus()
                           else if (wideForm)
                             TwoPane(
                               primary: _buildPaymentForm(),
@@ -1072,6 +1097,27 @@ class _PaymentPageState extends State<PaymentPage> {
       ],
     );
   }
+
+  /// Autenticador ya vinculado: solo se puede reemplazar (es obligatorio).
+  Widget _buildFactorStatus() => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      const StatusMessage(
+        tone: StatusTone.info,
+        icon: Icons.verified_user_outlined,
+        title: 'Tu autenticador está activo',
+        message:
+            'Si cambiaste de teléfono o perdiste tu aplicación, reemplázalo '
+            'con tu código actual o con uno de recuperación.',
+      ),
+      const SizedBox(height: 18),
+      FilledButton.icon(
+        onPressed: () => setState(() => _changingFactor = true),
+        icon: const Icon(Icons.security_rounded),
+        label: const Text('Cambiar autenticador'),
+      ),
+    ],
+  );
 
   Widget _buildFactorActivation() {
     final setup = _factorSetup!;

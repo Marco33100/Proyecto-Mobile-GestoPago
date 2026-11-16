@@ -78,6 +78,7 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(find.text('5512345678'), findsOneWidget);
+      expect(find.text('Seguridad de pagos'), findsNothing);
       expect(
         find.text('Perfil actualizado desde el servidor.'),
         findsOneWidget,

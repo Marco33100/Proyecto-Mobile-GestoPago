@@ -184,15 +184,13 @@ class _LoginPageState extends State<LoginPage> {
     _closePrevious = false;
   });
 
-  Widget _secondFactor(BuildContext context, {required bool showBrand}) {
+  Widget _secondFactor(BuildContext context) {
     final verified = _verified;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (showBrand) ...[
-          const BrandWordmark(centered: true, compact: true),
-          const SizedBox(height: AppSpace.xxl),
-        ],
+        const BrandWordmark(centered: true, compact: true),
+        const SizedBox(height: AppSpace.xxl),
         if (verified != null)
           RecoveryCodesStep(
             codes: verified.recoveryCodes,
@@ -215,7 +213,8 @@ class _LoginPageState extends State<LoginPage> {
     body: LayoutBuilder(
       builder: (context, constraints) {
         final wide = constraints.maxWidth >= Breakpoints.expanded;
-        final form = _buildForm(context, showBrand: !wide);
+        // La marca y los adornos también van en web, como en el teléfono.
+        final form = _buildForm(context);
         if (!wide) return form;
         return Row(
           children: [
@@ -233,39 +232,31 @@ class _LoginPageState extends State<LoginPage> {
     ),
   );
 
-  Widget _buildForm(BuildContext context, {required bool showBrand}) =>
-      PaperBackground(
-        child: Stack(
-          children: [
-            if (showBrand)
-              const Positioned(
-                right: -70,
-                bottom: -50,
-                child: CornerDiamonds(),
-              ),
-            _formBody(context, showBrand: showBrand),
-          ],
-        ),
-      );
+  Widget _buildForm(BuildContext context) => PaperBackground(
+    child: Stack(
+      children: [
+        const Positioned(right: -70, bottom: -50, child: CornerDiamonds()),
+        _formBody(context),
+      ],
+    ),
+  );
 
-  Widget _formBody(BuildContext context, {required bool showBrand}) => SafeArea(
+  Widget _formBody(BuildContext context) => SafeArea(
     child: Center(
       child: SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(24, 36, 24, 32),
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: ContentWidth.auth),
           child: _challenge != null
-              ? _secondFactor(context, showBrand: showBrand)
+              ? _secondFactor(context)
               : AutofillGroup(
                   child: Form(
                     key: _formKey,
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        if (showBrand) ...[
-                          const BrandWordmark(centered: true),
-                          const SizedBox(height: 44),
-                        ],
+                        const BrandWordmark(centered: true),
+                        const SizedBox(height: 44),
                         Text(
                           'Hola de nuevo',
                           textAlign: TextAlign.center,
@@ -400,7 +391,6 @@ class _BrandPanel extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const BrandWordmark(compact: true, onDark: true),
           const Spacer(),
           ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 480),
