@@ -20,6 +20,8 @@ public class WebSessionCookies {
     public static final String AUTH_MODE_HEADER = "X-Auth-Mode";
     public static final String COOKIE_MODE = "cookie";
     static final String COOKIE_PATH = "/api";
+    /** Pasos del inicio de sesion: publicos, sin JWT previo y sin CSRF. */
+    public static final Set<String> LOGIN_PATHS = Set.of("/api/auth/login", "/api/auth/login/verificar");
     private static final Set<String> SAFE_METHODS = Set.of(
             HttpMethod.GET.name(), HttpMethod.HEAD.name(),
             HttpMethod.OPTIONS.name(), HttpMethod.TRACE.name());
@@ -76,7 +78,7 @@ public class WebSessionCookies {
             return false;
         }
         String path = request.getRequestURI().substring(request.getContextPath().length());
-        if ("/api/auth/login".equals(path)) {
+        if (LOGIN_PATHS.contains(path)) {
             return false;
         }
         return sessionToken(request).isPresent();

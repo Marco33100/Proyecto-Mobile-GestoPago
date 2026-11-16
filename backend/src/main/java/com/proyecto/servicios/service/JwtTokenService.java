@@ -26,6 +26,8 @@ import java.util.UUID;
 public class JwtTokenService {
     private static final String CLAIM_EMAIL = "email";
     private static final String CLAIM_IDENTIFIER = "identifier";
+    private static final String CLAIM_PURPOSE = "purpose";
+    private static final String PURPOSE_LOGIN_2FA = "login-2fa";
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
     private final SecretKey signingKey;
@@ -64,7 +66,8 @@ public class JwtTokenService {
 
     public AuthenticatedUser validate(String token) {
         Claims claims = parser.parseSignedClaims(token).getPayload();
-        if (claims.getExpiration() == null || claims.getIssuedAt() == null
+        if (claims.get(CLAIM_PURPOSE) != null // un desafio de login nunca es una sesion
+                || claims.getExpiration() == null || claims.getIssuedAt() == null
                 || !claims.getExpiration().after(claims.getIssuedAt())
                 || !StringUtils.hasText(claims.get(CLAIM_EMAIL, String.class))
                 || !StringUtils.hasText(claims.get(CLAIM_IDENTIFIER, String.class))) {
@@ -76,6 +79,38 @@ public class JwtTokenService {
                 claims.get(CLAIM_EMAIL, String.class),
                 claims.get(CLAIM_IDENTIFIER, String.class)
         );
+    }
+
+    /**
+     * Desafio de inicio de sesion: prueba que la contrasena ya se verifico. No sirve como
+     * sesion (no lleva email/identifier y {@link #validate} lo rechaza) y vence en minutos.
+     */
+    public TokenResult generateLoginChallenge(UUID userId, UUID challengeId, Duration validity) {
+        Instant issuedAt = Instant.now();
+        Instant expiresAt = issuedAt.plus(validity);
+        String token = Jwts.builder()
+                .subject(userId.toString())
+                .id(challengeId.toString())
+                .issuer(issuer)
+                .issuedAt(Date.from(issuedAt))
+                .expiration(Date.from(expiresAt))
+                .claim(CLAIM_PURPOSE, PURPOSE_LOGIN_2FA)
+                .signWith(signingKey)
+                .compact();
+        return new TokenResult(token, expiresAt);
+    }
+
+    /** Devuelve usuario y desafio; lanza JwtException si el token no es un desafio vigente. */
+    public LoginChallenge validateLoginChallenge(String token) {
+        Claims claims = parser.parseSignedClaims(token).getPayload();
+        if (!PURPOSE_LOGIN_2FA.equals(claims.get(CLAIM_PURPOSE, String.class))
+                || claims.getExpiration() == null || claims.getId() == null) {
+            throw new MalformedJwtException("El token no es un desafio de inicio de sesion");
+        }
+        return new LoginChallenge(UUID.fromString(claims.getSubject()), UUID.fromString(claims.getId()));
+    }
+
+    public record LoginChallenge(UUID userId, UUID challengeId) {
     }
 
     private SecretKey createSigningKey(String configuredSecret) {

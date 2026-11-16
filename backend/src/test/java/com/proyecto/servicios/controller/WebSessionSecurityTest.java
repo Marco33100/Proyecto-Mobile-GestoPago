@@ -49,9 +49,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class WebSessionSecurityTest {
     private static final String WEB_ORIGIN = "http://localhost:5173";
     private static final String LOGIN = "{\"email\":\"uno@example.com\",\"password\":\"Actual123!\"}";
+    private static final String VERIFICAR = "{\"desafio\":\"desafio-firmado\",\"codigo\":\"123456\"}";
 
     private AnnotationConfigWebApplicationContext context;
     private AuthService auth;
+    private com.proyecto.servicios.service.LoginSegundoFactorService loginService;
     private MockMvc mvc;
     private final UUID userId = UUID.randomUUID();
 
@@ -68,7 +70,10 @@ class WebSessionSecurityTest {
         auth = mock(AuthService.class);
         UserProfileResponse perfil = new UserProfileResponse(
                 userId, "uno@example.com", "uno", "Marco Martinez", RolUsuario.CLIENTE);
-        when(auth.login(any())).thenReturn(new LoginResponse(
+        loginService = mock(com.proyecto.servicios.service.LoginSegundoFactorService.class);
+        when(loginService.iniciar(any())).thenReturn(new com.proyecto.servicios.model.auth.LoginDesafioResponse(
+                "desafio-firmado", true, Instant.now().plusSeconds(300), null));
+        when(loginService.verificar(any())).thenReturn(new LoginResponse(
                 "jwt-emitido", "Bearer", Instant.now().plusSeconds(3600), perfil));
         when(auth.perfilActual(any())).thenReturn(perfil);
 
@@ -79,7 +84,7 @@ class WebSessionSecurityTest {
         when(context.getBean(ActiveSessionService.class).rolVigente(any(), any()))
                 .thenReturn(RolUsuario.CLIENTE);
 
-        mvc = MockMvcBuilders.standaloneSetup(new AuthController(auth,
+        mvc = MockMvcBuilders.standaloneSetup(new AuthController(auth, loginService,
                         context.getBean(LoginAttemptLimiter.class), context.getBean(WebSessionCookies.class)))
                 .setCustomArgumentResolvers(new AuthenticationPrincipalArgumentResolver())
                 .setControllerAdvice(new ValidadorCampos(), new GlobalApiExceptionHandler())
@@ -94,8 +99,8 @@ class WebSessionSecurityTest {
 
     @Test
     void loginWebEntregaJwtEnCookieHttpOnlyYNoEnElCuerpo() throws Exception {
-        mvc.perform(post("/api/auth/login").header("X-Auth-Mode", "cookie")
-                        .contentType("application/json").content(LOGIN))
+        mvc.perform(post("/api/auth/login/verificar").header("X-Auth-Mode", "cookie")
+                        .contentType("application/json").content(VERIFICAR))
                 .andExpect(status().isOk())
                 .andExpect(header().string("Set-Cookie", allOf(
                         containsString("GP_SESSION=jwt-emitido"), containsString("HttpOnly"),
@@ -108,10 +113,41 @@ class WebSessionSecurityTest {
 
     @Test
     void loginMovilConservaElTokenEnElCuerpoSinCookies() throws Exception {
-        mvc.perform(post("/api/auth/login").contentType("application/json").content(LOGIN))
+        mvc.perform(post("/api/auth/login/verificar").contentType("application/json").content(VERIFICAR))
                 .andExpect(status().isOk())
                 .andExpect(header().doesNotExist("Set-Cookie"))
                 .andExpect(jsonPath("datos.accessToken").value("jwt-emitido"));
+    }
+
+    @Test
+    void pasoDeContrasenaNuncaEntregaSesionNiCookie() throws Exception {
+        mvc.perform(post("/api/auth/login").header("X-Auth-Mode", "cookie")
+                        .contentType("application/json").content(LOGIN))
+                .andExpect(status().isOk())
+                .andExpect(header().doesNotExist("Set-Cookie"))
+                .andExpect(header().string("Cache-Control", "no-store"))
+                .andExpect(jsonPath("datos.accessToken").doesNotExist())
+                .andExpect(jsonPath("datos.desafio").value("desafio-firmado"))
+                .andExpect(jsonPath("datos.segundoFactorConfigurado").value(true));
+        verify(loginService, never()).verificar(any());
+    }
+
+    @Test
+    void verificacionFuncionaConCookieViejaYSinCsrf() throws Exception {
+        // Un navegador puede traer una cookie de una sesion vencida: no debe bloquear el login.
+        mvc.perform(post("/api/auth/login/verificar").header("X-Auth-Mode", "cookie")
+                        .cookie(new Cookie("GP_SESSION", "token-invalido"))
+                        .contentType("application/json").content(VERIFICAR))
+                .andExpect(status().isOk())
+                .andExpect(header().stringValues("Set-Cookie", hasItem(containsString("GP_SESSION=jwt-emitido"))));
+    }
+
+    @Test
+    void verificacionRechazaCodigoMalFormadoSinLlamarAlServicio() throws Exception {
+        mvc.perform(post("/api/auth/login/verificar").contentType("application/json")
+                        .content("{\"desafio\":\"d\",\"codigo\":\"12ab\"}"))
+                .andExpect(status().isBadRequest());
+        verify(loginService, never()).verificar(any());
     }
 
     @Test
@@ -181,9 +217,9 @@ class WebSessionSecurityTest {
 
     @Test
     void loginWebRotaElTokenCsrfAnterior() throws Exception {
-        mvc.perform(post("/api/auth/login").header("X-Auth-Mode", "cookie")
+        mvc.perform(post("/api/auth/login/verificar").header("X-Auth-Mode", "cookie")
                         .cookie(new Cookie("GP_XSRF", "plantado-antes-del-login"))
-                        .contentType("application/json").content(LOGIN))
+                        .contentType("application/json").content(VERIFICAR))
                 .andExpect(status().isOk())
                 .andExpect(header().stringValues("Set-Cookie", hasItem(allOf(
                         containsString("GP_XSRF="), containsString("Max-Age=0")))));

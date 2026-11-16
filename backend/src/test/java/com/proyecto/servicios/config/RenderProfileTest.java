@@ -20,6 +20,7 @@ class RenderProfileTest {
                         "SPRING_DATASOURCE_PASSWORD=fixture-only",
                         "REDIS_URL=redis://redis.fixture:6379",
                         "AUTH_JWT_SECRET=fixture-only-secret-at-least-32-bytes",
+                        "GESTOPAGO_TOKEN_STORAGE_KEY=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
                         "RENDER_EXTERNAL_URL=https://gestopago-fixture.onrender.com"
                 );
     }
@@ -57,6 +58,7 @@ class RenderProfileTest {
     @ValueSource(strings = {"AUTH_JWT_SECRET=", "AUTH_JWT_SECRET=corta",
             "SPRING_DATASOURCE_URL=postgresql://postgres.fixture/gestopago",
             "SPRING_DATASOURCE_USERNAME=", "SPRING_DATASOURCE_PASSWORD=",
+            "GESTOPAGO_TOKEN_STORAGE_KEY=",
             "REDIS_URL=https://redis.fixture", "REDIS_URL=redis://",
             "RENDER_EXTERNAL_URL=http://gestopago-fixture.onrender.com"})
     void rechazaConfiguracionInseguraOIncompleta(String invalidProperty) {

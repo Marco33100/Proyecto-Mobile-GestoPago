@@ -57,6 +57,19 @@ public class GlobalApiExceptionHandler extends ResponseEntityExceptionHandler {
                 "El correo o la contrasena son incorrectos", new HttpHeaders());
     }
 
+    @ExceptionHandler(com.proyecto.servicios.exception.auth.CodigoSegundoFactorInvalidoException.class)
+    ResponseEntity<Object> codigoSegundoFactorInvalido(HttpServletRequest request) {
+        return response(HttpStatus.UNAUTHORIZED,
+                "El codigo no es correcto o la verificacion vencio. Revisa tu autenticador.", new HttpHeaders());
+    }
+
+    @ExceptionHandler(com.proyecto.servicios.exception.auth.SegundoFactorNoDisponibleException.class)
+    ResponseEntity<Object> segundoFactorNoDisponible(HttpServletRequest request) {
+        log.error("Inicio de sesion bloqueado: falta GESTOPAGO_TOKEN_STORAGE_KEY para el segundo factor");
+        return response(HttpStatus.SERVICE_UNAVAILABLE,
+                "El inicio de sesion no esta disponible por el momento", new HttpHeaders());
+    }
+
     @ExceptionHandler(UsuarioNoEncontradoException.class)
     ResponseEntity<Object> usuarioNoEncontrado(HttpServletRequest request) {
         return esLogin(request) ? credencialesInvalidas(request)

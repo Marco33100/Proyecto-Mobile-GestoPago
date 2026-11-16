@@ -31,6 +31,8 @@ public class RenderStartupValidator implements InitializingBean {
         }
         requireNotBlank("spring.datasource.username", "SPRING_DATASOURCE_USERNAME");
         requireNotBlank("spring.datasource.password", "SPRING_DATASOURCE_PASSWORD");
+        // El inicio de sesion exige segundo factor: sin esta clave nadie podria entrar.
+        requireNotBlank("gestopago.auth.storage-key", "GESTOPAGO_TOKEN_STORAGE_KEY");
         try {
             URI redis = new URI(environment.getRequiredProperty("spring.data.redis.url"));
             if (!("redis".equals(redis.getScheme()) || "rediss".equals(redis.getScheme()))

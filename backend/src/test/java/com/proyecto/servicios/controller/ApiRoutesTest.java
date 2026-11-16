@@ -25,6 +25,7 @@ class ApiRoutesTest {
                 new CuentaController(mock(CuentaService.class)),
                 new UsuarioController(mock(UsuarioService.class)),
                 new AuthController(mock(AuthService.class),
+                        mock(com.proyecto.servicios.service.LoginSegundoFactorService.class),
                         mock(com.proyecto.servicios.service.Impl.LoginAttemptLimiter.class),
                         new com.proyecto.servicios.config.WebSessionCookies(
                                 new com.proyecto.servicios.config.WebSessionProperties())),

@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 
 import '../config/api_config.dart';
+import '../models/login_challenge.dart';
 import '../models/login_session.dart';
 import 'auth_headers.dart';
 
@@ -44,21 +45,48 @@ class AuthApiService {
     },
   );
 
-  Future<LoginSession> login({
+  /// Paso 1: verifica la contraseña. No crea sesión; devuelve el desafío del
+  /// segundo factor (y la configuración del autenticador si aún no existe).
+  Future<LoginChallenge> login({
     required String email,
     required String password,
+  }) => _post(
+    path: '/api/auth/login',
+    payload: {'email': email.trim(), 'password': password},
+    timeout: requestTimeout,
+    successStatuses: const {200},
+    parse: LoginChallenge.fromJson,
+  );
+
+  /// Paso 2: verifica el código del autenticador (o uno de recuperación) y
+  /// crea la sesión. En web la sesión llega en una cookie HttpOnly.
+  Future<VerifiedLogin> verifyLogin({
+    required LoginChallenge challenge,
+    String? code,
+    String? recoveryCode,
   }) async {
-    final session = await _post(
-      path: '/api/auth/login',
-      payload: {'email': email.trim(), 'password': password},
+    final result = await _post(
+      path: '/api/auth/login/verificar',
+      payload: {
+        'desafio': challenge.token,
+        'codigo': ?code,
+        'codigoRecuperacion': ?recoveryCode,
+      },
       timeout: requestTimeout,
       successStatuses: const {200},
       extraHeaders: cookieSession ? const {'X-Auth-Mode': 'cookie'} : const {},
-      parse: (data) =>
-          LoginSession.fromJson(data, cookieSession: cookieSession),
+      parse: (data) {
+        final codes = data['codigosRecuperacion'];
+        return VerifiedLogin(
+          session: LoginSession.fromJson(data, cookieSession: cookieSession),
+          recoveryCodes: codes is List
+              ? codes.whereType<String>().toList(growable: false)
+              : const [],
+        );
+      },
     );
     if (cookieSession) await refreshCsrfToken();
-    return session;
+    return result;
   }
 
   /// Pide el token CSRF que la sesión web envía en cada operación que
