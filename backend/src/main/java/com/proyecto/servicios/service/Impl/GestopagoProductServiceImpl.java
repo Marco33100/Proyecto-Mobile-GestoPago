@@ -52,7 +52,7 @@ public class GestopagoProductServiceImpl implements GestopagoProductService {
             ProductListResponse response
     ) {
         try {
-            ProductSyncResult result = databaseService.replaceIfLarger(response);
+            ProductSyncResult result = databaseService.replaceIfComplete(response);
             if (result.updated()) {
                 return response;
             }

@@ -46,10 +46,10 @@ public class ProductCatalogSyncScheduler {
             ProductListResponse response = gestopagoProductGateway.fetchCatalog();
             snapshot = snapshotFileService.writeTemporarySnapshot(response);
 
-            ProductSyncResult result = productDatabaseService.replaceIfLarger(response);
+            ProductSyncResult result = productDatabaseService.replaceIfComplete(response);
             if (!result.updated()) {
                 log.warn(
-                        "Sincronizacion omitida: catalogo vacio o cantidad no mayor; nuevos={}, existentes={}",
+                        "Sincronizacion omitida: catalogo vacio o incompleto (menos del 90 %); nuevos={}, existentes={}",
                         result.receivedCount(),
                         result.previousCount()
                 );

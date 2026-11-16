@@ -37,10 +37,11 @@ class ProductDatabaseServiceTest {
     }
 
     @Test
-    void doesNotReplaceDatabaseWhenNewCatalogIsSmaller() {
+    void doesNotReplaceDatabaseWhenNewCatalogLooksTruncated() {
+        // 2 de 3 = 67 %: parece una respuesta cortada, se conserva lo guardado.
         when(productRepository.count()).thenReturn(3L);
 
-        ProductSyncResult result = service.replaceIfLarger(responseWithProducts(1, 2));
+        ProductSyncResult result = service.replaceIfComplete(responseWithProducts(1, 2));
 
         assertFalse(result.updated());
         verify(productRepository, never()).deleteAllInBatch();
@@ -48,21 +49,29 @@ class ProductDatabaseServiceTest {
     }
 
     @Test
-    void doesNotReplaceDatabaseWhenNewCatalogHasEqualSize() {
+    void replacesDatabaseWhenNewCatalogHasEqualSize() {
+        // Misma cantidad: puede traer precios o nombres nuevos y debe aplicarse.
         when(productRepository.count()).thenReturn(2L);
 
-        ProductSyncResult result = service.replaceIfLarger(responseWithProducts(1, 2));
+        ProductSyncResult result = service.replaceIfComplete(responseWithProducts(1, 2));
 
-        assertFalse(result.updated());
-        verify(productRepository, never()).deleteAllInBatch();
-        verify(productRepository, never()).saveAllAndFlush(anyList());
+        assertTrue(result.updated());
+        verify(productRepository).deleteAllInBatch();
+        verify(productRepository).saveAllAndFlush(anyList());
+    }
+
+    @Test
+    void ninetyPercentIsTheLimitForProductsRemovedByTheProvider() {
+        when(productRepository.count()).thenReturn(10L);
+        assertTrue(service.replaceIfComplete(responseWithProducts(1, 2, 3, 4, 5, 6, 7, 8, 9)).updated());
+        assertFalse(service.replaceIfComplete(responseWithProducts(1, 2, 3, 4, 5, 6, 7, 8)).updated());
     }
 
     @Test
     void doesNotReplaceDatabaseWhenCatalogIsEmpty() {
         when(productRepository.count()).thenReturn(0L);
 
-        ProductSyncResult result = service.replaceIfLarger(responseWithProducts());
+        ProductSyncResult result = service.replaceIfComplete(responseWithProducts());
 
         assertFalse(result.updated());
         verify(productRepository, never()).deleteAllInBatch();
@@ -70,10 +79,10 @@ class ProductDatabaseServiceTest {
     }
 
     @Test
-    void replacesDatabaseOnlyWhenNewCatalogIsLarger() {
+    void replacesDatabaseWhenNewCatalogIsLarger() {
         when(productRepository.count()).thenReturn(1L);
 
-        ProductSyncResult result = service.replaceIfLarger(responseWithProducts(1, 2));
+        ProductSyncResult result = service.replaceIfComplete(responseWithProducts(1, 2));
 
         assertTrue(result.updated());
         verify(productRepository).deleteAllInBatch();
