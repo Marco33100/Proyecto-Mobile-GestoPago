@@ -602,7 +602,14 @@ class ClienteUsuarioTransactionTest {
 
     private UsuarioService gestionUsuarios(UserSessionRepository sessionRepository) {
         return proxy(new UsuarioServiceImpl(usuarios, sessionRepository, encoder,
-                mock(ApplicationEventPublisher.class)), UsuarioService.class);
+                mock(ApplicationEventPublisher.class), limiteAmplio()), UsuarioService.class);
+    }
+
+    /** Estas pruebas cubren a quien pertenece el usuario, no el limite de intentos (ver UsuarioServiceImplTest). */
+    private static com.proyecto.servicios.service.Impl.LoginAttemptLimiter limiteAmplio() {
+        var limites = new com.proyecto.servicios.config.LoginRateLimitProperties();
+        limites.setAccountAttempts(100);
+        return new com.proyecto.servicios.service.Impl.LoginAttemptLimiter(limites);
     }
 
     private UUID crearSesion(UUID id) {
