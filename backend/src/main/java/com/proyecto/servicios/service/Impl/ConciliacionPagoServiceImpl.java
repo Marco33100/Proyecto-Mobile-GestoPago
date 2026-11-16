@@ -78,7 +78,7 @@ public class ConciliacionPagoServiceImpl implements ConciliacionPagoService {
                 return respuesta(existente);
             }
             validarPago(pago,request,actor);
-            if (propuestas.existsByPagoIdAndEstado(pago.getId(),ConciliacionPagoEntity.Estado.PROPUESTA)) throw error(HttpStatus.CONFLICT);
+            retirarPropuestaVencida(pago.getId(),actor);
             var propuesta=new ConciliacionPagoEntity();
             propuesta.setId(request.propuestaId()); propuesta.setPagoId(pago.getId()); propuesta.setVersionPago(pago.getVersion());
             propuesta.setPropuestoPor(actor); propuesta.setEstado(ConciliacionPagoEntity.Estado.PROPUESTA);
@@ -87,6 +87,19 @@ public class ConciliacionPagoServiceImpl implements ConciliacionPagoService {
             evidencia(pago.getId(),"manual-propuesta",Map.of("propuestaId",propuesta.getId(),"actor",actor,"detalle",request));
             return respuesta(propuesta);
         });
+    }
+    /**
+     * Solo una propuesta abierta por pago (indice unico). Una vigente bloquea; una vencida ya no
+     * se puede aprobar, asi que se retira (RECHAZADA, con quien la reemplaza) para no trabar el caso.
+     * El pago ya esta bloqueado, de modo que dos operadores no la retiran a la vez.
+     */
+    private void retirarPropuestaVencida(UUID pagoId, UUID actor) {
+        var abierta=propuestas.findByPagoIdAndEstado(pagoId,ConciliacionPagoEntity.Estado.PROPUESTA).orElse(null);
+        if (abierta==null) return;
+        if (Instant.now().isBefore(abierta.getVenceEn())) throw error(HttpStatus.CONFLICT);
+        abierta.setEstado(ConciliacionPagoEntity.Estado.RECHAZADA);
+        abierta.setDecididoPor(actor); abierta.setDecididoEn(Instant.now()); propuestas.saveAndFlush(abierta);
+        evidencia(pagoId,"manual-vencida",Map.of("propuestaId",abierta.getId(),"actor",actor));
     }
     @Override public Propuesta consultar(PropuestaRequest request) {
         return transaccion(actor -> respuesta(propuestas.findById(request.propuestaId()).orElseThrow(() -> error(HttpStatus.NOT_FOUND))));
@@ -131,27 +144,20 @@ public class ConciliacionPagoServiceImpl implements ConciliacionPagoService {
                 || request.evidenciaProveedor()==null || request.evidenciaProveedor().isBlank()
                 || request.motivo()==null || request.motivo().isBlank()) throw error(HttpStatus.BAD_REQUEST);
         if (request.resultado()!=Resultado.NO_APLICADO_DEFINITIVO) {
-            if (!positivo(request.idTransaccion()) || !positivo(request.autorizacion())) throw error(HttpStatus.BAD_REQUEST);
+            if (!GestopagoPagoGateway.positivo(request.idTransaccion()) || !GestopagoPagoGateway.positivo(request.autorizacion())) throw error(HttpStatus.BAD_REQUEST);
         } else if (request.idTransaccion()!=null || request.autorizacion()!=null) throw error(HttpStatus.BAD_REQUEST);
     }
     private void aplicar(PagoEntity pago,ProponerRequest detalle) {
         boolean debitar=detalle.resultado()==Resultado.APLICADO;
         if (debitar && pagos.existsByIdTransaccionAndIdNot(detalle.idTransaccion(),pago.getId())) throw error(HttpStatus.CONFLICT);
-        if (detalle.resultado()==Resultado.DUPLICADO_YA_CONTABILIZADO) {
-            var anterior=pagos.findByIdTransaccion(detalle.idTransaccion()).orElseThrow(() -> error(HttpStatus.CONFLICT));
-            if (anterior.getId().equals(pago.getId()) || anterior.getEstado()!=PagoEntity.Estado.APLICADO
-                    || !anterior.getUsuarioId().equals(pago.getUsuarioId()) || pago.getHuellaOperacion()==null
-                    || !pago.getHuellaOperacion().equals(anterior.getHuellaOperacion())
-                    || pago.getMonto().compareTo(anterior.getMonto())!=0 || !detalle.autorizacion().equals(anterior.getAutorizacion()))
-                throw error(HttpStatus.CONFLICT);
-        }
+        if (detalle.resultado()==Resultado.DUPLICADO_YA_CONTABILIZADO && !PagoLedger.esCompraYaContabilizada(pago,
+                pagos.findByIdTransaccion(detalle.idTransaccion()).orElse(null), detalle.autorizacion()))
+            throw error(HttpStatus.CONFLICT);
         var cuenta=cuentas.findByNumeroCuentaForUpdate(pago.getNumeroCuenta());
         if (cuenta==null || !cuenta.getId().equals(pago.getCuentaId()) || cuenta.getSaldoRetenido().compareTo(pago.getMonto())<0)
             throw error(HttpStatus.CONFLICT);
         cuenta.resolverRetencion(pago.getMonto(),debitar,Instant.now()); cuentas.saveAndFlush(cuenta);
-        pago.setEstado(debitar?PagoEntity.Estado.APLICADO:PagoEntity.Estado.RECHAZADO);
-        pago.setIntentoConfirmacion(null); pago.setProximaConfirmacion(null); pago.setMotivoRevision(null);
-        if (debitar) { pago.setIdTransaccion(detalle.idTransaccion()); pago.setAutorizacion(detalle.autorizacion()); }
+        pago.cerrar(debitar,detalle.idTransaccion(),detalle.autorizacion());
         pagos.saveAndFlush(pago);
     }
     private ProponerRequest detalle(ConciliacionPagoEntity propuesta) {
@@ -163,7 +169,6 @@ public class ConciliacionPagoServiceImpl implements ConciliacionPagoService {
         return new Propuesta(propuesta.getId(),propuesta.getPagoId(),propuesta.getEstado().name(),detalle.resultado(),
                 propuesta.getPropuestoPor(),propuesta.getDecididoPor(),propuesta.getCreadoEn(),propuesta.getVenceEn(),detalle);
     }
-    private boolean positivo(String valor) { return valor!=null && valor.matches("\\d{1,60}") && new BigDecimal(valor).signum()>0; }
     private String serializar(Object valor) {
         try { return json.writeValueAsString(valor); } catch (com.fasterxml.jackson.core.JsonProcessingException e) { throw error(HttpStatus.SERVICE_UNAVAILABLE); }
     }

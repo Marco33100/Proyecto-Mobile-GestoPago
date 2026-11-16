@@ -73,7 +73,6 @@ class GestopagoProductGatewayTest {
     @Test
     void timeoutReturnsCodeOne() {
         RetryableException exception = mock(RetryableException.class);
-        when(exception.getCause()).thenReturn(new SocketTimeoutException("timeout"));
         when(productCatalogClient.getProductList("Bearer fixture-token")).thenThrow(exception);
 
         ProductIntegrationException result = assertThrows(

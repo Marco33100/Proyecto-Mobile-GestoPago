@@ -14,10 +14,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 
-import java.net.ConnectException;
-import java.net.SocketTimeoutException;
 import java.time.Duration;
-import java.util.Locale;
 import java.util.concurrent.atomic.AtomicReference;
 
 @Slf4j
@@ -57,7 +54,13 @@ public class GestopagoProductGateway {
                     exception.getErrorType().getCode());
             throw exception;
         } catch (RetryableException exception) {
-            ProductIntegrationException mapped = connectionError(exception);
+            // Red caida o timeout. El cliente siempre ve un texto fijo (GlobalApiExceptionHandler).
+            log.error("Falla de red al consultar Gestopago");
+            ProductIntegrationException mapped = new ProductIntegrationException(
+                    ProductIntegrationErrorType.GESTOPAGO_UNAVAILABLE,
+                    "No fue posible comunicarse con Gestopago",
+                    exception
+            );
             registerFailure(mapped);
             throw mapped;
         } catch (DecodeException exception) {
@@ -127,33 +130,7 @@ public class GestopagoProductGateway {
         }
     }
 
-    private ProductIntegrationException connectionError(RetryableException exception) {
-        Throwable cause = exception.getCause();
-        boolean connectionOrTimeout = cause instanceof SocketTimeoutException
-                || cause instanceof ConnectException
-                || containsConnectionMessage(exception.getMessage());
 
-        String message = connectionOrTimeout
-                ? "Error de conexión a internet o timeout al comunicarse con Gestopago"
-                : "No fue posible establecer comunicación con Gestopago";
-        log.error("Falla de red al consultar Gestopago");
-        return new ProductIntegrationException(
-                ProductIntegrationErrorType.GESTOPAGO_UNAVAILABLE,
-                message,
-                exception
-        );
-    }
-
-    private boolean containsConnectionMessage(String message) {
-        if (message == null) {
-            return false;
-        }
-        String normalized = message.toLowerCase(Locale.ROOT);
-        return normalized.contains("timed out")
-                || normalized.contains("timeout")
-                || normalized.contains("connection")
-                || normalized.contains("refused");
-    }
 
     private void rejectDuringCooldown() {
         FailureCooldown currentFailure = failureCooldown.get();

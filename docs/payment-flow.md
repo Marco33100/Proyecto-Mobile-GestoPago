@@ -149,7 +149,7 @@ La consulta de pendientes acepta `{"pagina":0,"tamanio":20}`. Ejemplo de estruct
 }
 ```
 
-Para `NO_APLICADO_DEFINITIVO` se omiten `idTransaccion` y `autorizacion`; los otros dos resultados los requieren. El segundo operador envía a `/propuestas/aprobar` el `propuestaId` y una `observacion` de su revisión. Nunca se acepta un importe distinto del registrado en el pago.
+Para `NO_APLICADO_DEFINITIVO` se omiten `idTransaccion` y `autorizacion`; los otros dos resultados los requieren. El segundo operador envía a `/propuestas/aprobar` el `propuestaId` y una `observacion` de su revisión. Nunca se acepta un importe distinto del registrado en el pago. Solo puede haber una propuesta abierta por pago: si la anterior venció sin aprobarse, la nueva propuesta la retira automáticamente (queda `RECHAZADA`, con el operador que la reemplazó y una evidencia `manual-vencida`); una propuesta aún vigente sigue bloqueando con 409.
 
 ## Límites, cambios del catálogo y duplicados
 

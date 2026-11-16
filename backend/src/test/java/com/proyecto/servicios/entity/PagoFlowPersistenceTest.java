@@ -892,6 +892,26 @@ class PagoFlowPersistenceTest {
         assertThatThrownBy(() -> servicioConciliacion4.aprobar(decisionConciliacion4)).isInstanceOf(PagoException.class);
         saldo("100","20");
     }
+    @Test void propuestaVencidaSeRetiraAlProponerOtraYUnaVigenteSigueBloqueando() {
+        var pago=enRevision("A"); var ops=operadores(); ejecutivo(ops[0]);
+        var vieja=conciliacion().proponer(propuesta(pago,com.proyecto.servicios.model.pago.ConciliacionDtos.Resultado.NO_APLICADO_DEFINITIVO));
+        ejecutivo(ops[1]); var servicioVigente=conciliacion();
+        var segundaVigente=propuesta(pago,com.proyecto.servicios.model.pago.ConciliacionDtos.Resultado.NO_APLICADO_DEFINITIVO);
+        assertThatThrownBy(() -> servicioVigente.proponer(segundaVigente)).isInstanceOf(PagoException.class);
+        tx.executeWithoutResult(status -> {var c=propuestas.findById(vieja.propuestaId()).orElseThrow();
+            c.setCreadoEn(Instant.now().minusSeconds(7200)); c.setVenceEn(Instant.now().minusSeconds(60)); propuestas.saveAndFlush(c);});
+
+        // Sin rechazarla a mano: la nueva propuesta retira la vencida y deja registro.
+        var nueva=conciliacion().proponer(propuesta(pago,com.proyecto.servicios.model.pago.ConciliacionDtos.Resultado.NO_APLICADO_DEFINITIVO));
+        var retirada=propuestas.findById(vieja.propuestaId()).orElseThrow();
+        assertThat(retirada.getEstado()).isEqualTo(ConciliacionPagoEntity.Estado.RECHAZADA);
+        assertThat(retirada.getDecididoPor()).isEqualTo(ops[1]);
+        assertThat(evidencias.findAll().stream().filter(e -> "manual-vencida".equals(e.getMetodo())).count()).isEqualTo(1);
+        assertThat(nueva.estado()).isEqualTo("PROPUESTA"); saldo("100","20");
+
+        ejecutivo(ops[0]); conciliacion().aprobar(decision(nueva.propuestaId()));
+        saldo("100","0"); assertThat(ledger.consultar(pago.pagoId(),actor).estado()).isEqualTo("RECHAZADO");
+    }
     @Test void proponenteRevocadoNoPermiteAplicarUnaPropuestaAnterior() {
         var pago=enRevision("A"); var ops=operadores(); ejecutivo(ops[0]);
         var creada=conciliacion().proponer(propuesta(pago,com.proyecto.servicios.model.pago.ConciliacionDtos.Resultado.APLICADO));

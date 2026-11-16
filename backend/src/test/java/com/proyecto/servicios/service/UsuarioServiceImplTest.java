@@ -39,7 +39,7 @@ class UsuarioServiceImplTest {
 
     @BeforeEach
     void setUp() {
-        service = new UsuarioServiceImpl(usuarios, sesiones, encoder, events);
+        service = new UsuarioServiceImpl(usuarios, sesiones, encoder, events, new com.proyecto.servicios.service.Impl.LoginAttemptLimiter(new com.proyecto.servicios.config.LoginRateLimitProperties()));
         usuario = new UserEntity(UUID.randomUUID(), "uno@example.com", "uno", encoder.encode("Actual123!"),
                 "Marco Martinez", true, Instant.parse("2026-01-01T00:00:00Z"));
     }
@@ -187,6 +187,39 @@ class UsuarioServiceImplTest {
         verify(sesiones).deleteById(usuario.getId());
         verify(events).publishEvent(new UsuarioClienteModificadoEvent(
                 usuario.getId(), usuario.getEmail(), usuario.getEmail()));
+    }
+
+    @Test
+    void cincoContrasenasActualesIncorrectasBloqueanElCambio() {
+        when(usuarios.consultarPropioPorNombreYCorreoParaActualizar("marco martinez", "uno@example.com", usuario.getId())).thenReturn(java.util.Optional.of(usuario));
+        var actor = usuario.getId();
+        for (int i = 0; i < 5; i++) {
+            var incorrecta = cambio("Incorrecta" + i + "!", "Nueva456!");
+            assertThatThrownBy(() -> service.cambiarContrasena(incorrecta, actor))
+                    .isInstanceOf(ContrasenaInvalidaException.class);
+        }
+        // Aun con la contrasena correcta, el sexto intento espera a que pase la ventana.
+        var correcta = cambio("Actual123!", "Nueva456!");
+        assertThatThrownBy(() -> service.cambiarContrasena(correcta, actor))
+                .isInstanceOf(com.proyecto.servicios.exception.auth.LoginRateLimitException.class);
+        verify(usuarios, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void cambioExitosoReiniciaLosIntentos() {
+        when(usuarios.consultarPropioPorNombreYCorreoParaActualizar("marco martinez", "uno@example.com", usuario.getId())).thenReturn(java.util.Optional.of(usuario));
+        var actor = usuario.getId();
+        for (int i = 0; i < 4; i++) {
+            var incorrecta = cambio("Incorrecta" + i + "!", "Nueva456!");
+            assertThatThrownBy(() -> service.cambiarContrasena(incorrecta, actor))
+                    .isInstanceOf(ContrasenaInvalidaException.class);
+        }
+        service.cambiarContrasena(cambio("Actual123!", "Nueva456!"), actor);
+        for (int i = 0; i < 4; i++) {
+            var incorrecta = cambio("Otra" + i + "Mal!", "Distinta789!");
+            assertThatThrownBy(() -> service.cambiarContrasena(incorrecta, actor))
+                    .isInstanceOf(ContrasenaInvalidaException.class);
+        }
     }
 
     @Test

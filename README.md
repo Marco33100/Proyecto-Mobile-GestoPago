@@ -232,8 +232,9 @@ falla temporal.
 También se agregó una tarea programada diaria que descarga el catálogo, crea una
 carpeta temporal independiente y serializa la respuesta en XML. Antes de reemplazar
 la información se compara la cantidad de productos nuevos contra la existente. El
-catálogo únicamente se actualiza cuando la nueva cantidad es mayor; si está vacío,
-es igual o es menor, se conserva la información vigente. Después de guardar
+catálogo se actualiza si llegan al menos el 90 % de los productos guardados (así entran
+cambios de precio o nombre y bajas normales); si está vacío o llega menos, se trata como
+una respuesta incompleta y se conserva la información vigente. Después de guardar
 correctamente en PostgreSQL se actualiza Redis.
 
 La integración controla errores de comunicación, autenticación, respuestas HTTP no
@@ -286,8 +287,8 @@ El cron utiliza un ejecutor separado y crea una carpeta `run-*` con `products.xm
 por ejecución. Es un snapshot serializado del modelo recibido, no un archivo
 permanente ni necesariamente el XML original byte a byte. La carpeta de esa
 ejecución se limpia en `finally`, también cuando se omite la actualización.
-Se compara la cantidad de IDs de producto únicos: solo se reemplaza PostgreSQL
-si la nueva cantidad es estrictamente mayor y no está vacía. El reemplazo es
+Se compara la cantidad de IDs de producto únicos: se reemplaza PostgreSQL si la
+nueva cantidad no está vacía y es al menos el 90 % de la guardada. El reemplazo es
 transaccional; después del commit se intenta sobrescribir Redis. Si Redis falla,
 el cambio confirmado en PostgreSQL no se revierte.
 

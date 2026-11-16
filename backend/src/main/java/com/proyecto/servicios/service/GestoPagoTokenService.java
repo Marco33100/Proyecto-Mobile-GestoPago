@@ -6,8 +6,6 @@ import java.util.Optional;
 
 public interface GestoPagoTokenService {
 
-    void renovarToken();
-
     String obtenerTokenVigente();
 
     String renovarTokenRechazado(String tokenRechazado);

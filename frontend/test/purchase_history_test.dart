@@ -134,6 +134,26 @@ void main() {
     expect(find.text('Ver más compras'), findsNothing);
   });
 
+  testWidgets('si entra una compra entre paginas no se repite la ultima', (
+    tester,
+  ) async {
+    await pumpHistory(
+      tester,
+      // Página 1 se recorrió una posición: vuelve a traer la compra "b".
+      (request) async => jsonDecode(request.body)['pagina'] == 0
+          ? _page([_purchase('b', 'Recarga Telcel', '100')], last: false)
+          : _page([
+              _purchase('b', 'Recarga Telcel', '100'),
+              _purchase('a', 'Pago CFE', '350'),
+            ], last: true),
+    );
+    await tester.tap(find.text('Ver más compras'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Recarga Telcel'), findsOneWidget);
+    expect(find.text('Pago CFE'), findsOneWidget);
+  });
+
   testWidgets('el detalle se consulta al servidor y muestra el comprobante', (
     tester,
   ) async {
@@ -162,8 +182,16 @@ void main() {
     expect(find.text('Detalle de la compra'), findsWidgets);
     expect(find.text('Compra exitosa'), findsOneWidget);
     expect(find.text('AUT-b'), findsOneWidget);
-    expect(find.text('9876-5432'), findsOneWidget);
     expect(find.text('ABC123XYZ0'), findsOneWidget);
+    // El PIN es canjeable: oculto hasta que el cliente lo pide.
+    expect(find.text('9876-5432'), findsNothing);
+    expect(find.text('Oculto por seguridad'), findsOneWidget);
+    await tester.tap(find.byTooltip('Mostrar PIN'));
+    await tester.pump();
+    expect(find.text('9876-5432'), findsOneWidget);
+    await tester.tap(find.byTooltip('Ocultar PIN'));
+    await tester.pump();
+    expect(find.text('9876-5432'), findsNothing);
     expect(tester.takeException(), isNull);
   });
 
@@ -179,6 +207,17 @@ void main() {
     );
     expect(find.textContaining('no está disponible'), findsOneWidget);
     expect(find.text('Aún no tienes compras'), findsNothing);
+    // Ver el historial no es un pago: el error no habla de repetir pagos.
+    expect(find.textContaining('repetir'), findsNothing);
+  });
+
+  testWidgets('sin red el historial no habla de repetir pagos', (tester) async {
+    await pumpHistory(
+      tester,
+      (_) async => throw http.ClientException('sin red'),
+    );
+    expect(find.textContaining('Se perdió la conexión'), findsOneWidget);
+    expect(find.textContaining('repetir el pago'), findsNothing);
   });
 
   test('formatea la fecha en hora local', () {
