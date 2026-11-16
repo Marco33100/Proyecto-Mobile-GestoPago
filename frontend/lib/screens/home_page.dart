@@ -20,6 +20,7 @@ import 'catalog_page.dart';
 import 'purchase_history_page.dart';
 import 'register_page.dart';
 import 'management_page.dart';
+import 'payment_page.dart';
 
 /// Contenedor principal de la sesión: navegación adaptable con pestañas.
 ///
@@ -126,6 +127,16 @@ class _HomePageState extends State<HomePage> {
     _selectTab(_operationsTab);
   }
 
+  void _openSecurity() => Navigator.of(context).push(
+    MaterialPageRoute<void>(
+      builder: (_) => PaymentPage(
+        session: widget.session,
+        api: PaymentApiService(_client, widget.session),
+        securityOnly: true,
+      ),
+    ),
+  );
+
   Future<void> _openRegister() async {
     final result = await Navigator.of(context).push<String>(
       MaterialPageRoute(
@@ -181,6 +192,7 @@ class _HomePageState extends State<HomePage> {
         session: widget.session,
         onLogout: widget.onLogout,
         isLoggingOut: widget.isLoggingOut,
+        onSecurity: _openSecurity,
       );
     }
     if (index == _historyTab) {
@@ -201,6 +213,7 @@ class _HomePageState extends State<HomePage> {
         onPay: _openPayment,
         onRegister: _openRegister,
         onProfile: () => _selectTab(_accountTab),
+        onSecurity: _openSecurity,
         onSection: (section) =>
             section.open(context, _adminApi, widget.authApi),
       ),
@@ -270,19 +283,12 @@ class _HomePageState extends State<HomePage> {
                   child: extendedRail
                       ? const SizedBox(
                           width: 200,
-                          child: BrandWordmark(compact: true),
+                          child: BrandWordmark(centered: true),
                         )
                       : Semantics(
                           label: 'Gestopago',
                           child: const ExcludeSemantics(
-                            child: Text(
-                              'G',
-                              style: TextStyle(
-                                color: ink,
-                                fontSize: 26,
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
+                            child: BrandMark(size: 44),
                           ),
                         ),
                 ),
@@ -511,6 +517,7 @@ class _HomeDashboard extends StatelessWidget {
     required this.onPay,
     required this.onRegister,
     required this.onProfile,
+    required this.onSecurity,
     required this.onSection,
   });
 
@@ -523,6 +530,7 @@ class _HomeDashboard extends StatelessWidget {
   final void Function({String? service}) onPay;
   final Future<void> Function() onRegister;
   final VoidCallback onProfile;
+  final VoidCallback onSecurity;
   final void Function(ManagementSection section) onSection;
 
   Widget _header(bool isExecutive, {bool accent = false}) => PageHeader(
@@ -536,6 +544,7 @@ class _HomeDashboard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isExecutive = session.isExecutive;
+    final wide = Breakpoints.isExpanded(context);
     return Scaffold(
       body: PaperBackground(
         child: SafeArea(
@@ -580,10 +589,35 @@ class _HomeDashboard extends StatelessWidget {
                                   ),
                                 ],
                               )
-                            else ...[
-                              const SizedBox(height: AppSpace.xl),
-                              _header(isExecutive),
-                            ],
+                            else
+                              // Web: la marca va en la barra lateral; aquí
+                              // solo los arcos (en tablet no caben).
+                              Stack(
+                                clipBehavior: Clip.none,
+                                children: [
+                                  if (wide)
+                                    const Positioned(
+                                      right: 0,
+                                      top: -20,
+                                      child: ArchesDecoration(
+                                        width: 240,
+                                        height: 200,
+                                      ),
+                                    ),
+                                  ConstrainedBox(
+                                    constraints: BoxConstraints(
+                                      minHeight: wide ? 180 : 0,
+                                    ),
+                                    child: Padding(
+                                      padding: EdgeInsets.only(
+                                        top: AppSpace.xl,
+                                        right: wide ? 260 : 0,
+                                      ),
+                                      child: _header(isExecutive, accent: true),
+                                    ),
+                                  ),
+                                ],
+                              ),
                             const SizedBox(height: AppSpace.xxl),
                             if (isExecutive)
                               _ExecutiveDashboard(
@@ -597,6 +631,7 @@ class _HomeDashboard extends StatelessWidget {
                                 onReload: onReload,
                                 onPay: onPay,
                                 onProfile: onProfile,
+                                onSecurity: onSecurity,
                               ),
                           ],
                         ),
@@ -677,6 +712,7 @@ class _ClientDashboard extends StatelessWidget {
     required this.onReload,
     required this.onPay,
     required this.onProfile,
+    required this.onSecurity,
   });
 
   final Future<List<Map<String, dynamic>>> accounts;
@@ -684,6 +720,7 @@ class _ClientDashboard extends StatelessWidget {
   final Future<void> Function() onReload;
   final void Function({String? service}) onPay;
   final VoidCallback onProfile;
+  final VoidCallback onSecurity;
 
   @override
   Widget build(BuildContext context) => Column(
@@ -708,7 +745,7 @@ class _ClientDashboard extends StatelessWidget {
               icon: Icons.verified_user_outlined,
               title: 'Seguridad de pagos',
               description: 'Configura o cambia tu autenticador.',
-              onTap: () => onPay(),
+              onTap: onSecurity,
             ),
             const SizedBox(height: AppSpace.md),
             ActionCard(
