@@ -155,7 +155,8 @@ public class GestopagoPagoGateway implements PagoGateway, DisposableBean {
             builder.setErrorHandler(new org.xml.sax.helpers.DefaultHandler());
             return builder.parse(new InputSource(new StringReader(xml)));
     }
-    private static boolean positivo(String valor) { return valor != null && valor.matches("\\d{1,60}") && new BigDecimal(valor).signum() > 0; }
+    /** Folio o autorizacion del proveedor: numero positivo de 1 a 60 digitos. Lo usan tambien el ledger y la conciliacion. */
+    static boolean positivo(String valor) { return valor != null && valor.matches("\\d{1,60}") && new BigDecimal(valor).signum() > 0; }
     private static String texto(Document doc, String campo) {
         var nodes = doc.getElementsByTagName(campo);
         if (nodes.getLength() == 0 && "legend".equals(campo)) nodes = doc.getElementsByTagName("LEGEND");

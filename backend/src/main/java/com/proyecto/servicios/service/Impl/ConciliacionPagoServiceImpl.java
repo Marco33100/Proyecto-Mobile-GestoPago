@@ -144,27 +144,20 @@ public class ConciliacionPagoServiceImpl implements ConciliacionPagoService {
                 || request.evidenciaProveedor()==null || request.evidenciaProveedor().isBlank()
                 || request.motivo()==null || request.motivo().isBlank()) throw error(HttpStatus.BAD_REQUEST);
         if (request.resultado()!=Resultado.NO_APLICADO_DEFINITIVO) {
-            if (!positivo(request.idTransaccion()) || !positivo(request.autorizacion())) throw error(HttpStatus.BAD_REQUEST);
+            if (!GestopagoPagoGateway.positivo(request.idTransaccion()) || !GestopagoPagoGateway.positivo(request.autorizacion())) throw error(HttpStatus.BAD_REQUEST);
         } else if (request.idTransaccion()!=null || request.autorizacion()!=null) throw error(HttpStatus.BAD_REQUEST);
     }
     private void aplicar(PagoEntity pago,ProponerRequest detalle) {
         boolean debitar=detalle.resultado()==Resultado.APLICADO;
         if (debitar && pagos.existsByIdTransaccionAndIdNot(detalle.idTransaccion(),pago.getId())) throw error(HttpStatus.CONFLICT);
-        if (detalle.resultado()==Resultado.DUPLICADO_YA_CONTABILIZADO) {
-            var anterior=pagos.findByIdTransaccion(detalle.idTransaccion()).orElseThrow(() -> error(HttpStatus.CONFLICT));
-            if (anterior.getId().equals(pago.getId()) || anterior.getEstado()!=PagoEntity.Estado.APLICADO
-                    || !anterior.getUsuarioId().equals(pago.getUsuarioId()) || pago.getHuellaOperacion()==null
-                    || !pago.getHuellaOperacion().equals(anterior.getHuellaOperacion())
-                    || pago.getMonto().compareTo(anterior.getMonto())!=0 || !detalle.autorizacion().equals(anterior.getAutorizacion()))
-                throw error(HttpStatus.CONFLICT);
-        }
+        if (detalle.resultado()==Resultado.DUPLICADO_YA_CONTABILIZADO && !PagoLedger.esCompraYaContabilizada(pago,
+                pagos.findByIdTransaccion(detalle.idTransaccion()).orElse(null), detalle.autorizacion()))
+            throw error(HttpStatus.CONFLICT);
         var cuenta=cuentas.findByNumeroCuentaForUpdate(pago.getNumeroCuenta());
         if (cuenta==null || !cuenta.getId().equals(pago.getCuentaId()) || cuenta.getSaldoRetenido().compareTo(pago.getMonto())<0)
             throw error(HttpStatus.CONFLICT);
         cuenta.resolverRetencion(pago.getMonto(),debitar,Instant.now()); cuentas.saveAndFlush(cuenta);
-        pago.setEstado(debitar?PagoEntity.Estado.APLICADO:PagoEntity.Estado.RECHAZADO);
-        pago.setIntentoConfirmacion(null); pago.setProximaConfirmacion(null); pago.setMotivoRevision(null);
-        if (debitar) { pago.setIdTransaccion(detalle.idTransaccion()); pago.setAutorizacion(detalle.autorizacion()); }
+        pago.cerrar(debitar,detalle.idTransaccion(),detalle.autorizacion());
         pagos.saveAndFlush(pago);
     }
     private ProponerRequest detalle(ConciliacionPagoEntity propuesta) {
@@ -176,7 +169,6 @@ public class ConciliacionPagoServiceImpl implements ConciliacionPagoService {
         return new Propuesta(propuesta.getId(),propuesta.getPagoId(),propuesta.getEstado().name(),detalle.resultado(),
                 propuesta.getPropuestoPor(),propuesta.getDecididoPor(),propuesta.getCreadoEn(),propuesta.getVenceEn(),detalle);
     }
-    private boolean positivo(String valor) { return valor!=null && valor.matches("\\d{1,60}") && new BigDecimal(valor).signum()>0; }
     private String serializar(Object valor) {
         try { return json.writeValueAsString(valor); } catch (com.fasterxml.jackson.core.JsonProcessingException e) { throw error(HttpStatus.SERVICE_UNAVAILABLE); }
     }
