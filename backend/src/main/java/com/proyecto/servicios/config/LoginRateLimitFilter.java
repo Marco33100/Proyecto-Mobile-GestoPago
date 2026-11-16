@@ -30,7 +30,8 @@ public class LoginRateLimitFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response,
                                   FilterChain chain) throws ServletException, IOException {
         try {
-            // No confiar en X-Forwarded-For enviado por el cliente.
+            // IP real del cliente: en Render la resuelve Tomcat desde el proxy interno
+            // (server.forward-headers-strategy=native); un X-Forwarded-For del cliente no se acepta.
             limiter.checkAddress(request.getRemoteAddr());
         } catch (LoginRateLimitException exception) {
             entryPoint.tooManyRequests(request, response, exception.getRetryAfterSeconds());

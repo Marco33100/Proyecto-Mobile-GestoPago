@@ -33,6 +33,8 @@ class RenderProfileTest {
             assertThat(env.getActiveProfiles()).containsExactly("render");
             assertThat(env.getProperty("server.port", Integer.class)).isEqualTo(12345);
             assertThat(env.getProperty("server.address")).isEqualTo("0.0.0.0");
+            // Detras del proxy de Render, el limite de login debe ver la IP de cada usuario.
+            assertThat(env.getProperty("server.forward-headers-strategy")).isEqualTo("native");
             assertThat(env.getProperty("app.database.enabled", Boolean.class)).isTrue();
             assertThat(env.getProperty("spring.flyway.locations")).isEqualTo("classpath:db/initial");
             assertThat(env.getProperty("spring.flyway.baseline-on-migrate", Boolean.class)).isFalse();
