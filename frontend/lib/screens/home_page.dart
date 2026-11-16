@@ -17,6 +17,7 @@ import '../widgets/surfaces.dart';
 import 'account_page.dart';
 import 'management_sections.dart';
 import 'payment_page.dart';
+import 'purchase_history_page.dart';
 import 'register_page.dart';
 import 'management_page.dart';
 
@@ -48,7 +49,10 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   static const _homeTab = 0;
   static const _operationsTab = 1;
-  static const _accountTab = 2;
+
+  /// Solo clientes: historial de compras.
+  static const _historyTab = 2;
+  int get _accountTab => _isExecutive ? 2 : 3;
 
   late final http.Client _client;
   late final HomeDataService _data;
@@ -61,6 +65,7 @@ class _HomePageState extends State<HomePage> {
   int _selectedTab = _homeTab;
   final Set<int> _visitedTabs = {_homeTab};
   int _paymentGeneration = 0;
+  int _historyGeneration = 0;
   String? _paymentService;
 
   bool get _isExecutive => widget.session.isExecutive;
@@ -104,6 +109,8 @@ class _HomePageState extends State<HomePage> {
     setState(() {
       _selectedTab = index;
       _visitedTabs.add(index);
+      // Cada visita vuelve a consultar el historial: incluye compras recién hechas.
+      if (index == _historyTab && !_isExecutive) _historyGeneration++;
       // Al volver de pagar, los saldos pudieron cambiar.
       if (index == _homeTab && leavingOperations && !_isExecutive) _refresh();
     });
@@ -154,6 +161,12 @@ class _HomePageState extends State<HomePage> {
             icon: Icons.grid_view_outlined,
             selectedIcon: Icons.grid_view_rounded,
           ),
+    if (!_isExecutive)
+      const _Destination(
+        label: 'Compras',
+        icon: Icons.receipt_long_outlined,
+        selectedIcon: Icons.receipt_long_rounded,
+      ),
     const _Destination(
       label: 'Cuenta',
       icon: Icons.person_outline_rounded,
@@ -163,6 +176,20 @@ class _HomePageState extends State<HomePage> {
 
   Widget _tab(int index, {required bool showBrand}) {
     if (!_visitedTabs.contains(index)) return const SizedBox.shrink();
+    if (index == _accountTab) {
+      return AccountPage(
+        session: widget.session,
+        onLogout: widget.onLogout,
+        isLoggingOut: widget.isLoggingOut,
+      );
+    }
+    if (index == _historyTab) {
+      return PurchaseHistoryPage(
+        key: ValueKey('history-$_historyGeneration'),
+        api: PaymentApiService(_client, widget.session),
+        onPay: _openPayment,
+      );
+    }
     return switch (index) {
       _homeTab => _HomeDashboard(
         session: widget.session,
@@ -189,11 +216,6 @@ class _HomePageState extends State<HomePage> {
                 session: widget.session,
                 initialService: _paymentService,
               ),
-      _accountTab => AccountPage(
-        session: widget.session,
-        onLogout: widget.onLogout,
-        isLoggingOut: widget.isLoggingOut,
-      ),
       _ => const SizedBox.shrink(),
     };
   }
@@ -208,14 +230,14 @@ class _HomePageState extends State<HomePage> {
     builder: (context, constraints) {
       final useRail = constraints.maxWidth >= Breakpoints.medium;
       final extendedRail = constraints.maxWidth >= Breakpoints.large;
+      final destinations = _destinations;
       final tabs = IndexedStack(
         index: _selectedTab,
         children: [
-          for (var index = 0; index < 3; index++)
+          for (var index = 0; index < destinations.length; index++)
             _tab(index, showBrand: !useRail),
         ],
       );
-      final destinations = _destinations;
 
       if (!useRail) {
         return Scaffold(
@@ -352,14 +374,25 @@ class _UnderlineNavBar extends StatelessWidget {
                               color: index == selected ? ink : mutedInk,
                             ),
                             const SizedBox(height: AppSpace.xs),
-                            Text(
-                              destinations[index].label,
-                              style: TextStyle(
-                                fontSize: 13,
-                                color: index == selected ? ink : mutedInk,
-                                fontWeight: index == selected
-                                    ? FontWeight.w700
-                                    : FontWeight.w500,
+                            // Con cuatro pestañas en teléfonos angostos la
+                            // etiqueta se reduce en vez de pasar a dos líneas.
+                            Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 2,
+                              ),
+                              child: FittedBox(
+                                fit: BoxFit.scaleDown,
+                                child: Text(
+                                  destinations[index].label,
+                                  maxLines: 1,
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    color: index == selected ? ink : mutedInk,
+                                    fontWeight: index == selected
+                                        ? FontWeight.w700
+                                        : FontWeight.w500,
+                                  ),
+                                ),
                               ),
                             ),
                             const SizedBox(height: AppSpace.xs + 2),

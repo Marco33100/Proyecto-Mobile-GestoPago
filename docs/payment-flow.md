@@ -43,6 +43,7 @@ Todos reciben POST, JSON mediante DTO validado y Bearer de la sesión existente.
 | /autorizar | pagoId, codigo | Consume TOTP, reserva saldo y hace un unico intento sendTx |
 | /consulta | pagoId | Consulta propia sin reenviar el pago |
 | /cancelar | pagoId | Expira solo PREPARADO; no cancela una operación ya enviada |
+| /historial | pagina (desde 0), tamanio (1-100, por defecto 20) | Compras exitosas propias (solo APLICADO), de la más reciente a la más antigua. GenericResponse: `codigo` 1 con `datos` = `{contenido, pagina, tamanio, totalElementos, totalPaginas, ultima}`; `codigo` 0 sin compras. Cada compra trae pagoId, concepto, monto, fecha (envío), idTransaccion, autorizacion y numeroCuenta; el detalle completo (PIN, leyenda, referencia) se pide a /consulta. No depende de que el proveedor esté habilitado. |
 
 Ejemplo de preparación de un servicio (usar identificadores reales del catálogo):
 

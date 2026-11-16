@@ -10,7 +10,9 @@ import com.proyecto.servicios.repositorys.gestopago.ProductRepository;
 import com.proyecto.servicios.service.PagoGateway;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import com.proyecto.servicios.model.cliente.PaginaResponse;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -305,6 +307,15 @@ public class PagoLedger {
             var pago = pagos.findById(id).orElseThrow(() -> error(HttpStatus.NOT_FOUND, PAGO_NO_DISPONIBLE));
             propio(pago, actor); return respuesta(pago);
         });
+    }
+    /** Solo compras confirmadas por el proveedor (APLICADO), de la mas reciente a la mas antigua. */
+    public PaginaResponse<CompraResponse> historial(UUID actor, int pagina, int tamanio) {
+        var orden = Sort.by(Sort.Order.desc("enviadoEn"), Sort.Order.desc("id"));
+        return tx.execute(status -> PaginaResponse.desde(pagos
+                .findByUsuarioIdAndEstado(actor, PagoEntity.Estado.APLICADO, PageRequest.of(pagina, tamanio, orden))
+                .map(p -> new CompraResponse(p.getId(), p.getConcepto(), p.getMonto(),
+                        p.getEnviadoEn() != null ? p.getEnviadoEn() : p.getCreadoEn(),
+                        p.getIdTransaccion(), p.getAutorizacion(), p.getNumeroCuenta()))));
     }
     public PagoResponse cancelar(UUID id, UUID actor) {
         return tx.execute(status -> {

@@ -14,6 +14,7 @@ public interface PagoRepository extends JpaRepository<PagoEntity, UUID> {
     boolean existsByIdTransaccionAndIdNot(String idTransaccion, UUID id);
     Optional<PagoEntity> findByIdTransaccion(String idTransaccion);
     Page<PagoEntity> findByEstado(PagoEntity.Estado estado, Pageable pagina);
+    Page<PagoEntity> findByUsuarioIdAndEstado(UUID usuarioId, PagoEntity.Estado estado, Pageable pagina);
     @Query("select sum(p.monto) from PagoEntity p where p.usuarioId=:usuario and p.enviadoEn>=:inicio and p.enviadoEn<:fin and p.estado in :estados")
     Optional<BigDecimal> importeEnviadoEnPeriodo(@Param("usuario") UUID usuario, @Param("inicio") Instant inicio,
             @Param("fin") Instant fin, @Param("estados") Collection<PagoEntity.Estado> estados);
