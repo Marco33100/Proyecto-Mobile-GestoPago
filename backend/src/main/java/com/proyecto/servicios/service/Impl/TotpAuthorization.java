@@ -84,11 +84,22 @@ public class TotpAuthorization {
         if (factor.getSecretoCifrado() == null) return false;
         String secret = secrets.decrypt(factor.getUsuarioId(), factor.getSecretoCifrado());
         long step = codes.matchingStep(secret, code, factor.getUltimoPaso());
-        if (step < 0) { failed(factor); return false; }
+        if (step < 0) {
+            // Repetir el codigo recien aceptado (p. ej. entrar y pagar en el mismo periodo) se rechaza sin penalizar.
+            if (!esCodigoRecienUsado(factor, secret, code)) failed(factor);
+            return false;
+        }
         factor.setUltimoPaso(step); factor.setIntentos(0); factor.setBloqueadoHasta(null);
         // Recifrar tambien al usar una clave de almacenamiento anterior, sin cambiar la generacion del factor.
         factor.setSecretoCifrado(secrets.encrypt(factor.getUsuarioId(), secret));
         repository.saveAndFlush(factor);
         return true;
+    }
+
+    private boolean esCodigoRecienUsado(SegundoFactorEntity factor, String secret, String code) {
+        long last = factor.getUltimoPaso();
+        return last >= 0 && code != null && Math.abs(codes.currentStep() - last) <= 1
+                && java.security.MessageDigest.isEqual(code.getBytes(java.nio.charset.StandardCharsets.US_ASCII),
+                        codes.code(secret, last).getBytes(java.nio.charset.StandardCharsets.US_ASCII));
     }
 }

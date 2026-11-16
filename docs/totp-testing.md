@@ -60,6 +60,7 @@ No acepta firma, claves publicas ni booleanos. Cambiar el monto, destino o cuent
 - Codigo con formato invalido: HTTP 400.
 - Codigo incorrecto, vencido, consumido o registro de otra sesion: HTTP 403.
 - Tras cinco fallos persistidos, siguientes intentos: HTTP 429 durante cinco minutos.
+- Repetir el codigo recien aceptado (por ejemplo, entrar y pagar dentro de los mismos 30 segundos) se rechaza con 403 pero no cuenta como fallo; el usuario solo espera el siguiente codigo. Un codigo viejo fuera de la ventana si cuenta.
 - Sin sesion: HTTP 401; rol o propiedad incorrectos no permiten operar cuentas ajenas.
 - Sin clave de almacenamiento o configuracion de pagos: HTTP 503 sin detalles internos.
 
