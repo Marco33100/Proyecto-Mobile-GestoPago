@@ -106,6 +106,16 @@ class _CatalogPageState extends State<CatalogPage> {
   }
 
   Future<void> _openPayment({int? productId}) async {
+    if (productId != null) {
+      await _checkPending();
+      // Con un pago sin resolver no se inicia otro: se avisa en lugar de
+      // abrir por sorpresa el estado del pago anterior.
+      if (_hasPending) {
+        if (!mounted || !await _confirmSeePending()) return;
+        productId = null;
+      }
+    }
+    if (!mounted) return;
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => PaymentPage(
@@ -118,6 +128,34 @@ class _CatalogPageState extends State<CatalogPage> {
     );
     await _checkPending();
   }
+
+  Future<bool> _confirmSeePending() async =>
+      await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          icon: const Icon(Icons.hourglass_top_rounded),
+          title: const Text('Tienes un pago en proceso'),
+          content: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 420),
+            child: const Text(
+              'Antes de hacer otra compra necesitamos conocer el resultado del '
+              'pago anterior. Revisa su estado; cuando termine podrás comprar '
+              'este producto.',
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Ahora no'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Ver estado del pago'),
+            ),
+          ],
+        ),
+      ) ??
+      false;
 
   void _openService(CatalogService service) => Navigator.of(context).push(
     MaterialPageRoute<void>(
