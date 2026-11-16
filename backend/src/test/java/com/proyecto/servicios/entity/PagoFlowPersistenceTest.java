@@ -134,6 +134,37 @@ class PagoFlowPersistenceTest {
             return ledger.resolverConfirmacion(new PagoLedger.Confirmacion(id, "", UUID.randomUUID()), resultado);
         return ledger.resolverConfirmacion(reclamarAhora(id), resultado);
     }
+    private PagoGateway.Respuesta aplicadoCon(String idTransaccion, String monto) {
+        return new PagoGateway.Respuesta(PagoGateway.Estado.APLICADO, "01", idTransaccion, "9" + idTransaccion,
+                new BigDecimal(monto), new BigDecimal("6.00"), null, null, "<RESPONSE><CODIGO>01</CODIGO></RESPONSE>");
+    }
+    @Test void historialSoloMuestraComprasAplicadasPropiasDeLaMasReciente() {
+        var a = ledger.preparar(request("20", "REF-A"), actor).pago();
+        var b = ledger.preparar(request("15", "REF-B"), actor).pago();
+        var rechazada = ledger.preparar(request("10", "REF-C"), actor).pago();
+        ledger.preparar(request("5", "REF-D"), actor); // preparada, nunca autorizada
+        ledger.autorizar(codigoPara(a), actor); ledger.registrarResultadoEnvio(a.pagoId(), aplicadoCon("1001", "20"));
+        ledger.autorizar(codigoPara(b), actor); ledger.registrarResultadoEnvio(b.pagoId(), aplicadoCon("1002", "15"));
+        ledger.autorizar(codigoPara(rechazada), actor);
+        ledger.registrarResultadoEnvio(rechazada.pagoId(), PagoGateway.Respuesta.noEnviada());
+        tx.executeWithoutResult(status -> {
+            var pagoA = pagos.findById(a.pagoId()).orElseThrow(); pagoA.setEnviadoEn(Instant.now().minusSeconds(600));
+            pagos.saveAndFlush(pagoA);
+        });
+
+        var historial = ledger.historial(actor, 0, 20);
+        assertThat(historial.contenido()).extracting(CompraResponse::pagoId).containsExactly(b.pagoId(), a.pagoId());
+        var reciente = historial.contenido().get(0);
+        assertThat(reciente.idTransaccion()).isEqualTo("1002");
+        assertThat(reciente.monto()).isEqualByComparingTo("15");
+        assertThat(reciente.concepto()).isEqualTo(b.concepto());
+        assertThat(reciente.fecha()).isNotNull();
+        assertThat(historial.totalElementos()).isEqualTo(2);
+
+        var primera = ledger.historial(actor, 0, 1);
+        assertThat(primera.contenido()).hasSize(1); assertThat(primera.ultima()).isFalse();
+        assertThat(ledger.historial(UUID.randomUUID(), 0, 20).contenido()).isEmpty();
+    }
     @Test void retieneSinCobrarYConfirmaUnaSolaVezSinComisionAdicional() {
         var pago = ledger.preparar(request("20.00"), actor).pago(); saldo("100", "0");
         assertThat(pago.comisionCliente()).isZero();
@@ -860,6 +891,26 @@ class PagoFlowPersistenceTest {
         ejecutivo(ops[1]); var servicioConciliacion4 = conciliacion(); var decisionConciliacion4 = decision(otra.propuestaId());
         assertThatThrownBy(() -> servicioConciliacion4.aprobar(decisionConciliacion4)).isInstanceOf(PagoException.class);
         saldo("100","20");
+    }
+    @Test void propuestaVencidaSeRetiraAlProponerOtraYUnaVigenteSigueBloqueando() {
+        var pago=enRevision("A"); var ops=operadores(); ejecutivo(ops[0]);
+        var vieja=conciliacion().proponer(propuesta(pago,com.proyecto.servicios.model.pago.ConciliacionDtos.Resultado.NO_APLICADO_DEFINITIVO));
+        ejecutivo(ops[1]); var servicioVigente=conciliacion();
+        var segundaVigente=propuesta(pago,com.proyecto.servicios.model.pago.ConciliacionDtos.Resultado.NO_APLICADO_DEFINITIVO);
+        assertThatThrownBy(() -> servicioVigente.proponer(segundaVigente)).isInstanceOf(PagoException.class);
+        tx.executeWithoutResult(status -> {var c=propuestas.findById(vieja.propuestaId()).orElseThrow();
+            c.setCreadoEn(Instant.now().minusSeconds(7200)); c.setVenceEn(Instant.now().minusSeconds(60)); propuestas.saveAndFlush(c);});
+
+        // Sin rechazarla a mano: la nueva propuesta retira la vencida y deja registro.
+        var nueva=conciliacion().proponer(propuesta(pago,com.proyecto.servicios.model.pago.ConciliacionDtos.Resultado.NO_APLICADO_DEFINITIVO));
+        var retirada=propuestas.findById(vieja.propuestaId()).orElseThrow();
+        assertThat(retirada.getEstado()).isEqualTo(ConciliacionPagoEntity.Estado.RECHAZADA);
+        assertThat(retirada.getDecididoPor()).isEqualTo(ops[1]);
+        assertThat(evidencias.findAll().stream().filter(e -> "manual-vencida".equals(e.getMetodo())).count()).isEqualTo(1);
+        assertThat(nueva.estado()).isEqualTo("PROPUESTA"); saldo("100","20");
+
+        ejecutivo(ops[0]); conciliacion().aprobar(decision(nueva.propuestaId()));
+        saldo("100","0"); assertThat(ledger.consultar(pago.pagoId(),actor).estado()).isEqualTo("RECHAZADO");
     }
     @Test void proponenteRevocadoNoPermiteAplicarUnaPropuestaAnterior() {
         var pago=enRevision("A"); var ops=operadores(); ejecutivo(ops[0]);

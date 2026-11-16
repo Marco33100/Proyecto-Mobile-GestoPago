@@ -71,7 +71,8 @@ class UsuarioAuthSecurityTest {
         mvc = MockMvcBuilders.standaloneSetup(new AuthController(auth, loginService,
                 context.getBean(com.proyecto.servicios.service.Impl.LoginAttemptLimiter.class),
                 context.getBean(WebSessionCookies.class)), new UsuarioController(
-                new UsuarioServiceImpl(usuarios, sesiones, encoder, mock(ApplicationEventPublisher.class))))
+                new UsuarioServiceImpl(usuarios, sesiones, encoder, mock(ApplicationEventPublisher.class),
+                        context.getBean(com.proyecto.servicios.service.Impl.LoginAttemptLimiter.class))))
                 .setCustomArgumentResolvers(new AuthenticationPrincipalArgumentResolver())
                 .setControllerAdvice(new ValidadorCampos(), new com.proyecto.servicios.controller.GlobalApiExceptionHandler())
                 .addFilters(context.getBean("springSecurityFilterChain", Filter.class)).build();

@@ -50,22 +50,22 @@ class GestopagoProductServiceImplTest {
         ProductListResponse external = response("Gestopago");
         when(gateway.fetchCatalog()).thenReturn(external);
         when(databaseServiceProvider.getIfAvailable()).thenReturn(databaseService);
-        when(databaseService.replaceIfLarger(external)).thenReturn(new ProductSyncResult(true, 0, 900));
+        when(databaseService.replaceIfComplete(external)).thenReturn(new ProductSyncResult(true, 0, 900));
 
         ProductListResponse result = service.obtenerYGuardarProductos();
 
         assertThat(result).isSameAs(external);
-        verify(databaseService).replaceIfLarger(external);
+        verify(databaseService).replaceIfComplete(external);
         verify(cacheStore).replaceCatalog(external);
     }
 
     @Test
-    void keepsCurrentCatalogWhenExternalSizeIsNotLarger() {
+    void keepsCurrentCatalogWhenExternalCatalogIsIncomplete() {
         ProductListResponse external = response("Gestopago");
         ProductListResponse current = response("PostgreSQL");
         when(gateway.fetchCatalog()).thenReturn(external);
         when(databaseServiceProvider.getIfAvailable()).thenReturn(databaseService);
-        when(databaseService.replaceIfLarger(external)).thenReturn(new ProductSyncResult(false, 900, 900));
+        when(databaseService.replaceIfComplete(external)).thenReturn(new ProductSyncResult(false, 900, 900));
         when(databaseService.findCatalog()).thenReturn(current);
 
         ProductListResponse result = service.obtenerYGuardarProductos();
@@ -79,7 +79,7 @@ class GestopagoProductServiceImplTest {
         ProductListResponse external = response("Gestopago");
         when(gateway.fetchCatalog()).thenReturn(external);
         when(databaseServiceProvider.getIfAvailable()).thenReturn(databaseService);
-        when(databaseService.replaceIfLarger(external)).thenReturn(new ProductSyncResult(true, 0, 900));
+        when(databaseService.replaceIfComplete(external)).thenReturn(new ProductSyncResult(true, 0, 900));
         doThrow(new ProductCacheException("redis", new RuntimeException()))
                 .when(cacheStore).replaceCatalog(external);
 

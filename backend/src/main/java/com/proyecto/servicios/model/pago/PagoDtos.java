@@ -52,6 +52,11 @@ public final class PagoDtos {
     ) {
         @Override public String toString() { return "PagoResponse[protegido]"; }
     }
+    /** Compra exitosa (APLICADO) para el historial. El detalle completo se obtiene con /consulta. */
+    public record CompraResponse(
+            UUID pagoId, String concepto, BigDecimal monto, Instant fecha,
+            String idTransaccion, String autorizacion, String numeroCuenta
+    ) { }
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record Resultado(String codigo, String mensaje, PagoResponse datos) {
         public static Resultado de(PagoResponse pago) {

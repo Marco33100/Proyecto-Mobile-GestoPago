@@ -404,41 +404,26 @@ class ClienteUsuarioTransactionTest {
         UUID user = usuarios.findByEmail("marco@example.com").orElseThrow().getId();
         UUID anterior = crearSesion(user);
         UUID nueva = crearSesion(user);
-        var publisher = mock(ApplicationEventPublisher.class);
-        var active = proxy(new ActiveSessionService(sesiones, mock(AuthCacheStore.class), publisher),
-                ActiveSessionService.class);
+        var active = proxy(new ActiveSessionService(sesiones), ActiveSessionService.class);
         active.revokeSession(user, anterior);
         assertThat(sesionValida(user, nueva)).isTrue();
-        verifyNoInteractions(publisher);
         active.revokeSession(user, nueva);
         assertThat(sesionValida(user, nueva)).isFalse();
-        verify(publisher).publishEvent(new com.proyecto.servicios.model.auth.SesionRevocadaEvent(user, nueva));
     }
 
     @Test
-    void redisSeInvalidaSoloDespuesDelCommitYNoTrasRollback() {
+    void revocarDentroDeUnaTransaccionRevertidaConservaLaSesion() {
         registro(usuarios).registrar(request());
         UUID user = usuarios.findByEmail("marco@example.com").orElseThrow().getId();
         UUID session = crearSesion(user);
-        AuthCacheStore cache = mock(AuthCacheStore.class);
-        try (var events = new AnnotationConfigApplicationContext()) {
-            events.getEnvironment().getPropertySources().addFirst(new org.springframework.core.env.MapPropertySource(
-                    "test", java.util.Map.of("app.database.enabled", "true")));
-            events.registerBean(TransactionalEventListenerFactory.class);
-            events.registerBean(UsuarioClienteCacheListener.class, () -> new UsuarioClienteCacheListener(cache));
-            events.refresh();
-            var active = proxy(new ActiveSessionService(sesiones, cache, events), ActiveSessionService.class);
-            new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
-                active.revokeSession(user, session);
-                verifyNoInteractions(cache);
-                status.setRollbackOnly();
-            });
-            assertThat(sesionValida(user, session)).isTrue();
-            verifyNoInteractions(cache);
+        var active = proxy(new ActiveSessionService(sesiones), ActiveSessionService.class);
+        new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
             active.revokeSession(user, session);
-            assertThat(sesionValida(user, session)).isFalse();
-            verify(cache).invalidateSessionIfMatches(user, session);
-        }
+            status.setRollbackOnly();
+        });
+        assertThat(sesionValida(user, session)).isTrue();
+        active.revokeSession(user, session);
+        assertThat(sesionValida(user, session)).isFalse();
     }
 
     @Test
@@ -617,7 +602,14 @@ class ClienteUsuarioTransactionTest {
 
     private UsuarioService gestionUsuarios(UserSessionRepository sessionRepository) {
         return proxy(new UsuarioServiceImpl(usuarios, sessionRepository, encoder,
-                mock(ApplicationEventPublisher.class)), UsuarioService.class);
+                mock(ApplicationEventPublisher.class), limiteAmplio()), UsuarioService.class);
+    }
+
+    /** Estas pruebas cubren a quien pertenece el usuario, no el limite de intentos (ver UsuarioServiceImplTest). */
+    private static com.proyecto.servicios.service.Impl.LoginAttemptLimiter limiteAmplio() {
+        var limites = new com.proyecto.servicios.config.LoginRateLimitProperties();
+        limites.setAccountAttempts(100);
+        return new com.proyecto.servicios.service.Impl.LoginAttemptLimiter(limites);
     }
 
     private UUID crearSesion(UUID id) {

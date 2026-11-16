@@ -43,6 +43,7 @@ Todos reciben POST, JSON mediante DTO validado y Bearer de la sesión existente.
 | /autorizar | pagoId, codigo | Consume TOTP, reserva saldo y hace un unico intento sendTx |
 | /consulta | pagoId | Consulta propia sin reenviar el pago |
 | /cancelar | pagoId | Expira solo PREPARADO; no cancela una operación ya enviada |
+| /historial | pagina (desde 0), tamanio (1-100, por defecto 20) | Compras exitosas propias (solo APLICADO), de la más reciente a la más antigua. GenericResponse: `codigo` 1 con `datos` = `{contenido, pagina, tamanio, totalElementos, totalPaginas, ultima}`; `codigo` 0 sin compras. Cada compra trae pagoId, concepto, monto, fecha (envío), idTransaccion, autorizacion y numeroCuenta; el detalle completo (PIN, leyenda, referencia) se pide a /consulta. No depende de que el proveedor esté habilitado. |
 
 Ejemplo de preparación de un servicio (usar identificadores reales del catálogo):
 
@@ -75,6 +76,19 @@ La preparación y el registro TOTP usan GenericResponse existente: codigo entero
 ```
 
 Los ejemplos de datos están abreviados; la respuesta incluye concepto, cuenta, UPC, autorización y comprobante cuando existen. **02 no significa necesariamente rechazo**: comprobar estado y aviso. Los errores conservan HTTP apropiado (400, 401, 403, 404, 409, 429 o 503). No hay reenvío automático ante HTTP, timeout o token vencido. Los comprobantes no deben cachearse. El código real del proveedor se conserva internamente, sin sustituirlo por 02 en la auditoría.
+
+## Resultados de compra en la app
+
+La app (web y móvil) traduce `datos.estado` a cuatro resultados visibles, cada uno con color e icono propios:
+
+| Resultado | Estados | Qué ve el cliente |
+|---|---|---|
+| Compra exitosa | APLICADO | Importe cobrado, transacción, autorización, folio y PIN si aplica. Única que cuenta como compra (aparece en el historial). |
+| Compra rechazada | RECHAZADO (y EXPIRADO como "Solicitud vencida") | Aviso de que no hubo cobro. |
+| Compra pendiente | ENVIADO, PENDIENTE, REVISION | Pide consultar el estado y no iniciar otra compra. |
+| Error de comunicación | Sin respuesta: tiempo agotado, red, respuesta ilegible o HTTP 5xx con un pago ya iniciado | "No pudimos confirmar tu compra". Solo permite **Consultar estado**; se oculta "Autorizar pago" para no duplicar el cobro. |
+
+Antes de cobrar, "Revisar pago" prepara la solicitud y muestra el resumen; la compra se confirma al autorizar con el código TOTP.
 
 ## Retención y conciliación
 
@@ -135,7 +149,7 @@ La consulta de pendientes acepta `{"pagina":0,"tamanio":20}`. Ejemplo de estruct
 }
 ```
 
-Para `NO_APLICADO_DEFINITIVO` se omiten `idTransaccion` y `autorizacion`; los otros dos resultados los requieren. El segundo operador envía a `/propuestas/aprobar` el `propuestaId` y una `observacion` de su revisión. Nunca se acepta un importe distinto del registrado en el pago.
+Para `NO_APLICADO_DEFINITIVO` se omiten `idTransaccion` y `autorizacion`; los otros dos resultados los requieren. El segundo operador envía a `/propuestas/aprobar` el `propuestaId` y una `observacion` de su revisión. Nunca se acepta un importe distinto del registrado en el pago. Solo puede haber una propuesta abierta por pago: si la anterior venció sin aprobarse, la nueva propuesta la retira automáticamente (queda `RECHAZADA`, con el operador que la reemplazó y una evidencia `manual-vencida`); una propuesta aún vigente sigue bloqueando con 409.
 
 ## Límites, cambios del catálogo y duplicados
 

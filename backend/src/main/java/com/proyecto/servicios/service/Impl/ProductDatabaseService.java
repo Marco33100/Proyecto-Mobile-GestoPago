@@ -57,7 +57,7 @@ public class ProductDatabaseService {
     }
 
     @Transactional(transactionManager = "sfTransactionManager")
-    public ProductSyncResult replaceIfLarger(ProductListResponse response) {
+    public ProductSyncResult replaceIfComplete(ProductListResponse response) {
         try {
             List<ProductDto> products = productsOf(response);
             long previousCount = productRepository.count();
@@ -71,7 +71,9 @@ public class ProductDatabaseService {
             }
             int receivedCount = uniqueProducts.size();
 
-            if (receivedCount == 0 || receivedCount <= previousCount) {
+            // Se aceptan cambios de precio/nombre y bajas normales; una respuesta cortada
+            // (menos del 90 % de lo guardado) no borra el catalogo vigente.
+            if (receivedCount == 0 || receivedCount * 10L < previousCount * 9L) {
                 return new ProductSyncResult(false, previousCount, receivedCount);
             }
 

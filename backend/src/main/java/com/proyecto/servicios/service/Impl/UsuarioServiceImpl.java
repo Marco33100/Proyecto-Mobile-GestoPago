@@ -43,14 +43,17 @@ public class UsuarioServiceImpl implements UsuarioService {
     private final UserSessionRepository sesiones;
     private final PasswordEncoder passwordEncoder;
     private final ApplicationEventPublisher events;
+    private final LoginAttemptLimiter limiter;
 
     @Autowired
     public UsuarioServiceImpl(UserRepository usuarios, UserSessionRepository sesiones,
-                              PasswordEncoder passwordEncoder, ApplicationEventPublisher events) {
+                              PasswordEncoder passwordEncoder, ApplicationEventPublisher events,
+                              LoginAttemptLimiter limiter) {
         this.usuarios = usuarios;
         this.sesiones = sesiones;
         this.passwordEncoder = passwordEncoder;
         this.events = events;
+        this.limiter = limiter;
     }
 
     @Override
@@ -104,6 +107,9 @@ public class UsuarioServiceImpl implements UsuarioService {
         if (!ContrasenaSeguraValidator.esValida(credenciales.nuevaContrasena())) {
             throw new ContrasenaInvalidaException("La nueva contrasena no cumple los requisitos de seguridad");
         }
+        // Mismo limite que el login: sin el, una sesion abierta podria probar contrasenas actuales sin freno.
+        String claveIntentos = "password:" + usuarioAutenticado;
+        limiter.checkAccount(claveIntentos);
         try {
             UserEntity usuario = usuarios.consultarPropioPorNombreYCorreoParaActualizar(
                     request.nombre().trim().toLowerCase(Locale.ROOT),
@@ -121,6 +127,7 @@ public class UsuarioServiceImpl implements UsuarioService {
             }
             usuario.cambiarContrasena(passwordEncoder.encode(credenciales.nuevaContrasena()), Instant.now());
             usuarios.saveAndFlush(usuario);
+            limiter.loginSucceeded(claveIntentos);
             sesiones.deleteById(usuario.getId());
             events.publishEvent(new UsuarioClienteModificadoEvent(usuario.getId(), usuario.getEmail(), usuario.getEmail()));
         } catch (DataAccessException exception) {

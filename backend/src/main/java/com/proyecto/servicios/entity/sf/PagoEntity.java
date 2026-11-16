@@ -48,4 +48,11 @@ public class PagoEntity {
     @Column(name = "tipo_front") private Integer tipoFront;
     @Column(name = "requiere_pin", nullable = false) private boolean requierePin;
     @Version @Column(nullable = false) private long version;
+
+    /** Cierra un pago resuelto: estado final, sin confirmaciones pendientes y, si se aplico, con sus folios. */
+    public void cerrar(boolean aplicado, String idTransaccion, String autorizacion) {
+        estado = aplicado ? Estado.APLICADO : Estado.RECHAZADO;
+        intentoConfirmacion = null; proximaConfirmacion = null; motivoRevision = null;
+        if (aplicado) { this.idTransaccion = idTransaccion; this.autorizacion = autorizacion; }
+    }
 }

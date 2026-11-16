@@ -10,7 +10,9 @@ import com.proyecto.servicios.repositorys.gestopago.ProductRepository;
 import com.proyecto.servicios.service.PagoGateway;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import com.proyecto.servicios.model.cliente.PaginaResponse;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -99,7 +101,7 @@ public class PagoLedger {
             pago.setReglasCifradas(crypto.proteger(reglas)); pago.setHuellaReglas(PagoCrypto.huella(reglas));
             pago.setEstado(PagoEntity.Estado.PREPARADO); pago.setCreadoEn(ahora);
             pago.setVenceEn(ahora.plus(properties.getAutorizacionTtl())); pago.setReferenciaValidada(tipo != 4);
-            pago.setRequierePin(Objects.equals(producto.getCategoryServiceTypeId(), 10) || Objects.equals(producto.getCategoryServiceTypeId(), 11));
+            pago.setRequierePin(esTarjetaRegalo(producto));
             Map<String, Object> payload = new LinkedHashMap<>();
             payload.put(CAMPO_ID_PRODUCTO, request.idProducto()); payload.put(CAMPO_ID_SERVICIO, request.idServicio());
             payload.put("telefono", telefono);
@@ -129,10 +131,14 @@ public class PagoLedger {
     }
     private String telefonoPreparacion(com.proyecto.servicios.entity.gestopago.ProductEntity producto, PrepararRequest request) {
         if (request.tipoFront() != 1) return "1111111111";
-        if (Objects.equals(producto.getCategoryServiceTypeId(), 10) || Objects.equals(producto.getCategoryServiceTypeId(), 11)) return "#1111111111";
+        if (esTarjetaRegalo(producto)) return "#1111111111";
         String telefono = texto(request.telefono());
         if (!telefono.matches("\\d{10,20}")) throw error(HttpStatus.BAD_REQUEST, "El telefono no tiene el formato requerido");
         return telefono;
+    }
+    /** Categorias 10 y 11 de Gestopago: tarjetas de regalo (sin telefono, entregan PIN). */
+    private static boolean esTarjetaRegalo(com.proyecto.servicios.entity.gestopago.ProductEntity producto) {
+        return Objects.equals(producto.getCategoryServiceTypeId(), 10) || Objects.equals(producto.getCategoryServiceTypeId(), 11);
     }
     private String referenciaPreparacion(PrepararRequest request) {
         String referencia = texto(request.referencia());
@@ -243,12 +249,9 @@ public class PagoLedger {
         String cifrado = crypto.proteger(resultado.evidencia());
         if (pago.getReciboCifrado() == null || resultado.pin() != null) pago.setReciboCifrado(cifrado);
     }
-    private boolean identificadorPositivo(String valor) {
-        return valor != null && valor.matches("\\d{1,60}") && new BigDecimal(valor).signum() > 0;
-    }
     private void procesarResultado(PagoEntity pago, PagoGateway.Respuesta resultado, boolean confirmacion) {
         boolean aplicado = resultado.estado() == PagoGateway.Estado.APLICADO;
-        boolean identificadores = identificadorPositivo(resultado.idTransaccion()) && identificadorPositivo(resultado.autorizacion());
+        boolean identificadores = GestopagoPagoGateway.positivo(resultado.idTransaccion()) && GestopagoPagoGateway.positivo(resultado.autorizacion());
         boolean importeIncoherente = resultado.monto() != null && pago.getMonto().compareTo(resultado.monto()) != 0;
         registrarDuplicadoProveedor(pago, resultado, confirmacion, identificadores);
         if (pago.isDuplicadoProveedor() && "06".equals(resultado.codigo())) {
@@ -305,6 +308,15 @@ public class PagoLedger {
             var pago = pagos.findById(id).orElseThrow(() -> error(HttpStatus.NOT_FOUND, PAGO_NO_DISPONIBLE));
             propio(pago, actor); return respuesta(pago);
         });
+    }
+    /** Solo compras confirmadas por el proveedor (APLICADO), de la mas reciente a la mas antigua. */
+    public PaginaResponse<CompraResponse> historial(UUID actor, int pagina, int tamanio) {
+        var orden = Sort.by(Sort.Order.desc("enviadoEn"), Sort.Order.desc("id"));
+        return tx.execute(status -> PaginaResponse.desde(pagos
+                .findByUsuarioIdAndEstado(actor, PagoEntity.Estado.APLICADO, PageRequest.of(pagina, tamanio, orden))
+                .map(p -> new CompraResponse(p.getId(), p.getConcepto(), p.getMonto(),
+                        p.getEnviadoEn() != null ? p.getEnviadoEn() : p.getCreadoEn(),
+                        p.getIdTransaccion(), p.getAutorizacion(), p.getNumeroCuenta()))));
     }
     public PagoResponse cancelar(UUID id, UUID actor) {
         return tx.execute(status -> {
@@ -508,18 +520,23 @@ public class PagoLedger {
     private boolean coincideConAplicadoAnterior(PagoEntity pago, PagoGateway.Respuesta resultado) {
         if (pago.getIdTransaccionPrevia() == null || pago.getAutorizacionPrevia() == null
                 || !pago.getIdTransaccionPrevia().equals(resultado.idTransaccion())
-                || !pago.getAutorizacionPrevia().equals(resultado.autorizacion()) || pago.getHuellaOperacion() == null) return false;
-        var anterior = pagos.findByIdTransaccion(resultado.idTransaccion()).orElse(null);
+                || !pago.getAutorizacionPrevia().equals(resultado.autorizacion())) return false;
+        return esCompraYaContabilizada(pago, pagos.findByIdTransaccion(resultado.idTransaccion()).orElse(null), resultado.autorizacion());
+    }
+    /**
+     * La misma operacion ya se aplico y desconto en otra orden del mismo cliente: no se cobra otra vez.
+     * Regla unica para el trabajador automatico y la conciliacion manual.
+     */
+    static boolean esCompraYaContabilizada(PagoEntity pago, PagoEntity anterior, String autorizacion) {
         return anterior != null && !anterior.getId().equals(pago.getId()) && anterior.getEstado() == PagoEntity.Estado.APLICADO
-                && anterior.getUsuarioId().equals(pago.getUsuarioId()) && pago.getHuellaOperacion().equals(anterior.getHuellaOperacion())
-                && pago.getMonto().compareTo(anterior.getMonto()) == 0 && resultado.autorizacion().equals(anterior.getAutorizacion());
+                && anterior.getUsuarioId().equals(pago.getUsuarioId()) && pago.getHuellaOperacion() != null
+                && pago.getHuellaOperacion().equals(anterior.getHuellaOperacion())
+                && pago.getMonto().compareTo(anterior.getMonto()) == 0 && autorizacion != null && autorizacion.equals(anterior.getAutorizacion());
     }
     private void liquidarRetencion(PagoEntity pago, boolean aplicar, PagoGateway.Respuesta resultado) {
         var cuenta = cuentas.findByNumeroCuentaForUpdate(pago.getNumeroCuenta());
         cuenta.resolverRetencion(pago.getMonto(), aplicar, Instant.now()); cuentas.saveAndFlush(cuenta);
-        pago.setEstado(aplicar ? PagoEntity.Estado.APLICADO : PagoEntity.Estado.RECHAZADO);
-        pago.setIntentoConfirmacion(null); pago.setProximaConfirmacion(null); pago.setMotivoRevision(null);
-        if (aplicar) { pago.setIdTransaccion(resultado.idTransaccion()); pago.setAutorizacion(resultado.autorizacion()); }
+        pago.cerrar(aplicar, resultado.idTransaccion(), resultado.autorizacion());
     }
     private void revisar(PagoEntity pago, String motivo) {
         pago.setEstado(PagoEntity.Estado.REVISION); pago.setMotivoRevision(motivo);

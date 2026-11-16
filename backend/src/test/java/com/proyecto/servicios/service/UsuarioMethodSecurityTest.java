@@ -34,7 +34,8 @@ class UsuarioMethodSecurityTest {
             .withBean(UserRepository.class, () -> usuarios)
             .withBean(UserSessionRepository.class, () -> sesiones)
             .withBean(PasswordEncoder.class, () -> mock(PasswordEncoder.class))
-            .withBean(ApplicationEventPublisher.class, () -> mock(ApplicationEventPublisher.class));
+            .withBean(ApplicationEventPublisher.class, () -> mock(ApplicationEventPublisher.class))
+            .withBean(com.proyecto.servicios.service.Impl.LoginAttemptLimiter.class, () -> new com.proyecto.servicios.service.Impl.LoginAttemptLimiter(new com.proyecto.servicios.config.LoginRateLimitProperties()));
 
     @AfterEach void limpiar() { SecurityContextHolder.clearContext(); }
 
