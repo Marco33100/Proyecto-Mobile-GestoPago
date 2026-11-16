@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
@@ -53,19 +55,29 @@ class _GestopagoAppState extends State<GestopagoApp> {
 }
 
 class SessionGate extends StatefulWidget {
-  const SessionGate({super.key, required this.authApi, this.sessionStore});
+  const SessionGate({
+    super.key,
+    required this.authApi,
+    this.sessionStore,
+    this.sessionCheckInterval = const Duration(seconds: 30),
+  });
 
   final AuthApiService authApi;
   final SessionStore? sessionStore;
+
+  /// Cada cuánto se confirma que la sesión no se abrió en otro dispositivo.
+  final Duration sessionCheckInterval;
 
   @override
   State<SessionGate> createState() => _SessionGateState();
 }
 
-class _SessionGateState extends State<SessionGate> {
+class _SessionGateState extends State<SessionGate> with WidgetsBindingObserver {
   LoginSession? _session;
   bool _loading = true;
   bool _loggingOut = false;
+  bool _checking = false;
+  Timer? _sessionTimer;
 
   late final SessionStore _store =
       widget.sessionStore ?? createSessionStore(widget.authApi);
@@ -73,13 +85,55 @@ class _SessionGateState extends State<SessionGate> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _restoreSession();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _sessionTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _checkSession();
+  }
+
+  void _setSession(LoginSession? session) {
+    setState(() => _session = session);
+    _sessionTimer?.cancel();
+    _sessionTimer = session == null
+        ? null
+        : Timer.periodic(widget.sessionCheckInterval, (_) => _checkSession());
+  }
+
+  /// Si otro dispositivo tomó la sesión (o expiró), vuelve al login y avisa.
+  Future<void> _checkSession() async {
+    final session = _session;
+    if (session == null || _checking || _loggingOut) return;
+    _checking = true;
+    try {
+      final notice = await widget.authApi.endedSessionMessage(session);
+      if (notice == null || !mounted || _session != session) return;
+      try {
+        await _store.clear();
+      } catch (_) {
+        // La sesión ya no sirve en el servidor; se sale de todos modos.
+      }
+      if (!mounted) return;
+      _setSession(null);
+      _showNotice(notice);
+    } finally {
+      _checking = false;
+    }
   }
 
   Future<void> _restoreSession() async {
     try {
       final session = await _store.current();
-      if (mounted) setState(() => _session = session);
+      if (mounted) _setSession(session);
     } catch (_) {
       _showNotice(
         'No fue posible recuperar la sesion local. Inicia sesion nuevamente.',
@@ -109,10 +163,8 @@ class _SessionGateState extends State<SessionGate> {
       );
     } finally {
       if (mounted) {
-        setState(() {
-          _session = null;
-          _loggingOut = false;
-        });
+        _loggingOut = false;
+        _setSession(null);
         if (warnings.isNotEmpty) _showNotice(warnings.join(' '));
       }
     }
@@ -123,7 +175,13 @@ class _SessionGateState extends State<SessionGate> {
       if (!mounted) return;
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
-        ..showSnackBar(SnackBar(content: Text(message)));
+        ..showSnackBar(
+          SnackBar(
+            content: Text(message),
+            duration: const Duration(seconds: 8),
+            showCloseIcon: true,
+          ),
+        );
     });
   }
 
@@ -161,7 +219,7 @@ class _SessionGateState extends State<SessionGate> {
     return LoginPage(
       authApi: widget.authApi,
       sessionStore: _store,
-      onAuthenticated: (session) => setState(() => _session = session),
+      onAuthenticated: _setSession,
     );
   }
 }

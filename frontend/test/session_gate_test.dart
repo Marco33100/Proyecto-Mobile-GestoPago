@@ -142,29 +142,101 @@ void main() {
     },
   );
 
-  testWidgets('fallo al borrar la credencial no deja al usuario atrapado en inicio', (
+  testWidgets(
+    'fallo al borrar la credencial no deja al usuario atrapado en inicio',
+    (tester) async {
+      final store = FakeSessionStore()
+        ..session = testSession()
+        ..failClear = true;
+      final client = MockClient((_) async => http.Response('', 204));
+      addTearDown(client.close);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: SessionGate(
+            authApi: AuthApiService(client),
+            sessionStore: store,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Cuenta'));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('Cerrar sesión'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Cerrar sesión'));
+      await tester.pumpAndSettle();
+      expect(find.byType(LoginPage), findsOneWidget);
+      expect(find.textContaining('No fue posible borrar'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'si otro dispositivo toma la sesion vuelve al login y explica por que',
+    (tester) async {
+      final store = FakeSessionStore()..session = testSession();
+      var replaced = false;
+      final client = MockClient((request) async {
+        expect(request.url.path, '/api/auth/sesion');
+        expect(request.headers['Authorization'], 'Bearer token-prueba');
+        return replaced
+            ? http.Response(
+                '{"codigo":2,"mensaje":"x","datos":{"plataforma":"WEB"}}',
+                401,
+              )
+            : http.Response('{"codigo":1,"datos":{}}', 200);
+      });
+      addTearDown(client.close);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: SessionGate(
+            authApi: AuthApiService(client),
+            sessionStore: store,
+            sessionCheckInterval: const Duration(seconds: 1),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pumpAndSettle();
+      expect(find.byType(HomePage), findsOneWidget, reason: 'sigue vigente');
+
+      replaced = true;
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pumpAndSettle();
+      expect(find.byType(LoginPage), findsOneWidget);
+      expect(store.session, isNull);
+      expect(
+        find.text(
+          'Tu sesión se cerró porque iniciaste sesión en la plataforma web.',
+        ),
+        findsOneWidget,
+      );
+    },
+  );
+
+  testWidgets('sin red la revision periodica no cierra la sesion', (
     tester,
   ) async {
-    final store = FakeSessionStore()
-      ..session = testSession()
-      ..failClear = true;
-    final client = MockClient((_) async => http.Response('', 204));
+    final store = FakeSessionStore()..session = testSession();
+    final client = MockClient(
+      (_) async => throw const SocketException('offline'),
+    );
     addTearDown(client.close);
     await tester.pumpWidget(
       MaterialApp(
-        home: SessionGate(authApi: AuthApiService(client), sessionStore: store),
+        home: SessionGate(
+          authApi: AuthApiService(client),
+          sessionStore: store,
+          sessionCheckInterval: const Duration(seconds: 1),
+        ),
       ),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Cuenta'));
+    await tester.pump(const Duration(seconds: 1));
     await tester.pumpAndSettle();
-    await tester.ensureVisible(find.text('Cerrar sesión'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Cerrar sesión'));
-    await tester.pumpAndSettle();
-    expect(find.byType(LoginPage), findsOneWidget);
-    expect(find.textContaining('No fue posible borrar'), findsOneWidget);
-    expect(tester.takeException(), isNull);
+    expect(find.byType(HomePage), findsOneWidget);
+    expect(store.session, isNotNull);
   });
 
   test(

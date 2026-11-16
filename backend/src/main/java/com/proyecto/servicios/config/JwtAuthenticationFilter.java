@@ -1,6 +1,7 @@
 package com.proyecto.servicios.config;
 
 import com.proyecto.servicios.model.auth.AuthenticatedUser;
+import com.proyecto.servicios.model.auth.SesionActivaResponse;
 import com.proyecto.servicios.entity.sf.RolUsuario;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import com.proyecto.servicios.service.JwtTokenService;
@@ -78,7 +79,16 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             AuthenticatedUser user = jwtTokenService.validate(token);
             RolUsuario rol = activeSessionService.rolVigente(user.userId(), user.sessionId());
             if (rol == null) {
-                throw new BadCredentialsException("La sesion fue reemplazada");
+                // Distingue "entraste en otro dispositivo" de "expiro o cerraste sesion" para avisar al usuario.
+                var nueva = activeSessionService.sesionVigente(user.userId())
+                        .filter(s -> !s.getSessionId().equals(user.sessionId()));
+                if (nueva.isPresent()) {
+                    SecurityContextHolder.clearContext();
+                    authenticationEntryPoint.sessionReplaced(request, response, new SesionActivaResponse(
+                            nueva.get().getPlataforma(), nueva.get().getUpdatedAt()));
+                    return;
+                }
+                throw new BadCredentialsException("La sesion expiro o fue cerrada");
             }
             UsernamePasswordAuthenticationToken authentication =
                     new UsernamePasswordAuthenticationToken(user, null,

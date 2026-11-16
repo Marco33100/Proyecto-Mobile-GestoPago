@@ -39,6 +39,9 @@ class _LoginPageState extends State<LoginPage> {
   LoginChallenge? _challenge;
   VerifiedLogin? _verified;
 
+  /// El usuario aceptó cerrar la sesión abierta en otro dispositivo.
+  bool _closePrevious = false;
+
   @override
   void dispose() {
     _emailController.dispose();
@@ -83,11 +86,13 @@ class _LoginPageState extends State<LoginPage> {
       _loading = true;
       _errorMessage = null;
     });
+    ActiveSessionException? activeSession;
     try {
       final verified = await widget.authApi.verifyLogin(
         challenge: challenge,
         code: code,
         recoveryCode: recoveryCode,
+        closePrevious: _closePrevious,
       );
       await (widget.sessionStore ?? createSessionStore(widget.authApi)).save(
         verified.session,
@@ -99,6 +104,8 @@ class _LoginPageState extends State<LoginPage> {
         // Recién vinculado: mostrar los códigos antes de entrar.
         setState(() => _verified = verified);
       }
+    } on ActiveSessionException catch (error) {
+      activeSession = error;
     } on ApiException catch (error) {
       if (mounted) setState(() => _errorMessage = error.message);
     } catch (_) {
@@ -111,12 +118,70 @@ class _LoginPageState extends State<LoginPage> {
     } finally {
       if (mounted) setState(() => _loading = false);
     }
+    // El código no se gastó: si confirma, se reenvía el mismo.
+    if (activeSession != null && mounted) {
+      if (await _confirmClosePrevious(activeSession)) {
+        _closePrevious = true;
+        await _verify(code: code, recoveryCode: recoveryCode);
+      } else if (mounted) {
+        setState(
+          () => _errorMessage =
+              'No se inició sesión. Tu otra sesión sigue abierta.',
+        );
+      }
+    }
+  }
+
+  Future<bool> _confirmClosePrevious(ActiveSessionException session) async {
+    final where = sessionPlatformLabel(session.platform);
+    final since = _sinceText(session.startedAt);
+    return await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            icon: const Icon(Icons.devices_outlined),
+            title: const Text('Ya tienes una sesión abierta'),
+            content: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 420),
+              child: Text(
+                'Tu cuenta está abierta en $where$since. Solo puedes tener '
+                'una sesión a la vez: si continúas, esa sesión se cerrará.',
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancelar'),
+              ),
+              FilledButton(
+                style: FilledButton.styleFrom(minimumSize: const Size(120, 48)),
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('Cerrar la otra sesión y entrar'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+  }
+
+  static String _sinceText(DateTime? startedAt) {
+    if (startedAt == null) return '';
+    String two(int value) => value.toString().padLeft(2, '0');
+    final time = '${two(startedAt.hour)}:${two(startedAt.minute)}';
+    final now = DateTime.now();
+    final today =
+        startedAt.year == now.year &&
+        startedAt.month == now.month &&
+        startedAt.day == now.day;
+    return today
+        ? ' desde las $time'
+        : ' desde el ${two(startedAt.day)}/${two(startedAt.month)} a las $time';
   }
 
   void _restart() => setState(() {
     _challenge = null;
     _verified = null;
     _errorMessage = null;
+    _closePrevious = false;
   });
 
   Widget _secondFactor(BuildContext context, {required bool showBrand}) {
