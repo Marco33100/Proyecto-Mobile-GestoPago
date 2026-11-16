@@ -16,7 +16,7 @@ import '../widgets/status_message.dart';
 import '../widgets/surfaces.dart';
 import 'account_page.dart';
 import 'management_sections.dart';
-import 'payment_page.dart';
+import 'catalog_page.dart';
 import 'purchase_history_page.dart';
 import 'register_page.dart';
 import 'management_page.dart';
@@ -116,8 +116,8 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
-  /// Abre la pestaña de pagos; con [service] reinicia el formulario filtrado
-  /// por ese servicio. Un pago pendiente se recupera de su almacenamiento.
+  /// Abre el catálogo; con [service] lo reinicia filtrado por ese servicio.
+  /// Un pago pendiente se avisa en el catálogo y se recupera al abrir el pago.
   void _openPayment({String? service}) {
     if (service != null) {
       _paymentService = service;
@@ -211,10 +211,11 @@ class _HomePageState extends State<HomePage> {
                 authApi: widget.authApi,
                 api: _adminApi,
               )
-            : PaymentPage(
-                key: ValueKey('payment-$_paymentGeneration'),
+            : CatalogPage(
+                key: ValueKey('catalog-$_paymentGeneration'),
                 session: widget.session,
-                initialService: _paymentService,
+                api: PaymentApiService(_client, widget.session),
+                initialSearch: _paymentService,
               ),
       _ => const SizedBox.shrink(),
     };

@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import '../config/http_client_factory.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
+import '../models/catalog.dart';
 import '../models/login_session.dart';
 import '../services/payment_api_service.dart';
 import '../theme.dart';
@@ -20,12 +21,16 @@ class PaymentPage extends StatefulWidget {
     this.api,
     this.pendingStore,
     this.initialService,
+    this.initialProductId,
   });
 
   final LoginSession session;
   final PaymentApiService? api;
   final PendingPaymentStore? pendingStore;
   final String? initialService;
+
+  /// Producto elegido en el catálogo: el formulario abre con él seleccionado.
+  final int? initialProductId;
 
   @override
   State<PaymentPage> createState() => _PaymentPageState();
@@ -70,8 +75,7 @@ class _PaymentPageState extends State<PaymentPage> {
 
   bool get _hasUnresolvedPayment => _pendingId != null;
   bool get _terminal => _terminalStates.contains(_payment?['estado']);
-  bool get _isGiftCard =>
-      const [10, 11].contains(_product?['idCatTipoServicio']);
+  bool get _isGiftCard => _product != null && isGiftCard(_product!);
   bool get _requiresPhone => _product?['tipoFront'] == 1 && !_isGiftCard;
   bool get _requiresReference =>
       _product != null && _product!['tipoFront'] != 1;
@@ -79,8 +83,13 @@ class _PaymentPageState extends State<PaymentPage> {
   @override
   void initState() {
     super.initState();
-
-    _run(_load);
+    _run(() async {
+      await _load();
+      final id = widget.initialProductId;
+      if (id == null || _product != null) return;
+      final chosen = _products.where((p) => p['idProducto'] == id);
+      if (chosen.isNotEmpty) _selectProduct(chosen.first);
+    });
   }
 
   @override
@@ -152,7 +161,7 @@ class _PaymentPageState extends State<PaymentPage> {
         : null;
     _products = (productItems is List ? productItems : const [])
         .whereType<Map<String, dynamic>>()
-        .where((product) => const [1, 2, 4].contains(product['tipoFront']))
+        .where(isPurchasable)
         .toList(growable: false);
   }
 
