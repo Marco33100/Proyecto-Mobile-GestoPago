@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../services/payment_api_service.dart';
 import '../theme.dart';
+import '../utils/display_format.dart';
 import '../utils/money_format.dart';
 import '../widgets/management_layout.dart';
 import '../widgets/status_message.dart';
@@ -132,7 +133,7 @@ class _PurchaseTile extends StatelessWidget {
     final theme = Theme.of(context);
     final concept = purchase['concepto']?.toString() ?? 'Compra';
     final amount = MoneyFormat.mxn(purchase['monto']);
-    final date = formatPurchaseDate(purchase['fecha']);
+    final date = formatDateTime(purchase['fecha']) ?? 'Fecha no disponible';
     final reference = purchase['idTransaccion']?.toString();
     // En teléfonos se omite el icono para que el nombre del producto quepa.
     final compact = MediaQuery.sizeOf(context).width < 480;
@@ -261,7 +262,10 @@ class _PurchaseDetailPageState extends State<PurchaseDetailPage> {
         ),
         ManagementCard(
           children: [
-            _row('Fecha y hora', formatPurchaseDate(widget.purchase['fecha'])),
+            _row(
+              'Fecha y hora',
+              formatDateTime(widget.purchase['fecha']) ?? 'Fecha no disponible',
+            ),
             _row('Transacción', data['idTransaccion']),
             _row('Autorización', data['autorizacion']),
             _row('Cuenta', maskAccount(data['numeroCuenta'])),
@@ -293,20 +297,4 @@ class _PurchaseDetailPageState extends State<PurchaseDetailPage> {
       ),
     );
   }
-}
-
-/// Muestra solo los últimos cuatro dígitos de la cuenta: `•••• 0001`.
-String? maskAccount(Object? value) {
-  final text = value?.toString().trim() ?? '';
-  if (text.isEmpty) return null;
-  return text.length <= 4 ? text : '•••• ${text.substring(text.length - 4)}';
-}
-
-/// Fecha ISO del servidor en hora local: `15/11/2026 10:32`.
-String formatPurchaseDate(Object? value) {
-  final date = value is String ? DateTime.tryParse(value)?.toLocal() : null;
-  if (date == null) return 'Fecha no disponible';
-  String two(int n) => n.toString().padLeft(2, '0');
-  return '${two(date.day)}/${two(date.month)}/${date.year} '
-      '${two(date.hour)}:${two(date.minute)}';
 }

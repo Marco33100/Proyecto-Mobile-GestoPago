@@ -7,6 +7,7 @@ import '../models/catalog.dart';
 import '../models/login_session.dart';
 import '../services/payment_api_service.dart';
 import '../theme.dart';
+import '../utils/display_format.dart';
 import '../utils/money_format.dart';
 
 import '../widgets/paper_background.dart';
@@ -78,6 +79,8 @@ class _PaymentPageState extends State<PaymentPage> {
   bool _communicationError = false;
 
   bool get _hasUnresolvedPayment => _pendingId != null;
+  bool get _fromCatalog =>
+      widget.initialProductId != null && Navigator.of(context).canPop();
   bool get _terminal => _terminalStates.contains(_payment?['estado']);
   bool get _isGiftCard => _product != null && isGiftCard(_product!);
   bool get _requiresPhone => _product?['tipoFront'] == 1 && !_isGiftCard;
@@ -524,7 +527,7 @@ class _PaymentPageState extends State<PaymentPage> {
                   (account) => DropdownMenuItem(
                     value: account['numeroCuenta'] as String,
                     child: Text(
-                      '${_maskedAccount(account['numeroCuenta'])} · ${MoneyFormat.mxn(account['saldoDisponible'])}',
+                      '${maskAccount(account['numeroCuenta']) ?? ''} · ${MoneyFormat.mxn(account['saldoDisponible'])}',
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -544,19 +547,35 @@ class _PaymentPageState extends State<PaymentPage> {
                 value == null ? 'Selecciona una cuenta' : null,
           ),
           const SizedBox(height: 26),
-          const _SectionLabel(
-            eyebrow: '02',
-            title: 'Selecciona un servicio',
-            description: 'Elige un producto tal como aparece en el catálogo.',
-          ),
+          _fromCatalog && _product != null
+              ? const _SectionLabel(
+                  eyebrow: '02',
+                  title: 'Producto elegido',
+                  description:
+                      'Lo elegiste en el catálogo. Puedes cambiarlo si lo necesitas.',
+                )
+              : const _SectionLabel(
+                  eyebrow: '02',
+                  title: 'Selecciona un servicio',
+                  description:
+                      'Elige un producto tal como aparece en el catálogo.',
+                ),
           const SizedBox(height: 12),
-          CatalogProductPicker(
-            products: _products,
-            selected: _product,
-            enabled: !_busy,
-            initialSearch: widget.initialService ?? '',
-            onChanged: _selectProduct,
-          ),
+          // Desde el catálogo el producto ya viene elegido: cambiarlo es
+          // volver al catálogo, no abrir un segundo buscador.
+          if (_fromCatalog && _product != null)
+            _ChosenProductCard(
+              product: _product!,
+              onChange: _busy ? null : () => Navigator.of(context).pop(),
+            )
+          else
+            CatalogProductPicker(
+              products: _products,
+              selected: _product,
+              enabled: !_busy,
+              initialSearch: widget.initialService ?? '',
+              onChanged: _selectProduct,
+            ),
           if (_product != null) ...[
             const SizedBox(height: 24),
             const _SectionLabel(
@@ -693,7 +712,7 @@ class _PaymentPageState extends State<PaymentPage> {
                 label: 'Cuenta',
                 value: _account == null
                     ? 'Sin seleccionar'
-                    : _maskedAccount(_account!['numeroCuenta']),
+                    : maskAccount(_account!['numeroCuenta']) ?? '',
               ),
               if (_account != null) ...[
                 const Divider(height: 1),
@@ -750,10 +769,9 @@ class _PaymentPageState extends State<PaymentPage> {
       _OutcomeCard(
         style: _OutcomeStyle.communication,
         title: 'No pudimos confirmar tu compra',
+        // _error ya dice qué pasó y que no se repita; aquí solo el porqué.
         description: _error ?? 'Se perdió la conexión con el servidor.',
-        detail:
-            'Puede que se haya aplicado o no. No la repitas: consulta su estado '
-            'y te diremos el resultado confirmado.',
+        detail: 'Es posible que la compra sí se haya aplicado.',
       ),
       const SizedBox(height: 14),
       FilledButton.icon(
@@ -883,7 +901,7 @@ class _PaymentPageState extends State<PaymentPage> {
     }
 
     add('Servicio', payment['concepto']);
-    add('Cuenta', _maskedAccount(payment['numeroCuenta']));
+    add('Cuenta', maskAccount(payment['numeroCuenta']));
     add('Importe', payment['monto'], money: true);
     add('Comisión', payment['comisionCliente'], money: true);
     if (payment['monto'] != null && payment['comisionCliente'] != null) {
@@ -905,7 +923,7 @@ class _PaymentPageState extends State<PaymentPage> {
     add('Transacción', payment['idTransaccion']);
     add('Autorización', payment['autorizacion']);
     add('Folio de pago', payment['upc']);
-    add('Vigencia', _formatDate(payment['venceEn']));
+    add('Vigencia', formatDateTime(payment['venceEn']));
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
@@ -1064,7 +1082,7 @@ class _PaymentPageState extends State<PaymentPage> {
     final setup = _factorSetup!;
     final uri = _text(setup['uri']);
     final secret = _text(setup['secreto']);
-    final expiration = _formatDate(setup['venceEn']);
+    final expiration = formatDateTime(setup['venceEn']) ?? '';
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -1240,21 +1258,6 @@ class _PaymentPageState extends State<PaymentPage> {
     _ =>
       'El proveedor aún no confirma que este importe pueda autorizarse. Consulta su estado o revisa la referencia.',
   };
-
-  String _maskedAccount(Object? value) {
-    final number = _text(value);
-    if (number.length <= 4) return number;
-    return '•••• ${number.substring(number.length - 4)}';
-  }
-
-  String _formatDate(Object? value) {
-    final text = _text(value);
-    if (text.isEmpty) return '';
-    final date = DateTime.tryParse(text)?.toLocal();
-    if (date == null) return text;
-    String two(int value) => value.toString().padLeft(2, '0');
-    return '${two(date.day)}/${two(date.month)}/${date.year} ${two(date.hour)}:${two(date.minute)}';
-  }
 
   String _text(Object? value) => value?.toString().trim() ?? '';
 }
@@ -1469,6 +1472,51 @@ class _OutcomeCard extends StatelessWidget {
             ],
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Producto elegido en el catálogo. "Cambiar" regresa al catálogo.
+class _ChosenProductCard extends StatelessWidget {
+  const _ChosenProductCard({required this.product, required this.onChange});
+
+  final Map<String, dynamic> product;
+  final VoidCallback? onChange;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    String text(Object? value) => value?.toString().trim() ?? '';
+    return Container(
+      key: const ValueKey('chosen-product'),
+      padding: const EdgeInsets.fromLTRB(18, 14, 8, 14),
+      decoration: BoxDecoration(
+        color: warmSurface,
+        borderRadius: BorderRadius.circular(AppRadius.lg),
+        border: Border.all(color: outlineColor),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.shopping_bag_outlined, color: terracotta),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  text(product['producto']),
+                  style: theme.textTheme.titleMedium,
+                ),
+                Text(
+                  '${text(product['servicio'])} · ${priceLabel(product)}',
+                  style: theme.textTheme.bodySmall?.copyWith(color: mutedInk),
+                ),
+              ],
+            ),
+          ),
+          TextButton(onPressed: onChange, child: const Text('Cambiar')),
+        ],
       ),
     );
   }

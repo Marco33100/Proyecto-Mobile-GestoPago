@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:gestopago_app/models/login_session.dart';
 import 'package:gestopago_app/screens/purchase_history_page.dart';
 import 'package:gestopago_app/services/payment_api_service.dart';
+import 'package:gestopago_app/utils/display_format.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
@@ -184,11 +185,11 @@ void main() {
     final local = DateTime.utc(2026, 11, 15, 16, 32).toLocal();
     String two(int n) => n.toString().padLeft(2, '0');
     expect(
-      formatPurchaseDate('2026-11-15T16:32:00Z'),
+      formatDateTime('2026-11-15T16:32:00Z'),
       '${two(local.day)}/${two(local.month)}/${local.year} '
       '${two(local.hour)}:${two(local.minute)}',
     );
-    expect(formatPurchaseDate(null), 'Fecha no disponible');
+    expect(formatDateTime(null), isNull);
   });
 
   test('la cuenta se muestra enmascarada', () {

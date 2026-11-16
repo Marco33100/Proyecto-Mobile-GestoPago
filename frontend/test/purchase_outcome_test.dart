@@ -154,6 +154,12 @@ void main() {
     expect(authorizations, 1);
     expect(find.text('No pudimos confirmar tu compra'), findsOneWidget);
     expect(find.byIcon(Icons.wifi_off_rounded), findsOneWidget);
+    // La instrucción de no repetir aparece una sola vez.
+    expect(find.textContaining('No lo repitas'), findsOneWidget);
+    expect(
+      find.text('Es posible que la compra sí se haya aplicado.'),
+      findsOne,
+    );
     expect(find.text('Autorizar pago'), findsNothing);
     expect(find.text('Consultar estado'), findsOneWidget);
   });

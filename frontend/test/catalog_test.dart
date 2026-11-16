@@ -175,8 +175,39 @@ void main() {
       await tester.tap(find.text('Comprar'));
       await tester.pumpAndSettle();
       expect(find.byType(PaymentPage), findsOneWidget);
-      expect(find.text('Telcel · Recarga 10'), findsWidgets);
+      // Un solo selector: el producto elegido, sin el buscador del formulario.
+      expect(find.byKey(const ValueKey('chosen-product')), findsOneWidget);
+      expect(find.byKey(const ValueKey('product-selector')), findsNothing);
+      expect(find.text('Telcel · \$10.00 MXN'), findsOneWidget);
+      expect(find.text('Producto elegido'), findsOneWidget);
+      expect(find.text('Selecciona un servicio'), findsNothing);
+
+      await tester.ensureVisible(find.text('Cambiar'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Cambiar'));
+      await tester.pumpAndSettle();
+      expect(find.byType(PaymentPage), findsNothing);
+      expect(find.text('Recarga 50'), findsOneWidget);
       expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'con un pago en proceso comprar avisa en vez de abrirlo por sorpresa',
+    (tester) async {
+      await pumpCatalog(tester, pending: 'pago-1');
+      await tester.tap(find.text('Telcel'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Recarga 10'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Comprar'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Tienes un pago en proceso'), findsOneWidget);
+      await tester.tap(find.text('Ahora no'));
+      await tester.pumpAndSettle();
+      expect(find.byType(PaymentPage), findsNothing);
+      expect(paths.where((p) => p.startsWith('/api/pagos')), isEmpty);
     },
   );
 
