@@ -78,7 +78,7 @@ public class ConciliacionPagoServiceImpl implements ConciliacionPagoService {
                 return respuesta(existente);
             }
             validarPago(pago,request,actor);
-            if (propuestas.existsByPagoIdAndEstado(pago.getId(),ConciliacionPagoEntity.Estado.PROPUESTA)) throw error(HttpStatus.CONFLICT);
+            retirarPropuestaVencida(pago.getId(),actor);
             var propuesta=new ConciliacionPagoEntity();
             propuesta.setId(request.propuestaId()); propuesta.setPagoId(pago.getId()); propuesta.setVersionPago(pago.getVersion());
             propuesta.setPropuestoPor(actor); propuesta.setEstado(ConciliacionPagoEntity.Estado.PROPUESTA);
@@ -87,6 +87,19 @@ public class ConciliacionPagoServiceImpl implements ConciliacionPagoService {
             evidencia(pago.getId(),"manual-propuesta",Map.of("propuestaId",propuesta.getId(),"actor",actor,"detalle",request));
             return respuesta(propuesta);
         });
+    }
+    /**
+     * Solo una propuesta abierta por pago (indice unico). Una vigente bloquea; una vencida ya no
+     * se puede aprobar, asi que se retira (RECHAZADA, con quien la reemplaza) para no trabar el caso.
+     * El pago ya esta bloqueado, de modo que dos operadores no la retiran a la vez.
+     */
+    private void retirarPropuestaVencida(UUID pagoId, UUID actor) {
+        var abierta=propuestas.findByPagoIdAndEstado(pagoId,ConciliacionPagoEntity.Estado.PROPUESTA).orElse(null);
+        if (abierta==null) return;
+        if (Instant.now().isBefore(abierta.getVenceEn())) throw error(HttpStatus.CONFLICT);
+        abierta.setEstado(ConciliacionPagoEntity.Estado.RECHAZADA);
+        abierta.setDecididoPor(actor); abierta.setDecididoEn(Instant.now()); propuestas.saveAndFlush(abierta);
+        evidencia(pagoId,"manual-vencida",Map.of("propuestaId",abierta.getId(),"actor",actor));
     }
     @Override public Propuesta consultar(PropuestaRequest request) {
         return transaccion(actor -> respuesta(propuestas.findById(request.propuestaId()).orElseThrow(() -> error(HttpStatus.NOT_FOUND))));
