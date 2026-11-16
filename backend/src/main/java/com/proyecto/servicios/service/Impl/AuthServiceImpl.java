@@ -48,7 +48,7 @@ public class AuthServiceImpl implements AuthService {
 
     @Override
     @Transactional(transactionManager = "sfTransactionManager")
-    public LoginResponse login(LoginRequest request) {
+    public UserEntity verificarCredenciales(LoginRequest request) {
         if (request.password() == null || request.password().isBlank()
                 || request.password().getBytes(java.nio.charset.StandardCharsets.UTF_8).length > 72) {
             throw new InvalidCredentialsException();
@@ -66,6 +66,16 @@ public class AuthServiceImpl implements AuthService {
             if (!user.isEnabled() || (user.getCliente() != null && !user.getCliente().isActivo())) {
                 throw new UsuarioInactivoException();
             }
+            return user;
+        } catch (DataAccessException exception) {
+            log.error("No fue posible verificar el acceso en PostgreSQL: {}", exception.getClass().getSimpleName());
+            throw new AuthPersistenceException("El servicio de autenticacion no esta disponible", exception);
+        }
+    }
+
+    @Override
+    public LoginResponse emitirSesion(UserEntity user) {
+        try {
             UUID sessionId = UUID.randomUUID();
             JwtTokenService.TokenResult token = jwtTokenService.generate(toCachedUser(user), sessionId);
             activeSessionService.replaceActiveSession(user.getId(), sessionId, token.expiresAt());
@@ -73,7 +83,6 @@ public class AuthServiceImpl implements AuthService {
                     new UserProfileResponse(user.getId(), user.getEmail(), user.getIdentifier(),
                             user.getFullName(), user.getRol()));
         } catch (DataAccessException exception) {
-            log.error("No fue posible verificar el acceso en PostgreSQL: {}", exception.getClass().getSimpleName());
             throw new AuthPersistenceException("El servicio de autenticacion no esta disponible", exception);
         }
     }

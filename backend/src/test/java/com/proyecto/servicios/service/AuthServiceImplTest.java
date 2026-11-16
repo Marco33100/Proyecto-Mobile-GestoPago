@@ -71,14 +71,24 @@ class AuthServiceImplTest {
     }
 
     @Test
-    void loginReturnsTokenAndProfileForValidCredentials() {
+    void credencialesValidasDevuelvenElUsuarioSinEmitirSesion() {
         UserEntity user = user("marti@example.com", passwordEncoder.encode("Password1"));
         when(userRepository.findByEmailForUpdate("marti@example.com")).thenReturn(user);
+
+        assertThat(service.verificarCredenciales(new LoginRequest("MARTI@example.com", "Password1")))
+                .isSameAs(user);
+        // La contrasena sola nunca emite JWT: eso ocurre tras el segundo factor.
+        org.mockito.Mockito.verifyNoInteractions(jwtTokenService, activeSessionService);
+    }
+
+    @Test
+    void emitirSesionDevuelveTokenYPerfilYReemplazaLaSesionActiva() {
+        UserEntity user = user("marti@example.com", passwordEncoder.encode("Password1"));
         Instant expiration = Instant.now().plusSeconds(3600);
         when(jwtTokenService.generate(any(CachedUser.class), any(UUID.class)))
                 .thenReturn(new JwtTokenService.TokenResult("jwt-token", expiration));
 
-        LoginResponse response = service.login(new LoginRequest("MARTI@example.com", "Password1"));
+        LoginResponse response = service.emitirSesion(user);
 
         assertThat(response.accessToken()).isEqualTo("jwt-token");
         assertThat(response.tokenType()).isEqualTo("Bearer");
@@ -95,7 +105,7 @@ class AuthServiceImplTest {
         when(userRepository.findByEmailForUpdate("marti@example.com"))
                 .thenThrow(new DataAccessResourceFailureException("database offline"));
         var solicitud = new LoginRequest("marti@example.com", "Password1");
-        assertThatThrownBy(() -> service.login(solicitud))
+        assertThatThrownBy(() -> service.verificarCredenciales(solicitud))
                 .isInstanceOf(AuthPersistenceException.class);
         org.mockito.Mockito.verifyNoInteractions(jwtTokenService, activeSessionService);
     }
@@ -106,7 +116,7 @@ class AuthServiceImplTest {
         when(userRepository.findByEmailForUpdate("marti@example.com")).thenReturn(user);
 
         var solicitud = new LoginRequest("marti@example.com", "Wrong1xx");
-        assertThatThrownBy(() -> service.login(solicitud))
+        assertThatThrownBy(() -> service.verificarCredenciales(solicitud))
                 .isInstanceOf(InvalidCredentialsException.class)
                 .hasMessage("El correo o la contrasena son incorrectos");
     }
@@ -124,7 +134,7 @@ class AuthServiceImplTest {
         user.desactivar();
         when(userRepository.findByEmailForUpdate("marti@example.com")).thenReturn(user);
         var solicitud = new LoginRequest("marti@example.com", "Password1");
-        assertThatThrownBy(() -> service.login(solicitud))
+        assertThatThrownBy(() -> service.verificarCredenciales(solicitud))
                 .isInstanceOf(UsuarioInactivoException.class);
         org.mockito.Mockito.verifyNoInteractions(jwtTokenService, activeSessionService);
     }
@@ -132,7 +142,7 @@ class AuthServiceImplTest {
     @Test
     void deniegaLoginDeUsuarioInexistente() {
         var solicitud = new LoginRequest("nadie@example.com", "Password1");
-        assertThatThrownBy(() -> service.login(solicitud))
+        assertThatThrownBy(() -> service.verificarCredenciales(solicitud))
                 .isInstanceOf(UsuarioNoEncontradoException.class);
         org.mockito.Mockito.verifyNoInteractions(jwtTokenService, activeSessionService);
     }

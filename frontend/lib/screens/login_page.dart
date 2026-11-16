@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
+import '../models/login_challenge.dart';
 import '../models/login_session.dart';
+import '../widgets/second_factor_step.dart';
 import '../services/auth_api_service.dart';
 import '../storage/session_store_factory.dart';
 import '../storage/session_store.dart';
@@ -34,6 +36,8 @@ class _LoginPageState extends State<LoginPage> {
   bool _loading = false;
   bool _obscurePassword = true;
   String? _errorMessage;
+  LoginChallenge? _challenge;
+  VerifiedLogin? _verified;
 
   @override
   void dispose() {
@@ -42,6 +46,7 @@ class _LoginPageState extends State<LoginPage> {
     super.dispose();
   }
 
+  /// Paso 1: contraseña. Si es correcta, pasa al segundo factor.
   Future<void> _submit() async {
     if (_loading) return;
     final normalizedEmail = _emailController.text.trim();
@@ -56,15 +61,44 @@ class _LoginPageState extends State<LoginPage> {
     });
 
     try {
-      final session = await widget.authApi.login(
+      final challenge = await widget.authApi.login(
         email: _emailController.text,
         password: _passwordController.text,
       );
+      if (!mounted) return;
+      _passwordController.clear();
+      setState(() => _challenge = challenge);
+    } on ApiException catch (error) {
+      if (mounted) setState(() => _errorMessage = error.message);
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  /// Paso 2: código del autenticador o de recuperación.
+  Future<void> _verify({String? code, String? recoveryCode}) async {
+    final challenge = _challenge;
+    if (_loading || challenge == null) return;
+    setState(() {
+      _loading = true;
+      _errorMessage = null;
+    });
+    try {
+      final verified = await widget.authApi.verifyLogin(
+        challenge: challenge,
+        code: code,
+        recoveryCode: recoveryCode,
+      );
       await (widget.sessionStore ?? createSessionStore(widget.authApi)).save(
-        session,
+        verified.session,
       );
       if (!mounted) return;
-      widget.onAuthenticated(session);
+      if (verified.recoveryCodes.isEmpty) {
+        widget.onAuthenticated(verified.session);
+      } else {
+        // Recién vinculado: mostrar los códigos antes de entrar.
+        setState(() => _verified = verified);
+      }
     } on ApiException catch (error) {
       if (mounted) setState(() => _errorMessage = error.message);
     } catch (_) {
@@ -77,6 +111,38 @@ class _LoginPageState extends State<LoginPage> {
     } finally {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  void _restart() => setState(() {
+    _challenge = null;
+    _verified = null;
+    _errorMessage = null;
+  });
+
+  Widget _secondFactor(BuildContext context, {required bool showBrand}) {
+    final verified = _verified;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (showBrand) ...[
+          const BrandWordmark(centered: true, compact: true),
+          const SizedBox(height: AppSpace.xxl),
+        ],
+        if (verified != null)
+          RecoveryCodesStep(
+            codes: verified.recoveryCodes,
+            onDone: () => widget.onAuthenticated(verified.session),
+          )
+        else
+          SecondFactorStep(
+            challenge: _challenge!,
+            busy: _loading,
+            error: _errorMessage,
+            onVerify: _verify,
+            onCancel: _restart,
+          ),
+      ],
+    );
   }
 
   @override
@@ -123,105 +189,110 @@ class _LoginPageState extends State<LoginPage> {
         padding: const EdgeInsets.fromLTRB(24, 36, 24, 32),
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: ContentWidth.auth),
-          child: AutofillGroup(
-            child: Form(
-              key: _formKey,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  if (showBrand) ...[
-                    const BrandWordmark(centered: true),
-                    const SizedBox(height: 44),
-                  ],
-                  Text(
-                    'Hola de nuevo',
-                    textAlign: TextAlign.center,
-                    style: Theme.of(context).textTheme.headlineMedium,
-                  ),
-                  const SizedBox(height: 10),
-                  Text(
-                    'Inicia sesión para gestionar tus servicios y pagos.',
-                    textAlign: TextAlign.center,
-                    style: Theme.of(context).textTheme.bodyLarge,
-                  ),
-                  const SizedBox(height: 34),
-                  TextFormField(
-                    controller: _emailController,
-                    enabled: !_loading,
-                    keyboardType: TextInputType.emailAddress,
-                    textInputAction: TextInputAction.next,
-                    autofillHints: const [AutofillHints.email],
-                    autocorrect: false,
-                    decoration: const InputDecoration(
-                      labelText: 'Correo electrónico',
-                      prefixIcon: _FieldIcon(Icons.mail_outline_rounded),
-                    ),
-                    validator: LoginValidators.email,
-                  ),
-                  const SizedBox(height: 16),
-                  TextFormField(
-                    controller: _passwordController,
-                    enabled: !_loading,
-                    obscureText: _obscurePassword,
-                    textInputAction: TextInputAction.done,
-                    autofillHints: const [AutofillHints.password],
-                    onFieldSubmitted: (_) => _submit(),
-                    decoration: InputDecoration(
-                      labelText: 'Contraseña',
-                      prefixIcon: const _FieldIcon(Icons.lock_outline_rounded),
-                      suffixIcon: IconButton(
-                        tooltip: _obscurePassword
-                            ? 'Mostrar contraseña'
-                            : 'Ocultar contraseña',
-                        onPressed: _loading
-                            ? null
-                            : () => setState(
-                                () => _obscurePassword = !_obscurePassword,
-                              ),
-                        icon: Icon(
-                          _obscurePassword
-                              ? Icons.visibility_outlined
-                              : Icons.visibility_off_outlined,
+          child: _challenge != null
+              ? _secondFactor(context, showBrand: showBrand)
+              : AutofillGroup(
+                  child: Form(
+                    key: _formKey,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        if (showBrand) ...[
+                          const BrandWordmark(centered: true),
+                          const SizedBox(height: 44),
+                        ],
+                        Text(
+                          'Hola de nuevo',
+                          textAlign: TextAlign.center,
+                          style: Theme.of(context).textTheme.headlineMedium,
                         ),
-                      ),
-                    ),
-                    validator: LoginValidators.password,
-                  ),
-                  if (_errorMessage != null) ...[
-                    const SizedBox(height: 18),
-                    StatusMessage(
-                      message: _errorMessage!,
-                      icon: Icons.error_outline_rounded,
-                      tone: StatusTone.error,
-                    ),
-                  ],
-                  const SizedBox(height: 28),
-                  FilledButton(
-                    style: FilledButton.styleFrom(
-                      shape: const StadiumBorder(),
-                      minimumSize: const Size.fromHeight(56),
-                    ),
-                    onPressed: _loading ? null : _submit,
-                    child: _loading
-                        ? const SizedBox.square(
-                            dimension: 22,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: warmSurface,
+                        const SizedBox(height: 10),
+                        Text(
+                          'Inicia sesión para gestionar tus servicios y pagos.',
+                          textAlign: TextAlign.center,
+                          style: Theme.of(context).textTheme.bodyLarge,
+                        ),
+                        const SizedBox(height: 34),
+                        TextFormField(
+                          controller: _emailController,
+                          enabled: !_loading,
+                          keyboardType: TextInputType.emailAddress,
+                          textInputAction: TextInputAction.next,
+                          autofillHints: const [AutofillHints.email],
+                          autocorrect: false,
+                          decoration: const InputDecoration(
+                            labelText: 'Correo electrónico',
+                            prefixIcon: _FieldIcon(Icons.mail_outline_rounded),
+                          ),
+                          validator: LoginValidators.email,
+                        ),
+                        const SizedBox(height: 16),
+                        TextFormField(
+                          controller: _passwordController,
+                          enabled: !_loading,
+                          obscureText: _obscurePassword,
+                          textInputAction: TextInputAction.done,
+                          autofillHints: const [AutofillHints.password],
+                          onFieldSubmitted: (_) => _submit(),
+                          decoration: InputDecoration(
+                            labelText: 'Contraseña',
+                            prefixIcon: const _FieldIcon(
+                              Icons.lock_outline_rounded,
                             ),
-                          )
-                        : const Text('Iniciar sesión'),
+                            suffixIcon: IconButton(
+                              tooltip: _obscurePassword
+                                  ? 'Mostrar contraseña'
+                                  : 'Ocultar contraseña',
+                              onPressed: _loading
+                                  ? null
+                                  : () => setState(
+                                      () =>
+                                          _obscurePassword = !_obscurePassword,
+                                    ),
+                              icon: Icon(
+                                _obscurePassword
+                                    ? Icons.visibility_outlined
+                                    : Icons.visibility_off_outlined,
+                              ),
+                            ),
+                          ),
+                          validator: LoginValidators.password,
+                        ),
+                        if (_errorMessage != null) ...[
+                          const SizedBox(height: 18),
+                          StatusMessage(
+                            message: _errorMessage!,
+                            icon: Icons.error_outline_rounded,
+                            tone: StatusTone.error,
+                          ),
+                        ],
+                        const SizedBox(height: 28),
+                        FilledButton(
+                          style: FilledButton.styleFrom(
+                            shape: const StadiumBorder(),
+                            minimumSize: const Size.fromHeight(56),
+                          ),
+                          onPressed: _loading ? null : _submit,
+                          child: _loading
+                              ? const SizedBox.square(
+                                  dimension: 22,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: warmSurface,
+                                  ),
+                                )
+                              : const Text('Iniciar sesión'),
+                        ),
+                        const SizedBox(height: 20),
+                        Text(
+                          '¿Aún no tienes acceso? Solicita el registro a un ejecutivo.',
+                          textAlign: TextAlign.center,
+                          style: Theme.of(context).textTheme.bodyMedium,
+                        ),
+                      ],
+                    ),
                   ),
-                  const SizedBox(height: 20),
-                  Text(
-                    '¿Aún no tienes acceso? Solicita el registro a un ejecutivo.',
-                    textAlign: TextAlign.center,
-                    style: Theme.of(context).textTheme.bodyMedium,
-                  ),
-                ],
-              ),
-            ),
-          ),
+                ),
         ),
       ),
     ),
@@ -286,8 +357,8 @@ class _BrandPanel extends StatelessWidget {
             SizedBox(height: AppSpace.xxl),
             _Feature(
               icon: Icons.verified_user_outlined,
-              title: 'Doble factor en cada pago',
-              text: 'Nada se cobra sin tu código del autenticador.',
+              title: 'Doble factor al entrar y al pagar',
+              text: 'Nadie entra ni cobra sin tu código del autenticador.',
             ),
             _Feature(
               icon: Icons.account_balance_wallet_outlined,

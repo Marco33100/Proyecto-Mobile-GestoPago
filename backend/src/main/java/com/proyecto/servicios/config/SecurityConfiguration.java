@@ -99,7 +99,7 @@ public class SecurityConfiguration {
                                         authenticationEntryPoint.forbidden(request, response)))
                 .authorizeHttpRequests(authorize -> authorize
                         .requestMatchers(
-                                "/api/auth/login", "/api/auth/csrf",
+                                "/api/auth/login", "/api/auth/login/verificar", "/api/auth/csrf",
                                 "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html",
                                 "/actuator/health", "/error"
                         ).permitAll()

@@ -142,10 +142,10 @@ class ClienteUsuarioTransactionTest {
                 "token-de-prueba", Instant.now().plusSeconds(300)));
         AuthService auth = proxy(new AuthServiceImpl(usuarios, encoder,
                 jwt, mock(ActiveSessionService.class)), AuthService.class);
-        assertThat(auth.login(new LoginRequest("marco@example.com", request().contrasena())).accessToken())
+        assertThat(auth.emitirSesion(auth.verificarCredenciales(new LoginRequest("marco@example.com", request().contrasena()))).accessToken())
                 .isEqualTo("token-de-prueba");
         var credencialesInvalidas = new LoginRequest("marco@example.com", "Incorrecta1");
-        assertThatThrownBy(() -> auth.login(credencialesInvalidas))
+        assertThatThrownBy(() -> auth.verificarCredenciales(credencialesInvalidas))
                 .isInstanceOf(InvalidCredentialsException.class);
     }
 
@@ -302,7 +302,7 @@ class ClienteUsuarioTransactionTest {
                 "token-de-prueba", Instant.now().plusSeconds(300)));
         AuthService auth = proxy(new AuthServiceImpl(usuarios, encoder, jwt,
                 mock(ActiveSessionService.class)), AuthService.class);
-        assertThat(auth.login(new LoginRequest(usuario.getEmail(), request().contrasena())).accessToken())
+        assertThat(auth.emitirSesion(auth.verificarCredenciales(new LoginRequest(usuario.getEmail(), request().contrasena()))).accessToken())
                 .isEqualTo("token-de-prueba");
         org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(
                 org.springframework.security.authentication.UsernamePasswordAuthenticationToken.authenticated(
@@ -368,7 +368,7 @@ class ClienteUsuarioTransactionTest {
         AuthService auth = proxy(new AuthServiceImpl(usuarios, encoder, mock(JwtTokenService.class),
                 mock(ActiveSessionService.class)), AuthService.class);
         var credenciales = new LoginRequest(usuario.getEmail(), request().contrasena());
-        assertThatThrownBy(() -> auth.login(credenciales))
+        assertThatThrownBy(() -> auth.verificarCredenciales(credenciales))
                 .isInstanceOf(com.proyecto.servicios.exception.auth.UsuarioInactivoException.class);
     }
 

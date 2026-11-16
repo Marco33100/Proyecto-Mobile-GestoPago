@@ -1,7 +1,10 @@
 package com.proyecto.servicios.controller;
 
 import com.proyecto.servicios.config.WebSessionCookies;
+import com.proyecto.servicios.model.auth.LoginDesafioResponse;
 import com.proyecto.servicios.model.auth.LoginRequest;
+import com.proyecto.servicios.model.auth.VerificarLoginRequest;
+import com.proyecto.servicios.service.LoginSegundoFactorService;
 import com.proyecto.servicios.model.auth.LoginResponse;
 import com.proyecto.servicios.model.auth.AuthenticatedUser;
 import com.proyecto.servicios.model.auth.CsrfTokenResponse;
@@ -37,32 +40,47 @@ import org.springframework.web.bind.annotation.RestController;
 public class AuthController {
 
     private final AuthService authService;
+    private final LoginSegundoFactorService loginService;
     private final LoginAttemptLimiter loginAttemptLimiter;
     private final WebSessionCookies webSessionCookies;
 
     @Autowired
-    public AuthController(AuthService authService, LoginAttemptLimiter loginAttemptLimiter,
-                          WebSessionCookies webSessionCookies) {
+    public AuthController(AuthService authService, LoginSegundoFactorService loginService,
+                          LoginAttemptLimiter loginAttemptLimiter, WebSessionCookies webSessionCookies) {
         this.authService = authService;
+        this.loginService = loginService;
         this.loginAttemptLimiter = loginAttemptLimiter;
         this.webSessionCookies = webSessionCookies;
     }
 
     @PostMapping("/login")
-    @Operation(summary = "Valida credenciales y devuelve una sesion JWT",
-            description = "Con X-Auth-Mode: cookie (cliente web) el JWT se entrega en una cookie HttpOnly "
-                    + "y no en el cuerpo de la respuesta.")
-    public ResponseEntity<GenericResponse<LoginResponse>> login(
-            @Valid @RequestBody LoginRequest request,
+    @Operation(summary = "Paso 1: valida la contrasena y entrega un desafio de segundo factor",
+            description = "No emite sesion. Si el usuario no tiene autenticador, incluye la clave y la URI "
+                    + "otpauth para vincularlo. El desafio vence en 5 minutos.")
+    public ResponseEntity<GenericResponse<LoginDesafioResponse>> login(@Valid @RequestBody LoginRequest request) {
+        loginAttemptLimiter.checkAccount(request.email());
+        LoginDesafioResponse desafio = loginService.iniciar(request);
+        loginAttemptLimiter.loginSucceeded(request.email());
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CACHE_CONTROL, "no-store")
+                .body(GenericResponse.exito("Contrasena verificada. Falta el segundo factor", desafio));
+    }
+
+    @PostMapping("/login/verificar")
+    @Operation(summary = "Paso 2: verifica el codigo del autenticador y devuelve la sesion JWT",
+            description = "Acepta el codigo de 6 digitos o un codigo de recuperacion. Con X-Auth-Mode: cookie "
+                    + "(cliente web) el JWT se entrega en una cookie HttpOnly y no en el cuerpo.")
+    public ResponseEntity<GenericResponse<LoginResponse>> verificar(
+            @Valid @RequestBody VerificarLoginRequest request,
             @Parameter(description = "cookie para el cliente web")
             @RequestHeader(value = WebSessionCookies.AUTH_MODE_HEADER, required = false) String authMode) {
-        loginAttemptLimiter.checkAccount(request.email());
-        LoginResponse result = authService.login(request);
-        loginAttemptLimiter.loginSucceeded(request.email());
+        LoginResponse result = loginService.verificar(request);
         if (!webSessionCookies.cookieModeRequested(authMode)) {
-            return ResponseEntity.ok(GenericResponse.exito("Inicio de sesion correcto", result));
+            return ResponseEntity.ok()
+                    .header(HttpHeaders.CACHE_CONTROL, "no-store")
+                    .body(GenericResponse.exito("Inicio de sesion correcto", result));
         }
-        LoginResponse sinToken = new LoginResponse(null, result.tokenType(), result.expiresAt(), result.user());
+        LoginResponse sinToken = result.sinToken();
         return ResponseEntity.ok()
                 .header(HttpHeaders.SET_COOKIE,
                         webSessionCookies.session(result.accessToken(), result.expiresAt()).toString())

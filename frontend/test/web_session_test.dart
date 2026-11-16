@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:gestopago_app/models/login_challenge.dart';
 import 'package:gestopago_app/services/auth_api_service.dart';
 import 'package:gestopago_app/services/auth_headers.dart';
 import 'package:gestopago_app/services/payment_api_service.dart';
@@ -35,6 +36,11 @@ void main() {
         requests.add(request);
         return switch (request.url.path) {
           '/api/auth/login' => _ok({
+            'desafio': 'desafio-firmado',
+            'segundoFactorConfigurado': true,
+            'venceEn': '2030-01-01T00:05:00Z',
+          }),
+          '/api/auth/login/verificar' => _ok({
             'accessToken': null,
             'tokenType': 'Bearer',
             'expiresAt': DateTime.now()
@@ -53,13 +59,22 @@ void main() {
       });
       final api = AuthApiService(client, cookieSession: true);
 
-      final session = await api.login(
+      final challenge = await api.login(
         email: 'web@example.com',
         password: 'Segura123!',
       );
+      // La contraseña sola no crea sesión ni pide cookie.
+      expect(requests.single.headers.containsKey('X-Auth-Mode'), isFalse);
+      expect(AuthHeaders.csrfToken, isNull);
+
+      final session = (await api.verifyLogin(
+        challenge: challenge,
+        code: '123456',
+      )).session;
       expect(session.usesCookie, isTrue);
       expect(session.accessToken, isEmpty);
-      expect(requests.first.headers['X-Auth-Mode'], 'cookie');
+      expect(requests[1].url.path, '/api/auth/login/verificar');
+      expect(requests[1].headers['X-Auth-Mode'], 'cookie');
       expect(AuthHeaders.csrfToken, 'csrf-123');
 
       await PaymentApiService(
@@ -69,7 +84,7 @@ void main() {
       ).request('/api/cuentas/mias/consulta', {'pagina': 0});
       await api.logout(session);
 
-      for (final request in requests.skip(2)) {
+      for (final request in requests.skip(3)) {
         expect(request.headers.containsKey('Authorization'), isFalse);
         expect(request.headers['X-XSRF-TOKEN'], 'csrf-123');
       }
@@ -87,10 +102,14 @@ void main() {
       });
     });
     await expectLater(
-      AuthApiService(
-        client,
-        cookieSession: false,
-      ).login(email: 'a@example.com', password: 'x'),
+      AuthApiService(client, cookieSession: false).verifyLogin(
+        challenge: LoginChallenge(
+          token: 'd',
+          configured: true,
+          expiresAt: DateTime.utc(2030),
+        ),
+        code: '123456',
+      ),
       throwsA(
         isA<ApiException>().having((e) => e.code, 'code', 'INVALID_RESPONSE'),
       ),

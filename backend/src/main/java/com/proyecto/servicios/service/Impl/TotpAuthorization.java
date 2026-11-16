@@ -30,6 +30,55 @@ public class TotpAuthorization {
         if (factor.getIntentos() >= 5) factor.setBloqueadoHasta(Instant.now().plusSeconds(300));
         repository.saveAndFlush(factor);
     }
+    /** Lanza 429 de inicio de sesion si el factor esta bloqueado por intentos fallidos. */
+    public void checkLoginLock(SegundoFactorEntity factor) {
+        if (factor.getBloqueadoHasta() != null && Instant.now().isBefore(factor.getBloqueadoHasta())) {
+            long wait = Math.max(1, java.time.Duration.between(Instant.now(), factor.getBloqueadoHasta()).toSeconds());
+            throw new com.proyecto.servicios.exception.auth.LoginRateLimitException(wait);
+        }
+        checkLock(factor);
+    }
+
+    /** Consume un codigo de recuperacion (un solo uso). Cuenta el intento si no coincide. */
+    public boolean consumeRecovery(SegundoFactorEntity factor, String code) {
+        if (factor.getRecuperacionHashes() == null) { failed(factor); return false; }
+        var hashes = new java.util.ArrayList<>(java.util.Arrays.asList(factor.getRecuperacionHashes().split("\n")));
+        String candidate = recoveryHash(factor.getUsuarioId(), code);
+        boolean removed = hashes.removeIf(hash -> java.security.MessageDigest.isEqual(
+                hash.getBytes(java.nio.charset.StandardCharsets.US_ASCII),
+                candidate.getBytes(java.nio.charset.StandardCharsets.US_ASCII)));
+        if (!removed) { failed(factor); return false; }
+        factor.setRecuperacionHashes(String.join("\n", hashes)); factor.setIntentos(0);
+        repository.saveAndFlush(factor); return true;
+    }
+
+    /**
+     * Activa el secreto pendiente ya verificado en [step]: lo guarda como definitivo,
+     * genera 10 codigos de recuperacion y los devuelve en claro (solo esta vez).
+     */
+    public java.util.List<String> activate(SegundoFactorEntity factor, String secret, long step) {
+        var recovery = new java.util.ArrayList<String>();
+        for (int i = 0; i < 10; i++) {
+            byte[] bytes = new byte[16]; RANDOM.nextBytes(bytes);
+            String hex = java.util.HexFormat.of().withUpperCase().formatHex(bytes);
+            recovery.add(String.join("-", hex.substring(0, 8), hex.substring(8, 16),
+                    hex.substring(16, 24), hex.substring(24)));
+        }
+        java.util.UUID actor = factor.getUsuarioId();
+        factor.setSecretoCifrado(secrets.encrypt(actor, secret));
+        factor.setHuella(java.util.UUID.randomUUID().toString()); factor.setUltimoPaso(step);
+        factor.setRecuperacionHashes(String.join("\n", recovery.stream().map(c -> recoveryHash(actor, c)).toList()));
+        factor.setPendienteCifrado(null); factor.setSesionRegistro(null); factor.setVenceEn(null);
+        factor.setIntentos(0); factor.setBloqueadoHasta(null); repository.saveAndFlush(factor);
+        return java.util.List.copyOf(recovery);
+    }
+
+    private static String recoveryHash(java.util.UUID actor, String code) {
+        return PagoCrypto.huella("totp-recovery/v1/" + actor + "/" + code);
+    }
+
+    private static final java.security.SecureRandom RANDOM = new java.security.SecureRandom();
+
     public boolean consume(SegundoFactorEntity factor, String code) {
         checkLock(factor);
         if (factor.getSecretoCifrado() == null) return false;

@@ -22,7 +22,8 @@ public class LoginRateLimitFilter extends OncePerRequestFilter {
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
         return !"POST".equals(request.getMethod())
-                || !"/api/auth/login".equals(request.getRequestURI().substring(request.getContextPath().length()));
+                || !WebSessionCookies.LOGIN_PATHS.contains(
+                        request.getRequestURI().substring(request.getContextPath().length()));
     }
 
     @Override
