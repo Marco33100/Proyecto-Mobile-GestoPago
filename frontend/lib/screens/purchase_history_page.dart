@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../models/catalog.dart';
 import '../services/payment_api_service.dart';
 import '../theme.dart';
 import '../utils/display_format.dart';
@@ -290,7 +291,7 @@ class _PurchaseDetailPageState extends State<PurchaseDetailPage> {
 
   /// El PIN es canjeable: oculto hasta que el cliente lo pide, como en el pago.
   Widget _pinRow(Object? value) {
-    final pin = value?.toString().trim() ?? '';
+    final pin = textOf(value);
     if (pin.isEmpty) return const SizedBox.shrink();
     return Row(
       children: [
@@ -309,7 +310,7 @@ class _PurchaseDetailPageState extends State<PurchaseDetailPage> {
   }
 
   Widget _row(String label, Object? value) {
-    final text = value?.toString().trim() ?? '';
+    final text = textOf(value);
     if (text.isEmpty) return const SizedBox.shrink();
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: AppSpace.sm),
