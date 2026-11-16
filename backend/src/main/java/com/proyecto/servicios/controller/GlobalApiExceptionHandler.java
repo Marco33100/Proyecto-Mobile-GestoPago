@@ -63,6 +63,19 @@ public class GlobalApiExceptionHandler extends ResponseEntityExceptionHandler {
                 "El codigo no es correcto o la verificacion vencio. Revisa tu autenticador.", new HttpHeaders());
     }
 
+    @ExceptionHandler(com.proyecto.servicios.exception.auth.SesionActivaException.class)
+    ResponseEntity<Object> sesionActiva(com.proyecto.servicios.exception.auth.SesionActivaException exception) {
+        var sesion = exception.getSesion();
+        String donde = sesion.plataforma() == com.proyecto.servicios.entity.sf.PlataformaSesion.WEB
+                ? "la plataforma web" : "la app movil";
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        headers.setCacheControl("no-store");
+        return new ResponseEntity<>(new GenericResponse<>(GenericResponse.CODIGO_ERROR,
+                "Ya tienes una sesion abierta en " + donde + ". Cierrala para entrar aqui.", sesion),
+                headers, HttpStatus.CONFLICT);
+    }
+
     @ExceptionHandler(com.proyecto.servicios.exception.auth.SegundoFactorNoDisponibleException.class)
     ResponseEntity<Object> segundoFactorNoDisponible(HttpServletRequest request) {
         log.error("Inicio de sesion bloqueado: falta GESTOPAGO_TOKEN_STORAGE_KEY para el segundo factor");

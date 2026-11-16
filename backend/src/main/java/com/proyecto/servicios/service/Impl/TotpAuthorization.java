@@ -96,6 +96,20 @@ public class TotpAuthorization {
         return true;
     }
 
+    /** Indica si el codigo (o el de recuperacion) seria aceptado, sin consumirlo ni contar intentos. */
+    public boolean accepts(SegundoFactorEntity factor, String code, String recoveryCode) {
+        if (recoveryCode != null) {
+            if (factor.getRecuperacionHashes() == null) return false;
+            byte[] candidate = recoveryHash(factor.getUsuarioId(), recoveryCode)
+                    .getBytes(java.nio.charset.StandardCharsets.US_ASCII);
+            return java.util.Arrays.stream(factor.getRecuperacionHashes().split("\n")).anyMatch(hash ->
+                    java.security.MessageDigest.isEqual(hash.getBytes(java.nio.charset.StandardCharsets.US_ASCII), candidate));
+        }
+        if (factor.getSecretoCifrado() == null) return false;
+        String secret = secrets.decrypt(factor.getUsuarioId(), factor.getSecretoCifrado());
+        return codes.matchingStep(secret, code, factor.getUltimoPaso()) >= 0;
+    }
+
     private boolean esCodigoRecienUsado(SegundoFactorEntity factor, String secret, String code) {
         long last = factor.getUltimoPaso();
         return last >= 0 && code != null && Math.abs(codes.currentStep() - last) <= 1

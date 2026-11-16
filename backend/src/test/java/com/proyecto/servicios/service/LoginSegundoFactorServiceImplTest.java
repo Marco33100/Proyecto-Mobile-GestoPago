@@ -1,6 +1,9 @@
 package com.proyecto.servicios.service;
 
+import com.proyecto.servicios.entity.sf.PlataformaSesion;
 import com.proyecto.servicios.entity.sf.SegundoFactorEntity;
+import com.proyecto.servicios.exception.auth.SesionActivaException;
+import com.proyecto.servicios.model.auth.SesionActivaResponse;
 import com.proyecto.servicios.entity.sf.UserEntity;
 import com.proyecto.servicios.exception.auth.CodigoSegundoFactorInvalidoException;
 import com.proyecto.servicios.exception.auth.LoginRateLimitException;
@@ -65,7 +68,7 @@ class LoginSegundoFactorServiceImplTest {
         user = new UserEntity(UUID.randomUUID(), "ana@example.com", "ana", "hash", "Ana Lopez", true, Instant.now());
         auth = mock(AuthService.class);
         when(auth.verificarCredenciales(any())).thenReturn(user);
-        when(auth.emitirSesion(user)).thenReturn(new LoginResponse("jwt-sesion", "Bearer",
+        when(auth.emitirSesion(eq(user), any())).thenReturn(new LoginResponse("jwt-sesion", "Bearer",
                 Instant.now().plusSeconds(3600), null));
         users = mock(UserRepository.class);
         when(users.bloquearUsuarioDeSesion(user.getId())).thenReturn(Optional.of(user));
@@ -78,7 +81,16 @@ class LoginSegundoFactorServiceImplTest {
     }
 
     private LoginResponse verificar(String desafio, String codigo) {
-        return service.verificar(new VerificarLoginRequest(desafio, codigo, null));
+        return verificarMovil(new VerificarLoginRequest(desafio, codigo, null));
+    }
+
+    private LoginResponse verificarMovil(VerificarLoginRequest request) {
+        return service.verificar(request, PlataformaSesion.MOVIL);
+    }
+
+    private void sesionAbiertaEnWeb() {
+        when(auth.sesionActiva(user.getId())).thenReturn(Optional.of(
+                new SesionActivaResponse(PlataformaSesion.WEB, now.get().minusSeconds(600))));
     }
 
     private void avanzar() {
@@ -101,7 +113,7 @@ class LoginSegundoFactorServiceImplTest {
         assertThat(desafio.segundoFactorConfigurado()).isFalse();
         assertThat(desafio.configuracion().uri()).startsWith("otpauth://totp/Gestopago%3Aana%40example.com")
                 .contains("issuer=Gestopago");
-        verify(auth, never()).emitirSesion(any());
+        verify(auth, never()).emitirSesion(any(), any());
 
         String codigo = codes.code(desafio.configuracion().secreto(), codes.currentStep());
         LoginResponse sesion = verificar(desafio.desafio(), codigo);
@@ -124,7 +136,7 @@ class LoginSegundoFactorServiceImplTest {
         assertThatThrownBy(() -> verificar(desafio.desafio(), "000000"))
                 .isInstanceOf(CodigoSegundoFactorInvalidoException.class);
         assertThat(store.get(user.getId()).getIntentos()).isEqualTo(1);
-        verify(auth, never()).emitirSesion(any());
+        verify(auth, never()).emitirSesion(any(), any());
 
         LoginResponse sesion = verificar(desafio.desafio(), codes.code(secreto, codes.currentStep()));
         assertThat(sesion.accessToken()).isEqualTo("jwt-sesion");
@@ -180,6 +192,50 @@ class LoginSegundoFactorServiceImplTest {
     }
 
     @Test
+    void sesionAbiertaPideConfirmacionSinConsumirElCodigo() {
+        String secreto = vincular();
+        clearInvocations(auth);
+        sesionAbiertaEnWeb();
+        String desafio = iniciar().desafio();
+        String codigo = codes.code(secreto, codes.currentStep());
+
+        assertThatThrownBy(() -> verificar(desafio, codigo))
+                .isInstanceOfSatisfying(SesionActivaException.class,
+                        error -> assertThat(error.getSesion().plataforma()).isEqualTo(PlataformaSesion.WEB));
+        verify(auth, never()).emitirSesion(any(), any());
+        assertThat(store.get(user.getId()).getIntentos()).isZero();
+
+        // Al confirmar, el mismo codigo sirve porque no se consumio.
+        LoginResponse sesion = verificarMovil(new VerificarLoginRequest(desafio, codigo, null, true));
+        assertThat(sesion.accessToken()).isEqualTo("jwt-sesion");
+        verify(auth).emitirSesion(user, PlataformaSesion.MOVIL);
+    }
+
+    @Test
+    void codigoIncorrectoConSesionAbiertaNoRevelaLaSesionYCuentaIntento() {
+        vincular();
+        sesionAbiertaEnWeb();
+        String desafio = iniciar().desafio();
+
+        assertThatThrownBy(() -> verificar(desafio, "000000"))
+                .isInstanceOf(CodigoSegundoFactorInvalidoException.class);
+        assertThat(store.get(user.getId()).getIntentos()).isEqualTo(1);
+    }
+
+    @Test
+    void vinculacionConSesionAbiertaPideConfirmacionAntesDeActivar() {
+        LoginDesafioResponse desafio = iniciar();
+        sesionAbiertaEnWeb();
+        String codigo = codes.code(desafio.configuracion().secreto(), codes.currentStep());
+
+        assertThatThrownBy(() -> verificar(desafio.desafio(), codigo)).isInstanceOf(SesionActivaException.class);
+        assertThat(store.get(user.getId()).getSecretoCifrado()).isNull();
+
+        LoginResponse sesion = verificarMovil(new VerificarLoginRequest(desafio.desafio(), codigo, null, true));
+        assertThat(sesion.codigosRecuperacion()).hasSize(10);
+    }
+
+    @Test
     void cincoCodigosIncorrectosBloqueanElInicioDeSesion() {
         String secreto = vincular();
         String desafio = iniciar().desafio();
@@ -189,7 +245,7 @@ class LoginSegundoFactorServiceImplTest {
         }
         String correcto = codes.code(secreto, codes.currentStep());
         assertThatThrownBy(() -> verificar(desafio, correcto)).isInstanceOf(LoginRateLimitException.class);
-        verify(auth, times(1)).emitirSesion(any()); // solo la vinculacion inicial
+        verify(auth, times(1)).emitirSesion(any(), any()); // solo la vinculacion inicial
     }
 
     @Test
@@ -200,11 +256,11 @@ class LoginSegundoFactorServiceImplTest {
                 .codigosRecuperacion().get(0);
 
         String desafio = iniciar().desafio();
-        LoginResponse sesion = service.verificar(new VerificarLoginRequest(desafio, null, recuperacion.toLowerCase()));
+        LoginResponse sesion = verificarMovil(new VerificarLoginRequest(desafio, null, recuperacion.toLowerCase()));
         assertThat(sesion.accessToken()).isEqualTo("jwt-sesion");
 
         String otro = iniciar().desafio();
-        assertThatThrownBy(() -> service.verificar(new VerificarLoginRequest(otro, null, recuperacion)))
+        assertThatThrownBy(() -> verificarMovil(new VerificarLoginRequest(otro, null, recuperacion)))
                 .isInstanceOf(CodigoSegundoFactorInvalidoException.class);
     }
 
@@ -228,7 +284,7 @@ class LoginSegundoFactorServiceImplTest {
             assertThatThrownBy(() -> verificar(desafio, "123456"))
                     .isInstanceOf(CodigoSegundoFactorInvalidoException.class);
         }
-        verify(auth, never()).emitirSesion(any());
+        verify(auth, never()).emitirSesion(any(), any());
     }
 
     @Test
@@ -240,9 +296,9 @@ class LoginSegundoFactorServiceImplTest {
     @Test
     void exigeExactamenteUnMetodoDeVerificacion() {
         String desafio = iniciar().desafio();
-        assertThatThrownBy(() -> service.verificar(new VerificarLoginRequest(desafio, null, null)))
+        assertThatThrownBy(() -> verificarMovil(new VerificarLoginRequest(desafio, null, null)))
                 .isInstanceOf(CodigoSegundoFactorInvalidoException.class);
-        assertThatThrownBy(() -> service.verificar(new VerificarLoginRequest(desafio, "123456",
+        assertThatThrownBy(() -> verificarMovil(new VerificarLoginRequest(desafio, "123456",
                 "AAAAAAAA-BBBBBBBB-CCCCCCCC-DDDDDDDD")))
                 .isInstanceOf(CodigoSegundoFactorInvalidoException.class);
     }
@@ -253,7 +309,7 @@ class LoginSegundoFactorServiceImplTest {
         user.desactivar();
         String codigo = codes.code(desafio.configuracion().secreto(), codes.currentStep());
         assertThatThrownBy(() -> verificar(desafio.desafio(), codigo)).isInstanceOf(UsuarioInactivoException.class);
-        verify(auth, never()).emitirSesion(any());
+        verify(auth, never()).emitirSesion(any(), any());
     }
 
     @Test

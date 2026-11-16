@@ -1,6 +1,7 @@
 package com.proyecto.servicios.controller;
 
 import com.proyecto.servicios.config.WebSessionCookies;
+import com.proyecto.servicios.entity.sf.PlataformaSesion;
 import com.proyecto.servicios.model.auth.LoginDesafioResponse;
 import com.proyecto.servicios.model.auth.LoginRequest;
 import com.proyecto.servicios.model.auth.VerificarLoginRequest;
@@ -69,13 +70,16 @@ public class AuthController {
     @PostMapping("/login/verificar")
     @Operation(summary = "Paso 2: verifica el codigo del autenticador y devuelve la sesion JWT",
             description = "Acepta el codigo de 6 digitos o un codigo de recuperacion. Con X-Auth-Mode: cookie "
-                    + "(cliente web) el JWT se entrega en una cookie HttpOnly y no en el cuerpo.")
+                    + "(cliente web) el JWT se entrega en una cookie HttpOnly y no en el cuerpo. Si hay una sesion "
+                    + "abierta en otro dispositivo responde 409 con su plataforma, sin consumir el codigo; se "
+                    + "reenvia con cerrarSesionAnterior=true para cerrarla y entrar.")
     public ResponseEntity<GenericResponse<LoginResponse>> verificar(
             @Valid @RequestBody VerificarLoginRequest request,
             @Parameter(description = "cookie para el cliente web")
             @RequestHeader(value = WebSessionCookies.AUTH_MODE_HEADER, required = false) String authMode) {
-        LoginResponse result = loginService.verificar(request);
-        if (!webSessionCookies.cookieModeRequested(authMode)) {
+        boolean web = webSessionCookies.cookieModeRequested(authMode);
+        LoginResponse result = loginService.verificar(request, web ? PlataformaSesion.WEB : PlataformaSesion.MOVIL);
+        if (!web) {
             return ResponseEntity.ok()
                     .header(HttpHeaders.CACHE_CONTROL, "no-store")
                     .body(GenericResponse.exito("Inicio de sesion correcto", result));
