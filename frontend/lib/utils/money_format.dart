@@ -14,6 +14,17 @@ class MoneyFormat {
     return _formatCents(amountCents + commissionCents);
   }
 
+  /// Suma importes sin errores de punto flotante. Ignora valores inválidos;
+  /// devuelve 'No disponible' si ninguno es válido.
+  static String sumMxn(Iterable<Object?> values) {
+    BigInt? total;
+    for (final value in values) {
+      final cents = _cents(value);
+      if (cents != null) total = (total ?? BigInt.zero) + cents;
+    }
+    return total == null ? 'No disponible' : _formatCents(total);
+  }
+
   static BigInt? _cents(Object? value) {
     if (value == null) return null;
     final raw = value.toString().trim();

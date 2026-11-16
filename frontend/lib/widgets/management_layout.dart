@@ -70,12 +70,13 @@ class ManagementCard extends StatelessWidget {
   final List<Widget> children;
   @override
   Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.all(18),
-    margin: const EdgeInsets.only(bottom: 14),
+    padding: const EdgeInsets.all(AppSpace.xl - 4),
+    margin: const EdgeInsets.only(bottom: AppSpace.lg),
     decoration: BoxDecoration(
       color: warmSurface,
       border: Border.all(color: outlineColor),
-      borderRadius: BorderRadius.circular(AppRadius.md),
+      borderRadius: BorderRadius.circular(AppRadius.lg),
+      boxShadow: AppShadow.card,
     ),
     child: Material(
       type: MaterialType.transparency,
