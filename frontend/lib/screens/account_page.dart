@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
+import '../config/http_client_factory.dart';
 import '../models/login_session.dart';
 import '../services/payment_api_service.dart';
 import '../services/profile_api_service.dart';
@@ -23,7 +23,7 @@ class AccountPage extends StatefulWidget {
 }
 
 class _AccountPageState extends State<AccountPage> {
-  final _client = http.Client();
+  final _client = createHttpClient();
   late final _api =
       widget.api ??
       ProfileApiService(PaymentApiService(_client, widget.session));

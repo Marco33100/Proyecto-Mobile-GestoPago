@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/login_session.dart';
 import '../services/auth_api_service.dart';
-import '../storage/secure_session_store.dart';
+import '../storage/session_store_factory.dart';
 import '../storage/session_store.dart';
 import '../theme.dart';
 import '../validation/login_validators.dart';
@@ -59,7 +59,7 @@ class _LoginPageState extends State<LoginPage> {
         email: _emailController.text,
         password: _passwordController.text,
       );
-      await (widget.sessionStore ?? SecureSessionStore(widget.authApi)).save(
+      await (widget.sessionStore ?? createSessionStore(widget.authApi)).save(
         session,
       );
       if (!mounted) return;

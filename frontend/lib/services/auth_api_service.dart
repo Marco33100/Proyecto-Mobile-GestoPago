@@ -6,17 +6,22 @@ import 'package:http/http.dart' as http;
 
 import '../config/api_config.dart';
 import '../models/login_session.dart';
+import 'auth_headers.dart';
 
 class AuthApiService {
   AuthApiService(
     this._client, {
     this.requestTimeout = const Duration(seconds: 10),
     this.registrationTimeout = const Duration(seconds: 20),
-  });
+    bool? cookieSession,
+  }) : cookieSession = cookieSession ?? ApiConfig.useCookieSession;
 
   final http.Client _client;
   final Duration requestTimeout;
   final Duration registrationTimeout;
+
+  /// Web: el backend entrega la sesión en una cookie HttpOnly.
+  final bool cookieSession;
 
   Future<String> registerClient({
     required LoginSession session,
@@ -42,20 +47,79 @@ class AuthApiService {
   Future<LoginSession> login({
     required String email,
     required String password,
-  }) => _post(
-    path: '/api/auth/login',
-    payload: {'email': email.trim(), 'password': password},
-    timeout: requestTimeout,
-    successStatuses: const {200},
-    parse: LoginSession.fromJson,
-  );
+  }) async {
+    final session = await _post(
+      path: '/api/auth/login',
+      payload: {'email': email.trim(), 'password': password},
+      timeout: requestTimeout,
+      successStatuses: const {200},
+      extraHeaders: cookieSession ? const {'X-Auth-Mode': 'cookie'} : const {},
+      parse: (data) =>
+          LoginSession.fromJson(data, cookieSession: cookieSession),
+    );
+    if (cookieSession) await refreshCsrfToken();
+    return session;
+  }
 
-  Future<LoginSession> restoreSession(String token, DateTime expiresAt) async {
+  /// Pide el token CSRF que la sesión web envía en cada operación que
+  /// modifica datos. Se guarda solo en memoria.
+  Future<void> refreshCsrfToken() async {
+    try {
+      final response = await _client
+          .get(Uri.parse('${ApiConfig.baseUrl}/api/auth/csrf'))
+          .timeout(requestTimeout);
+      if (response.statusCode != 200) {
+        throw ApiException(
+          statusCode: response.statusCode,
+          code: 'CSRF_UNAVAILABLE',
+          message: response.statusCode == 401
+              ? 'Tu sesion expiro. Inicia sesion nuevamente.'
+              : 'No fue posible preparar la sesion segura. Intenta nuevamente.',
+        );
+      }
+      final data = _decodeBody(response.body)['datos'];
+      if (data is! Map ||
+          data['token'] is! String ||
+          data['headerName'] is! String) {
+        throw _invalidResponse;
+      }
+      AuthHeaders.csrfToken = data['token'] as String;
+      AuthHeaders.csrfHeader = data['headerName'] as String;
+    } on TimeoutException {
+      throw const ApiException(
+        code: 'CONNECTION_TIMEOUT',
+        message: 'No fue posible preparar la sesion segura.',
+      );
+    } on http.ClientException {
+      throw const ApiException(
+        code: 'NETWORK_ERROR',
+        message: 'No fue posible conectarse con el servidor.',
+      );
+    } on FormatException {
+      throw _invalidResponse;
+    }
+  }
+
+  /// Web: la cookie HttpOnly la envía el navegador; solo se consulta el perfil.
+  Future<LoginSession> restoreCookieSession(DateTime expiresAt) async {
+    final session = await _restore(const {}, '', expiresAt);
+    await refreshCsrfToken();
+    return session;
+  }
+
+  Future<LoginSession> restoreSession(String token, DateTime expiresAt) =>
+      _restore({'Authorization': 'Bearer $token'}, token, expiresAt);
+
+  Future<LoginSession> _restore(
+    Map<String, String> headers,
+    String token,
+    DateTime expiresAt,
+  ) async {
     try {
       final response = await _client
           .get(
             Uri.parse('${ApiConfig.baseUrl}/api/auth/sesion'),
-            headers: {'Authorization': 'Bearer $token'},
+            headers: headers,
           )
           .timeout(requestTimeout);
       if (response.statusCode != 200) {
@@ -77,7 +141,7 @@ class AuthApiService {
         'tokenType': 'Bearer',
         'expiresAt': expiresAt.toUtc().toIso8601String(),
         'user': user,
-      });
+      }, cookieSession: token.isEmpty);
     } on TimeoutException {
       throw const ApiException(
         code: 'CONNECTION_TIMEOUT',
@@ -117,6 +181,7 @@ class AuthApiService {
     required T Function(Map<String, dynamic>) parse,
     Map<String, dynamic>? payload,
     LoginSession? session,
+    Map<String, String> extraHeaders = const {},
     bool emptySuccess = false,
   }) async {
     try {
@@ -125,8 +190,8 @@ class AuthApiService {
             Uri.parse('${ApiConfig.baseUrl}$path'),
             headers: {
               'Content-Type': 'application/json',
-              if (session != null)
-                'Authorization': '${session.tokenType} ${session.accessToken}',
+              ...extraHeaders,
+              if (session != null) ...AuthHeaders.of(session),
             },
             body: payload == null ? null : jsonEncode(payload),
           )

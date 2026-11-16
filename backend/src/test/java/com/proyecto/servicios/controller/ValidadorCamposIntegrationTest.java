@@ -32,7 +32,8 @@ class ValidadorCamposIntegrationTest {
     @Test
     void validacionDelLoginUsaSoloCodigoYMensajeConHttp400() throws Exception {
         var auth = mock(AuthService.class);
-        var mvc = MockMvcBuilders.standaloneSetup(new AuthController(auth, mock(LoginAttemptLimiter.class)))
+        var mvc = MockMvcBuilders.standaloneSetup(new AuthController(auth, mock(LoginAttemptLimiter.class),
+                new com.proyecto.servicios.config.WebSessionCookies(new com.proyecto.servicios.config.WebSessionProperties())))
                 .setControllerAdvice(new ValidadorCampos(), new com.proyecto.servicios.controller.GlobalApiExceptionHandler()).build();
         mvc.perform(post("/api/auth/login").contentType("application/json")
                         .content("{\"email\":\"correo-privado-invalido\",\"password\":\"\"}"))

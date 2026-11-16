@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import '../config/http_client_factory.dart';
 
 import '../models/login_session.dart';
 import '../services/auth_api_service.dart';
@@ -59,7 +60,7 @@ class _HomePageState extends State<HomePage> {
   @override
   void initState() {
     super.initState();
-    _client = http.Client();
+    _client = createHttpClient();
     _data = HomeDataService(_client, widget.session);
     _refresh();
   }
