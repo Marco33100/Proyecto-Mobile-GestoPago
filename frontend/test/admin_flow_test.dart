@@ -471,4 +471,24 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  testWidgets('conciliación sin acceso explica la causa del 403', (
+    tester,
+  ) async {
+    final client = MockClient(
+      (_) async => http.Response(
+        jsonEncode({'codigo': '02', 'mensaje': 'No autorizado'}),
+        403,
+      ),
+    );
+    addTearDown(client.close);
+    await tester.pumpWidget(
+      MaterialApp(home: ReconciliationPage(api: api(client))),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.textContaining('No tienes acceso a la conciliación'),
+      findsOneWidget,
+    );
+  });
 }

@@ -13,11 +13,15 @@ class AccountPage extends StatefulWidget {
     required this.onLogout,
     this.isLoggingOut = false,
     this.api,
+    this.onSecurity,
   });
   final LoginSession session;
   final Future<void> Function() onLogout;
   final bool isLoggingOut;
   final ProfileApiService? api;
+
+  /// Abre "Seguridad de pagos"; sin él no se muestra el botón.
+  final VoidCallback? onSecurity;
   @override
   State<AccountPage> createState() => _AccountPageState();
 }
@@ -188,6 +192,15 @@ class _AccountPageState extends State<AccountPage> {
         icon: const Icon(Icons.lock_outline),
         label: const Text('Cambiar contraseña'),
       ),
+      // El autenticador solo se administra desde /api/pagos (rol cliente).
+      if (!widget.session.isExecutive && widget.onSecurity != null) ...[
+        const SizedBox(height: 12),
+        OutlinedButton.icon(
+          onPressed: _busy ? null : widget.onSecurity,
+          icon: const Icon(Icons.verified_user_outlined),
+          label: const Text('Seguridad de pagos'),
+        ),
+      ],
       if (_editing) ...[
         const SizedBox(height: 16),
         const Text(

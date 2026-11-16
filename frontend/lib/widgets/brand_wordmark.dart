@@ -41,7 +41,7 @@ class BrandWordmark extends StatelessWidget {
             children: [
               BrandMark(size: compact ? 44 : 72, onDark: onDark),
               const SizedBox(height: AppSpace.md),
-              name,
+              FittedBox(fit: BoxFit.scaleDown, child: name),
             ],
           )
         : Row(
