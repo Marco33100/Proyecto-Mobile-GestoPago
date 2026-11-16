@@ -73,6 +73,10 @@ class _PaymentPageState extends State<PaymentPage> {
   bool _obscurePassword = true;
   bool _showRecoveryInput = false;
 
+  /// Se perdió la respuesta de una operación ya iniciada (red, tiempo agotado
+  /// o error del servidor): el resultado es desconocido y no se debe repetir.
+  bool _communicationError = false;
+
   bool get _hasUnresolvedPayment => _pendingId != null;
   bool get _terminal => _terminalStates.contains(_payment?['estado']);
   bool get _isGiftCard => _product != null && isGiftCard(_product!);
@@ -113,13 +117,16 @@ class _PaymentPageState extends State<PaymentPage> {
       _busy = true;
       _error = null;
       _paymentsUnavailable = false;
+      _communicationError = false;
     });
     try {
       await action();
     } on PaymentFailure catch (failure) {
       _error = failure.message;
       _paymentsUnavailable = failure.status == 503;
+      _communicationError = _hasUnresolvedPayment && failure.communication;
     } catch (_) {
+      _communicationError = _hasUnresolvedPayment;
       _error = _hasUnresolvedPayment
           ? 'No se pudo consultar el pago. No lo repitas; vuelve a consultar su estado.'
           : 'No se pudo completar la solicitud. Revisa tu conexión e inténtalo de nuevo.';
@@ -305,6 +312,13 @@ class _PaymentPageState extends State<PaymentPage> {
     _payment = null;
     _product = null;
     _revealPin = false;
+    // Abierto desde el catálogo: volver ahí en lugar de un formulario vacío.
+    if (!mounted) return;
+    final navigator = Navigator.of(context);
+    if (navigator.canPop()) {
+      navigator.pop();
+      return;
+    }
     await _load();
   }
 
@@ -395,7 +409,8 @@ class _PaymentPageState extends State<PaymentPage> {
                                 semanticsLabel: 'Procesando solicitud',
                               ),
                             ),
-                          if (_error != null) ...[
+                          // El error de comunicación tiene su propia tarjeta.
+                          if (_error != null && !_communicationError) ...[
                             StatusMessage(
                               icon: _paymentsUnavailable
                                   ? Icons.pause_circle_outline_rounded
@@ -727,7 +742,34 @@ class _PaymentPageState extends State<PaymentPage> {
     return null;
   }
 
+  /// Resultado desconocido por un fallo de red o del servidor. Solo permite
+  /// consultar: repetir la autorización podría duplicar el cobro.
+  Widget _buildCommunicationError() => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      _OutcomeCard(
+        style: _OutcomeStyle.communication,
+        title: 'No pudimos confirmar tu compra',
+        description: _error ?? 'Se perdió la conexión con el servidor.',
+        detail:
+            'Puede que se haya aplicado o no. No la repitas: consulta su estado '
+            'y te diremos el resultado confirmado.',
+      ),
+      const SizedBox(height: 14),
+      FilledButton.icon(
+        onPressed: _busy ? null : () => _run(_consult),
+        icon: const Icon(Icons.refresh_rounded),
+        label: const Text('Consultar estado'),
+      ),
+      if (_payment != null) ...[
+        const SizedBox(height: 16),
+        _paymentDetails(_payment!),
+      ],
+    ],
+  );
+
   Widget _buildPaymentStatus() {
+    if (_communicationError) return _buildCommunicationError();
     final payment = _payment;
     if (payment == null) {
       return StatusMessage(
@@ -745,51 +787,26 @@ class _PaymentPageState extends State<PaymentPage> {
     }
 
     final state = _text(payment['estado']);
-    final prepared = state == 'PREPARADO';
-    final success = state == 'APLICADO';
-    final statusIcon = success
-        ? Icons.check_circle_outline_rounded
-        : prepared
-        ? Icons.fact_check_outlined
-        : state == 'RECHAZADO' || state == 'EXPIRADO'
-        ? Icons.error_outline_rounded
-        : Icons.hourglass_top_rounded;
+    final style = _OutcomeStyle.of(state);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Container(
-          padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            color: success ? successSurface : warmSurface,
-            border: Border.all(
-              color: success ? ink.withValues(alpha: .24) : outlineColor,
-            ),
-            borderRadius: BorderRadius.circular(AppRadius.lg),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Icon(statusIcon, color: success ? ink : terracotta, size: 36),
-              const SizedBox(height: 12),
-              Text(
-                _statusTitle(state),
-                style: Theme.of(context).textTheme.headlineSmall,
-              ),
-              const SizedBox(height: 6),
-              Text(
-                _statusDescription(state, payment),
-                style: Theme.of(context).textTheme.bodyMedium,
-              ),
-              if (_text(payment['aviso']).isNotEmpty) ...[
-                const SizedBox(height: 14),
-                Text(
-                  _text(payment['aviso']),
-                  style: Theme.of(context).textTheme.bodyMedium,
-                ),
-              ],
-            ],
-          ),
+        _OutcomeCard(
+          style: style,
+          title: _statusTitle(state),
+          description: _statusDescription(state, payment),
+          // Confirmación visual: el importe cobrado, grande, solo si se aplicó.
+          amount: state == 'APLICADO'
+              ? MoneyFormat.totalMxn(
+                      payment['monto'],
+                      payment['comisionCliente'] ?? 0,
+                    ) ??
+                    MoneyFormat.mxn(payment['monto'])
+              : null,
+          detail: _text(payment['aviso']).isEmpty
+              ? null
+              : _text(payment['aviso']),
         ),
         const SizedBox(height: 16),
         _paymentDetails(payment),
@@ -885,6 +902,7 @@ class _PaymentPageState extends State<PaymentPage> {
       payment['saldoReferencia'],
       money: true,
     );
+    add('Transacción', payment['idTransaccion']);
     add('Autorización', payment['autorizacion']);
     add('Folio de pago', payment['upc']);
     add('Vigencia', _formatDate(payment['venceEn']));
@@ -1191,19 +1209,18 @@ class _PaymentPageState extends State<PaymentPage> {
   }
 
   String _statusTitle(String state) => switch (state) {
-    'APLICADO' => 'Pago realizado',
+    'APLICADO' => 'Compra exitosa',
     'PREPARADO' => 'Revisa tu pago',
-    'ENVIADO' || 'PENDIENTE' => 'Pago en proceso',
-    'REVISION' => 'Pago en revisión',
-    'RECHAZADO' => 'Pago no aplicado',
+    'ENVIADO' || 'PENDIENTE' || 'REVISION' => 'Compra pendiente',
+    'RECHAZADO' => 'Compra rechazada',
     'EXPIRADO' => 'Solicitud vencida',
     _ => 'Estamos verificando tu pago',
   };
 
+  // El aviso del servidor se muestra aparte, debajo de esta descripción.
   String _statusDescription(String state, Map<String, dynamic> payment) {
-    if (_text(payment['aviso']).isNotEmpty) return _text(payment['aviso']);
     return switch (state) {
-      'APLICADO' => 'El proveedor confirmó que el pago se aplicó.',
+      'APLICADO' => 'Gestopago confirmó tu compra.',
       'PREPARADO' =>
         'Aún no se ha cobrado. Revisa los datos y autoriza para continuar.',
       'ENVIADO' || 'PENDIENTE' =>
@@ -1344,4 +1361,115 @@ class _DetailLine extends StatelessWidget {
       ],
     ),
   );
+}
+
+/// Aspecto de cada resultado: los cuatro que pide el negocio (exitosa,
+/// rechazada, pendiente y error de comunicación) más la revisión previa.
+class _OutcomeStyle {
+  const _OutcomeStyle(this.icon, this.background, this.foreground);
+
+  final IconData icon;
+  final Color background;
+  final Color foreground;
+
+  static const success = _OutcomeStyle(
+    Icons.check_circle_rounded,
+    successSurface,
+    ink,
+  );
+  static const rejected = _OutcomeStyle(
+    Icons.cancel_rounded,
+    errorSurface,
+    errorOnSurface,
+  );
+  static const expired = _OutcomeStyle(
+    Icons.event_busy_rounded,
+    errorSurface,
+    errorOnSurface,
+  );
+  static const pending = _OutcomeStyle(
+    Icons.hourglass_top_rounded,
+    terracottaSoft,
+    terracotta,
+  );
+  static const communication = _OutcomeStyle(Icons.wifi_off_rounded, sage, ink);
+  static const review = _OutcomeStyle(
+    Icons.fact_check_outlined,
+    warmSurface,
+    terracotta,
+  );
+
+  static _OutcomeStyle of(String state) => switch (state) {
+    'APLICADO' => success,
+    'RECHAZADO' => rejected,
+    'EXPIRADO' => expired,
+    'PREPARADO' => review,
+    _ => pending,
+  };
+}
+
+class _OutcomeCard extends StatelessWidget {
+  const _OutcomeCard({
+    required this.style,
+    required this.title,
+    required this.description,
+    this.amount,
+    this.detail,
+  });
+
+  final _OutcomeStyle style;
+  final String title;
+  final String description;
+  final String? amount;
+  final String? detail;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Semantics(
+      liveRegion: true,
+      container: true,
+      child: Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: style.background,
+          border: Border.all(color: style.foreground.withValues(alpha: .28)),
+          borderRadius: BorderRadius.circular(AppRadius.lg),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            TweenAnimationBuilder<double>(
+              tween: Tween(begin: .6, end: 1),
+              duration: AppMotion.of(
+                context,
+                const Duration(milliseconds: 360),
+              ),
+              curve: Curves.easeOutBack,
+              builder: (context, scale, child) =>
+                  Transform.scale(scale: scale, child: child),
+              child: Icon(style.icon, color: style.foreground, size: 44),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              title,
+              style: theme.textTheme.headlineSmall?.copyWith(
+                color: style.foreground,
+              ),
+            ),
+            if (amount != null) ...[
+              const SizedBox(height: 4),
+              Text(amount!, style: theme.textTheme.headlineMedium),
+            ],
+            const SizedBox(height: 6),
+            Text(description, style: theme.textTheme.bodyMedium),
+            if (detail != null) ...[
+              const SizedBox(height: 12),
+              Text(detail!, style: theme.textTheme.bodyMedium),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
 }

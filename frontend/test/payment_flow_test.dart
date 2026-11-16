@@ -472,7 +472,7 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('Pago en proceso'), findsOneWidget);
+    expect(find.text('Compra pendiente'), findsOneWidget);
     expect(find.text('DESTINO-REAL-123'), findsOneWidget);
     expect(find.text('Revisar pago'), findsNothing);
     expect(pending.id, 'intent');
@@ -537,7 +537,7 @@ void main() {
       await tester.tap(find.text('Autorizar pago'));
       await tester.pumpAndSettle();
       expect(authorizations, 1);
-      expect(find.text('Pago en proceso'), findsOneWidget);
+      expect(find.text('Compra pendiente'), findsOneWidget);
       expect(tester.takeException(), isNull);
       client.close();
     },
