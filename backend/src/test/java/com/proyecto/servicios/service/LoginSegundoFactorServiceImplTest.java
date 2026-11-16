@@ -144,6 +144,42 @@ class LoginSegundoFactorServiceImplTest {
     }
 
     @Test
+    void repetirElCodigoRecienUsadoNoCuentaComoIntentoNiBloquea() {
+        String secreto = vincular();
+        String codigo = codes.code(secreto, codes.currentStep());
+        verificar(iniciar().desafio(), codigo);
+
+        String desafio = iniciar().desafio();
+        for (int i = 0; i < 6; i++) {
+            assertThatThrownBy(() -> verificar(desafio, codigo))
+                    .isInstanceOf(CodigoSegundoFactorInvalidoException.class);
+        }
+        assertThat(store.get(user.getId()).getIntentos()).isZero();
+        assertThat(store.get(user.getId()).getBloqueadoHasta()).isNull();
+
+        // Un codigo realmente incorrecto sigue contando.
+        assertThatThrownBy(() -> verificar(desafio, "000000"))
+                .isInstanceOf(CodigoSegundoFactorInvalidoException.class);
+        assertThat(store.get(user.getId()).getIntentos()).isEqualTo(1);
+
+        avanzar();
+        assertThat(verificar(desafio, codes.code(secreto, codes.currentStep())).accessToken()).isEqualTo("jwt-sesion");
+    }
+
+    @Test
+    void unCodigoViejoFueraDeLaVentanaSiCuentaComoIntento() {
+        String secreto = vincular();
+        String codigo = codes.code(secreto, codes.currentStep());
+        verificar(iniciar().desafio(), codigo);
+        avanzar();
+        avanzar();
+
+        assertThatThrownBy(() -> verificar(iniciar().desafio(), codigo))
+                .isInstanceOf(CodigoSegundoFactorInvalidoException.class);
+        assertThat(store.get(user.getId()).getIntentos()).isEqualTo(1);
+    }
+
+    @Test
     void cincoCodigosIncorrectosBloqueanElInicioDeSesion() {
         String secreto = vincular();
         String desafio = iniciar().desafio();
