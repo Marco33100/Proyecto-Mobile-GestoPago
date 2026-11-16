@@ -9,9 +9,13 @@ import '../models/login_session.dart';
 import 'auth_headers.dart';
 
 class PaymentFailure implements Exception {
-  const PaymentFailure(this.message, {this.status});
+  const PaymentFailure(this.message, {this.status, this.communication = false});
   final String message;
   final int? status;
+
+  /// La respuesta se perdió o no se entendió (red, tiempo agotado, error del
+  /// servidor): no se sabe si la operación se aplicó.
+  final bool communication;
   @override
   String toString() => message;
 }
@@ -68,6 +72,7 @@ class PaymentApiService {
               ? 'Respuesta no disponible. Consulta el estado del pago antes de repetirlo.'
               : 'El servidor no devolvió una respuesta válida. Actualiza la información antes de repetir la operación.',
           status: response.statusCode,
+          communication: true,
         );
       }
       if (response.statusCode < 200 || response.statusCode >= 300) {
@@ -90,6 +95,7 @@ class PaymentApiService {
               ? 'No se pudo completar la solicitud. Consulta el estado antes de repetir el pago.'
               : 'No se pudo completar la solicitud. Revisa los datos y tus permisos.',
           status: response.statusCode,
+          communication: response.statusCode >= 500,
         );
       }
       if (decoded is! Map<String, dynamic>) throw const FormatException();
@@ -105,18 +111,21 @@ class PaymentApiService {
         financial
             ? 'La respuesta tardo demasiado. No repitas el pago: consulta su estado.'
             : 'El servidor tardó demasiado. Actualiza la información antes de repetir la operación.',
+        communication: true,
       );
     } on http.ClientException {
       throw PaymentFailure(
         financial
             ? 'Se perdio la conexion. Consulta el estado antes de repetir el pago.'
             : 'Se perdió la conexión. Revisa tu red y actualiza la información.',
+        communication: true,
       );
     } on FormatException {
       throw PaymentFailure(
         financial
             ? 'Respuesta no reconocida. Consulta el estado del pago.'
             : 'El servidor envió una respuesta no reconocida.',
+        communication: true,
       );
     }
   }

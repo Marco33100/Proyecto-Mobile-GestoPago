@@ -77,6 +77,19 @@ La preparación y el registro TOTP usan GenericResponse existente: codigo entero
 
 Los ejemplos de datos están abreviados; la respuesta incluye concepto, cuenta, UPC, autorización y comprobante cuando existen. **02 no significa necesariamente rechazo**: comprobar estado y aviso. Los errores conservan HTTP apropiado (400, 401, 403, 404, 409, 429 o 503). No hay reenvío automático ante HTTP, timeout o token vencido. Los comprobantes no deben cachearse. El código real del proveedor se conserva internamente, sin sustituirlo por 02 en la auditoría.
 
+## Resultados de compra en la app
+
+La app (web y móvil) traduce `datos.estado` a cuatro resultados visibles, cada uno con color e icono propios:
+
+| Resultado | Estados | Qué ve el cliente |
+|---|---|---|
+| Compra exitosa | APLICADO | Importe cobrado, transacción, autorización, folio y PIN si aplica. Única que cuenta como compra (aparece en el historial). |
+| Compra rechazada | RECHAZADO (y EXPIRADO como "Solicitud vencida") | Aviso de que no hubo cobro. |
+| Compra pendiente | ENVIADO, PENDIENTE, REVISION | Pide consultar el estado y no iniciar otra compra. |
+| Error de comunicación | Sin respuesta: tiempo agotado, red, respuesta ilegible o HTTP 5xx con un pago ya iniciado | "No pudimos confirmar tu compra". Solo permite **Consultar estado**; se oculta "Autorizar pago" para no duplicar el cobro. |
+
+Antes de cobrar, "Revisar pago" prepara la solicitud y muestra el resumen; la compra se confirma al autorizar con el código TOTP.
+
 ## Retención y conciliación
 
 Saldo contable permanece en `saldo`; disponible = saldo - saldo_retenido. Preparar valida pero no reserva. Autorizar vuelve a validar propietario, usuario activo, cuenta activa y disponible, bloquea la cuenta y registra atómicamente retención + ENVIADO antes de la red. Ninguna llamada al proveedor ocurre dentro de la transacción de base de datos.
