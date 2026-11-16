@@ -47,9 +47,10 @@ class _ReconciliationPageState extends State<ReconciliationPage> {
     } catch (e) {
       if (mounted) {
         setState(
-          () => _error = e is PaymentFailure
-              ? e.message
-              : 'No se pudo consultar la conciliación.',
+          () => _error = _failureMessage(
+            e,
+            'No se pudo consultar la conciliación.',
+          ),
         );
       }
     } finally {
@@ -286,9 +287,10 @@ class _ProposalCreatePageState extends State<ProposalCreatePage> {
     } catch (e) {
       if (mounted) {
         setState(() {
-          _error = e is PaymentFailure
-              ? e.message
-              : 'No se pudo confirmar el registro. Consulta la propuesta antes de repetirlo.';
+          _error = _failureMessage(
+            e,
+            'No se pudo confirmar el registro. Consulta la propuesta antes de repetirlo.',
+          );
           _uncertain =
               e is! PaymentFailure || e.status == null || e.status! >= 500;
         });
@@ -463,9 +465,8 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
     } catch (e) {
       if (mounted) {
         setState(
-          () => _error = e is PaymentFailure
-              ? e.message
-              : 'No se pudo consultar la propuesta.',
+          () =>
+              _error = _failureMessage(e, 'No se pudo consultar la propuesta.'),
         );
       }
     } finally {
@@ -510,9 +511,10 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
         setState(() {
           _decisionUncertain =
               e is! PaymentFailure || e.status == null || e.status! >= 500;
-          _error = e is PaymentFailure
-              ? e.message
-              : 'No se confirmó la decisión. Consulta la propuesta antes de repetirla.';
+          _error = _failureMessage(
+            e,
+            'No se confirmó la decisión. Consulta la propuesta antes de repetirla.',
+          );
         });
       }
     } finally {
@@ -634,3 +636,12 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
     );
   }
 }
+
+/// Mensaje de un fallo. El 403 genérico del backend no explica la causa real:
+/// la conciliación está apagada o el usuario no es operador autorizado.
+String _failureMessage(Object e, String fallback) => e is! PaymentFailure
+    ? fallback
+    : e.status == 403
+    ? 'No tienes acceso a la conciliación: debe estar habilitada y tu usuario '
+          'registrado como operador autorizado.'
+    : e.message;
