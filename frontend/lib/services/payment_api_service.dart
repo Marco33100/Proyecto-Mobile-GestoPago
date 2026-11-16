@@ -6,6 +6,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
 import '../config/api_config.dart';
 import '../models/login_session.dart';
+import 'auth_headers.dart';
 
 class PaymentFailure implements Exception {
   const PaymentFailure(this.message, {this.status});
@@ -47,7 +48,7 @@ class PaymentApiService {
     }
     try {
       final headers = {
-        'Authorization': '${session.tokenType} ${session.accessToken}',
+        ...AuthHeaders.of(session),
         'Content-Type': 'application/json',
         'Accept': 'application/json',
       };

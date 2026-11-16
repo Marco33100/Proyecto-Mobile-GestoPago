@@ -52,7 +52,8 @@ class UsuarioAuthSecurityTest {
         context.getEnvironment().getPropertySources().addFirst(
                 new MapPropertySource("test", Map.of("app.database.enabled", "true")));
         context.register(SecurityConfiguration.class, SecurityTestConfiguration.class,
-                LoginRateLimitProperties.class, com.proyecto.servicios.service.Impl.LoginAttemptLimiter.class);
+                LoginRateLimitProperties.class, com.proyecto.servicios.service.Impl.LoginAttemptLimiter.class,
+                WebSessionProperties.class, WebSessionCookies.class);
         context.refresh();
         usuarios = mock(UserRepository.class);
         sesiones = mock(UserSessionRepository.class);
@@ -66,7 +67,8 @@ class UsuarioAuthSecurityTest {
                 usuario.getId(), UUID.randomUUID(), usuario.getEmail(), usuario.getIdentifier()));
         when(active.rolVigente(any(), any())).thenReturn(com.proyecto.servicios.entity.sf.RolUsuario.CLIENTE);
         mvc = MockMvcBuilders.standaloneSetup(new AuthController(auth,
-                context.getBean(com.proyecto.servicios.service.Impl.LoginAttemptLimiter.class)), new UsuarioController(
+                context.getBean(com.proyecto.servicios.service.Impl.LoginAttemptLimiter.class),
+                context.getBean(WebSessionCookies.class)), new UsuarioController(
                 new UsuarioServiceImpl(usuarios, sesiones, encoder, mock(ApplicationEventPublisher.class))))
                 .setCustomArgumentResolvers(new AuthenticationPrincipalArgumentResolver())
                 .setControllerAdvice(new ValidadorCampos(), new com.proyecto.servicios.controller.GlobalApiExceptionHandler())
@@ -465,7 +467,8 @@ class UsuarioAuthSecurityTest {
         }
         @Bean JwtAuthenticationFilter filter(JwtTokenService jwt, ActiveSessionService sessions,
                                             RestAuthenticationEntryPoint entryPoint) {
-            return new JwtAuthenticationFilter(jwt, sessions, entryPoint);
+            return new JwtAuthenticationFilter(jwt, sessions, entryPoint,
+                    new WebSessionCookies(new WebSessionProperties()));
         }
     }
 }

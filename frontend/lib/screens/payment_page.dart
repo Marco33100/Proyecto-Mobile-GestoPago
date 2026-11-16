@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:http/http.dart' as http;
+import '../config/http_client_factory.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
 import '../models/login_session.dart';
@@ -34,7 +34,7 @@ class PaymentPage extends StatefulWidget {
 class _PaymentPageState extends State<PaymentPage> {
   static const _terminalStates = {'APLICADO', 'RECHAZADO', 'EXPIRADO'};
 
-  final _client = http.Client();
+  final _client = createHttpClient();
   final _formKey = GlobalKey<FormState>();
   final _scrollController = ScrollController();
   final _amountController = TextEditingController();

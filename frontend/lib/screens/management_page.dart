@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
+import '../config/http_client_factory.dart';
 import '../models/login_session.dart';
 import '../services/admin_api_service.dart';
 import '../services/auth_api_service.dart';
@@ -26,7 +26,7 @@ class ManagementPage extends StatefulWidget {
 }
 
 class _ManagementPageState extends State<ManagementPage> {
-  final _client = http.Client();
+  final _client = createHttpClient();
   late final _api =
       widget.api ??
       AdminApiService(
