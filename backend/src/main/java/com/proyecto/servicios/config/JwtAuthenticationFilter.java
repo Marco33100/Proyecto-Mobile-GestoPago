@@ -11,6 +11,7 @@ import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.transaction.TransactionException;
@@ -32,37 +33,49 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private final JwtTokenService jwtTokenService;
     private final ActiveSessionService activeSessionService;
     private final RestAuthenticationEntryPoint authenticationEntryPoint;
+    private final WebSessionCookies webSessionCookies;
 
+    @Autowired
     public JwtAuthenticationFilter(JwtTokenService jwtTokenService,
                                    ActiveSessionService activeSessionService,
-                                   RestAuthenticationEntryPoint authenticationEntryPoint) {
+                                   RestAuthenticationEntryPoint authenticationEntryPoint,
+                                   WebSessionCookies webSessionCookies) {
         this.jwtTokenService = jwtTokenService;
         this.activeSessionService = activeSessionService;
         this.authenticationEntryPoint = authenticationEntryPoint;
+        this.webSessionCookies = webSessionCookies;
     }
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
         String path = request.getRequestURI().substring(request.getContextPath().length());
         return "POST".equals(request.getMethod())
-                && "/api/auth/login".equals(path);
+                && WebSessionCookies.LOGIN_PATHS.contains(path);
     }
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response,
                                     FilterChain filterChain) throws ServletException, IOException {
         String authorization = request.getHeader("Authorization");
-        if (!StringUtils.hasText(authorization)) {
-            filterChain.doFilter(request, response);
-            return;
-        }
-        if (!authorization.startsWith("Bearer ") || authorization.length() <= 7) {
-            reject(request, response, null);
-            return;
+        String token;
+        if (StringUtils.hasText(authorization)) {
+            // App movil: el JWT viaja en Authorization y tiene prioridad sobre la cookie.
+            if (!authorization.startsWith("Bearer ") || authorization.length() <= 7) {
+                reject(request, response, null);
+                return;
+            }
+            token = authorization.substring(7).trim();
+        } else {
+            // Cliente web: el JWT viaja en una cookie HttpOnly.
+            token = webSessionCookies.sessionToken(request).orElse(null);
+            if (token == null) {
+                filterChain.doFilter(request, response);
+                return;
+            }
         }
 
         try {
-            AuthenticatedUser user = jwtTokenService.validate(authorization.substring(7).trim());
+            AuthenticatedUser user = jwtTokenService.validate(token);
             RolUsuario rol = activeSessionService.rolVigente(user.userId(), user.sessionId());
             if (rol == null) {
                 throw new BadCredentialsException("La sesion fue reemplazada");

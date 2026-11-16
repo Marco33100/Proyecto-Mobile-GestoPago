@@ -41,6 +41,7 @@ class UsuarioAuthSecurityTest {
     private UserRepository usuarios;
     private UserSessionRepository sesiones;
     private AuthService auth;
+    private com.proyecto.servicios.service.LoginSegundoFactorService loginService;
     private ActiveSessionService active;
     private UserEntity usuario;
     private MockMvc mvc;
@@ -52,11 +53,13 @@ class UsuarioAuthSecurityTest {
         context.getEnvironment().getPropertySources().addFirst(
                 new MapPropertySource("test", Map.of("app.database.enabled", "true")));
         context.register(SecurityConfiguration.class, SecurityTestConfiguration.class,
-                LoginRateLimitProperties.class, com.proyecto.servicios.service.Impl.LoginAttemptLimiter.class);
+                LoginRateLimitProperties.class, com.proyecto.servicios.service.Impl.LoginAttemptLimiter.class,
+                WebSessionProperties.class, WebSessionCookies.class);
         context.refresh();
         usuarios = mock(UserRepository.class);
         sesiones = mock(UserSessionRepository.class);
         auth = mock(AuthService.class);
+        loginService = mock(com.proyecto.servicios.service.LoginSegundoFactorService.class);
         active = context.getBean(ActiveSessionService.class);
         var encoder = new BCryptPasswordEncoder(4);
         usuario = new UserEntity(UUID.randomUUID(), "uno@example.com", "uno", encoder.encode("Actual123!"),
@@ -65,8 +68,9 @@ class UsuarioAuthSecurityTest {
         when(jwt.validate("token-valido")).thenReturn(new AuthenticatedUser(
                 usuario.getId(), UUID.randomUUID(), usuario.getEmail(), usuario.getIdentifier()));
         when(active.rolVigente(any(), any())).thenReturn(com.proyecto.servicios.entity.sf.RolUsuario.CLIENTE);
-        mvc = MockMvcBuilders.standaloneSetup(new AuthController(auth,
-                context.getBean(com.proyecto.servicios.service.Impl.LoginAttemptLimiter.class)), new UsuarioController(
+        mvc = MockMvcBuilders.standaloneSetup(new AuthController(auth, loginService,
+                context.getBean(com.proyecto.servicios.service.Impl.LoginAttemptLimiter.class),
+                context.getBean(WebSessionCookies.class)), new UsuarioController(
                 new UsuarioServiceImpl(usuarios, sesiones, encoder, mock(ApplicationEventPublisher.class))))
                 .setCustomArgumentResolvers(new AuthenticationPrincipalArgumentResolver())
                 .setControllerAdvice(new ValidadorCampos(), new com.proyecto.servicios.controller.GlobalApiExceptionHandler())
@@ -88,13 +92,13 @@ class UsuarioAuthSecurityTest {
                 .andExpect(status().isTooManyRequests())
                 .andExpect(header().exists("Retry-After"))
                 .andExpect(jsonPath("codigo").value(2));
-        verifyNoInteractions(auth);
+        verifyNoInteractions(auth, loginService);
     }
 
     @Test
     void intentosCuentaSeCompartenEntreIpsYNoRevelanSiExisteUsuario() throws Exception {
         context.getBean(LoginRateLimitProperties.class).setAccountAttempts(2);
-        when(auth.login(any())).thenThrow(new InvalidCredentialsException());
+        when(loginService.iniciar(any())).thenThrow(new InvalidCredentialsException());
         String payload = "{\"email\":\"uno@example.com\",\"password\":\"Incorrecta123!\"}";
         for (int i = 1; i <= 2; i++) {
             mvc.perform(post("/api/auth/login").with(request -> {
@@ -108,7 +112,7 @@ class UsuarioAuthSecurityTest {
                 .andExpect(status().isTooManyRequests())
                 .andExpect(header().exists("Retry-After"))
                 .andExpect(jsonPath("codigo").value(2));
-        verify(auth, times(2)).login(any());
+        verify(loginService, times(2)).iniciar(any());
     }
 
     @Test
@@ -338,7 +342,7 @@ class UsuarioAuthSecurityTest {
 
     @Test
     void loginNoRevelaUsuarioInexistenteOInactivo() throws Exception {
-        when(auth.login(any())).thenThrow(new UsuarioNoEncontradoException(), new UsuarioInactivoException());
+        when(loginService.iniciar(any())).thenThrow(new UsuarioNoEncontradoException(), new UsuarioInactivoException());
         for (int intento = 0; intento < 2; intento++) {
             mvc.perform(post("/api/auth/login").contentType("application/json")
                     .content("{\"email\":\"uno@example.com\",\"password\":\"Actual123!\"}"))
@@ -376,7 +380,7 @@ class UsuarioAuthSecurityTest {
 
     @Test
     void loginConTokenAnteriorIgnoraEseTokenYFalloDeTransaccionDevuelve503() throws Exception {
-        when(auth.login(any())).thenThrow(new org.springframework.transaction.CannotCreateTransactionException("fallo"));
+        when(loginService.iniciar(any())).thenThrow(new org.springframework.transaction.CannotCreateTransactionException("fallo"));
         mvc.perform(post("/api/auth/login").header("Authorization", "Bearer token-anterior")
                 .contentType("application/json").content("{\"email\":\"uno@example.com\",\"password\":\"Actual123!\"}"))
                 .andExpect(status().isServiceUnavailable()).andExpect(jsonPath("codigo").value(2));
@@ -465,7 +469,8 @@ class UsuarioAuthSecurityTest {
         }
         @Bean JwtAuthenticationFilter filter(JwtTokenService jwt, ActiveSessionService sessions,
                                             RestAuthenticationEntryPoint entryPoint) {
-            return new JwtAuthenticationFilter(jwt, sessions, entryPoint);
+            return new JwtAuthenticationFilter(jwt, sessions, entryPoint,
+                    new WebSessionCookies(new WebSessionProperties()));
         }
     }
 }

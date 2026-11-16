@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 
 import '../config/api_config.dart';
 import '../models/login_session.dart';
+import 'auth_headers.dart';
 
 class HomeDataException implements Exception {
   const HomeDataException(this.message);
@@ -110,7 +111,7 @@ class HomeDataService {
   }
 
   Map<String, String> get _headers => {
-    'Authorization': '${session.tokenType} ${session.accessToken}',
+    ...AuthHeaders.of(session),
     'Content-Type': 'application/json',
     'Accept': 'application/json',
   };

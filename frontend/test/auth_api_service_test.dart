@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:gestopago_app/models/login_challenge.dart';
 import 'package:gestopago_app/services/auth_api_service.dart';
 
 void main() {
@@ -100,12 +101,44 @@ void main() {
     });
   }
 
-  test('login lee la sesion de datos con codigo 1', () async {
-    final client = MockClient(
-      (_) async => http.Response(
+  test('login solo devuelve el desafio del segundo factor', () async {
+    final client = MockClient((request) async {
+      expect(request.url.path, '/api/auth/login');
+      return http.Response(
         jsonEncode({
           'codigo': 1,
-          'mensaje': 'Inicio de sesion correcto',
+          'mensaje': 'Contrasena verificada. Falta el segundo factor',
+          'datos': {
+            'desafio': 'desafio-firmado',
+            'segundoFactorConfigurado': false,
+            'venceEn': '2030-01-01T00:05:00Z',
+            'configuracion': {
+              'secreto': 'ABCDEFGHIJKLMNOP',
+              'uri': 'otpauth://totp/Gestopago:uno?secret=ABCDEFGHIJKLMNOP',
+            },
+          },
+        }),
+        200,
+      );
+    });
+    addTearDown(client.close);
+    final challenge = await AuthApiService(
+      client,
+    ).login(email: 'uno@example.com', password: 'Prueba123!');
+    expect(challenge.token, 'desafio-firmado');
+    expect(challenge.configured, isFalse);
+    expect(challenge.secret, 'ABCDEFGHIJKLMNOP');
+  });
+
+  test('verificar envia el codigo y lee la sesion y los codigos', () async {
+    Map<String, dynamic>? sent;
+    final client = MockClient((request) async {
+      expect(request.url.path, '/api/auth/login/verificar');
+      expect(request.headers.containsKey('X-Auth-Mode'), isFalse);
+      sent = jsonDecode(request.body) as Map<String, dynamic>;
+      return http.Response(
+        jsonEncode({
+          'codigo': 1,
           'datos': {
             'accessToken': 'token-fixture',
             'tokenType': 'Bearer',
@@ -117,18 +150,26 @@ void main() {
               'fullName': 'Usuario Prueba',
               'rol': 'CLIENTE',
             },
+            'codigosRecuperacion': ['AAAAAAAA-BBBBBBBB-CCCCCCCC-DDDDDDDD'],
           },
         }),
         200,
-      ),
-    );
+      );
+    });
     addTearDown(client.close);
-    final session = await AuthApiService(
-      client,
-    ).login(email: 'uno@example.com', password: 'Prueba123!');
-    expect(session.accessToken, 'token-fixture');
-    expect(session.userId, 'usuario-fixture');
-    expect(session.rol, 'CLIENTE');
+    final verified = await AuthApiService(client, cookieSession: false)
+        .verifyLogin(
+          challenge: LoginChallenge(
+            token: 'desafio-firmado',
+            configured: true,
+            expiresAt: DateTime.utc(2030),
+          ),
+          code: '123456',
+        );
+    expect(sent, {'desafio': 'desafio-firmado', 'codigo': '123456'});
+    expect(verified.session.accessToken, 'token-fixture');
+    expect(verified.session.rol, 'CLIENTE');
+    expect(verified.recoveryCodes, hasLength(1));
   });
 
   test(

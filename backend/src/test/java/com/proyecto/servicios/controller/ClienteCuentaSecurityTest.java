@@ -51,7 +51,8 @@ class ClienteCuentaSecurityTest {
         context.getEnvironment().getPropertySources().addFirst(
                 new MapPropertySource("test", Map.of("app.database.enabled", "true")));
         context.register(SecurityConfiguration.class, SecurityTestConfiguration.class,
-                LoginRateLimitProperties.class, com.proyecto.servicios.service.Impl.LoginAttemptLimiter.class);
+                LoginRateLimitProperties.class, com.proyecto.servicios.service.Impl.LoginAttemptLimiter.class,
+                WebSessionProperties.class, WebSessionCookies.class);
         context.refresh();
         sessions = context.getBean(ActiveSessionService.class);
         usuario = new AuthenticatedUser(UUID.randomUUID(), UUID.randomUUID(), "uno@example.com", "uno");
@@ -290,7 +291,8 @@ String numero = "CTA-0123456789ABCDEF0123";
         @Bean ActiveSessionService sessions() { return mock(ActiveSessionService.class); }
         @Bean JwtAuthenticationFilter jwtFilter(JwtTokenService jwt, ActiveSessionService sessions,
                                                 RestAuthenticationEntryPoint entryPoint) {
-            return new JwtAuthenticationFilter(jwt, sessions, entryPoint);
+            return new JwtAuthenticationFilter(jwt, sessions, entryPoint,
+                    new WebSessionCookies(new WebSessionProperties()));
         }
     }
 }

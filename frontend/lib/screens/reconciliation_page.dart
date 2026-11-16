@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import '../services/admin_api_service.dart';
 import '../services/payment_api_service.dart';
+import '../theme.dart';
 import '../utils/money_format.dart';
 import '../widgets/management_layout.dart';
+import '../widgets/responsive.dart';
 
 final _uuidPattern = RegExp(
   r'^[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$',
@@ -74,6 +76,7 @@ class _ReconciliationPageState extends State<ReconciliationPage> {
     title: 'Conciliación',
     busy: _busy,
     error: _error,
+    maxWidth: ContentWidth.wide,
     children: [
       const Text(
         'Solo operadores autorizados. Una persona propone y otra revisa la evidencia y aprueba. Estas acciones no vuelven a enviar el pago.',
@@ -95,10 +98,16 @@ class _ReconciliationPageState extends State<ReconciliationPage> {
                   : 'Escribe el identificador completo de la propuesta',
             ),
             const SizedBox(height: 12),
-            OutlinedButton.icon(
-              onPressed: _busy ? null : _openProposal,
-              icon: const Icon(Icons.search),
-              label: const Text('Revisar propuesta'),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 360),
+                child: OutlinedButton.icon(
+                  onPressed: _busy ? null : _openProposal,
+                  icon: const Icon(Icons.search),
+                  label: const Text('Revisar propuesta'),
+                ),
+              ),
             ),
           ],
         ),
@@ -125,56 +134,46 @@ class _ReconciliationPageState extends State<ReconciliationPage> {
             padding: EdgeInsets.symmetric(vertical: 22),
             child: Text('No hay pagos en revisión.'),
           ),
-        for (final item in result.items)
-          ManagementCard(
-            children: [
-              SelectableText('Pago: ${item['pagoId']}'),
-              Text('Importe: ${MoneyFormat.mxn(item['monto'])}'),
-              SelectableText('UPC: ${item['upc']}'),
-              Text(
-                'En revisión desde ${item['enviadoEn'] ?? 'fecha no disponible'}',
-              ),
-              const SizedBox(height: 12),
-              TextButton.icon(
-                onPressed: _busy
-                    ? null
-                    : () async {
-                        await Navigator.push<void>(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => ProposalCreatePage(
-                              api: widget.api,
-                              payment: item,
-                            ),
-                          ),
-                        );
-                        if (mounted) await _load(result.page);
-                      },
-                icon: const Icon(Icons.note_add_outlined),
-                label: const Text('Registrar propuesta'),
-              ),
-            ],
-          ),
-        Row(
+        ResponsiveGrid(
+          minItemWidth: 340,
           children: [
-            Expanded(
-              child: OutlinedButton(
-                onPressed: _busy || result.page == 0
-                    ? null
-                    : () => _load(result.page - 1),
-                child: const Text('Anterior'),
+            for (final item in result.items)
+              ManagementCard(
+                children: [
+                  SelectableText('Pago: ${item['pagoId']}'),
+                  Text('Importe: ${MoneyFormat.mxn(item['monto'])}'),
+                  SelectableText('UPC: ${item['upc']}'),
+                  Text(
+                    'En revisión desde ${item['enviadoEn'] ?? 'fecha no disponible'}',
+                  ),
+                  const SizedBox(height: 12),
+                  TextButton.icon(
+                    onPressed: _busy
+                        ? null
+                        : () async {
+                            await Navigator.push<void>(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => ProposalCreatePage(
+                                  api: widget.api,
+                                  payment: item,
+                                ),
+                              ),
+                            );
+                            if (mounted) await _load(result.page);
+                          },
+                    icon: const Icon(Icons.note_add_outlined),
+                    label: const Text('Registrar propuesta'),
+                  ),
+                ],
               ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: OutlinedButton(
-                onPressed: _busy || result.last
-                    ? null
-                    : () => _load(result.page + 1),
-                child: const Text('Siguiente'),
-              ),
-            ),
           ],
+        ),
+        PaginationBar(
+          page: result.page,
+          isLast: result.last,
+          busy: _busy,
+          onPage: _load,
         ),
       ],
     ],

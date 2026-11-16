@@ -20,15 +20,26 @@ class LoginSession {
   final String rol;
   bool get isExecutive => rol == 'EJECUTIVO';
 
-  factory LoginSession.fromJson(Map<String, dynamic> json) {
+  /// Sesión web: el JWT está en una cookie HttpOnly y no en la app.
+  bool get usesCookie => accessToken.isEmpty;
+
+  /// [cookieSession] acepta respuestas sin `accessToken` (login web).
+  factory LoginSession.fromJson(
+    Map<String, dynamic> json, {
+    bool cookieSession = false,
+  }) {
     final user = json['user'];
     if (user is! Map<String, dynamic>) {
       throw const FormatException(
         'La respuesta no contiene el perfil del usuario',
       );
     }
+    final token = json['accessToken'];
+    if (!cookieSession && (token is! String || token.isEmpty)) {
+      throw const FormatException('La respuesta no contiene la sesión');
+    }
     return LoginSession(
-      accessToken: json['accessToken'] as String,
+      accessToken: cookieSession ? '' : token as String,
       tokenType: json['tokenType'] as String? ?? 'Bearer',
       expiresAt: DateTime.parse(json['expiresAt'] as String),
       userId: user['id'] as String,

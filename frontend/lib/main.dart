@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
-import 'storage/secure_session_store.dart';
+import 'config/http_client_factory.dart';
+import 'storage/session_store_factory.dart';
 import 'storage/session_store.dart';
 import 'models/login_session.dart';
 import 'screens/home_page.dart';
@@ -30,7 +31,7 @@ class _GestopagoAppState extends State<GestopagoApp> {
   @override
   void initState() {
     super.initState();
-    _httpClient = http.Client();
+    _httpClient = createHttpClient();
     _authApi = AuthApiService(_httpClient);
   }
 
@@ -67,7 +68,7 @@ class _SessionGateState extends State<SessionGate> {
   bool _loggingOut = false;
 
   late final SessionStore _store =
-      widget.sessionStore ?? SecureSessionStore(widget.authApi);
+      widget.sessionStore ?? createSessionStore(widget.authApi);
 
   @override
   void initState() {
