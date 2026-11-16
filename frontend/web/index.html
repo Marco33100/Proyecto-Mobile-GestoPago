@@ -25,6 +25,15 @@
   <style>
     /* Mismo fondo que la app para evitar un destello blanco al cargar. */
     html, body { margin: 0; background: #F6F0E5; }
+    html {
+      /* Sin destello gris/azul al tocar en iOS y Android: la app da su propio
+         feedback al presionar. */
+      -webkit-tap-highlight-color: transparent;
+      -webkit-text-size-adjust: 100%;
+      /* Evita que "jalar para recargar" del navegador secuestre el scroll
+         de la app, que ya tiene su propio RefreshIndicator. */
+      overscroll-behavior: none;
+    }
   </style>
 </head>
 <body>

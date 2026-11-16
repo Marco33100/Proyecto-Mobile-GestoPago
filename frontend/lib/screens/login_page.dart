@@ -9,6 +9,7 @@ import '../validation/login_validators.dart';
 import '../widgets/brand_wordmark.dart';
 import '../widgets/paper_background.dart';
 import '../widgets/status_message.dart';
+import '../widgets/surfaces.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({
@@ -80,105 +81,144 @@ class _LoginPageState extends State<LoginPage> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    body: PaperBackground(
-      child: SafeArea(
-        child: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(24, 36, 24, 32),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: ContentWidth.auth),
-              child: AutofillGroup(
-                child: Form(
-                  key: _formKey,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      const BrandWordmark(centered: true),
-                      const SizedBox(height: 54),
-                      Text(
-                        'Bienvenido de nuevo',
-                        textAlign: TextAlign.center,
-                        style: Theme.of(context).textTheme.headlineMedium,
-                      ),
-                      const SizedBox(height: 10),
-                      Text(
-                        'Inicia sesión para gestionar tus servicios y pagos.',
-                        textAlign: TextAlign.center,
-                        style: Theme.of(context).textTheme.bodyLarge,
-                      ),
-                      const SizedBox(height: 34),
-                      TextFormField(
-                        controller: _emailController,
-                        enabled: !_loading,
-                        keyboardType: TextInputType.emailAddress,
-                        textInputAction: TextInputAction.next,
-                        autofillHints: const [AutofillHints.email],
-                        autocorrect: false,
-                        decoration: const InputDecoration(
-                          labelText: 'Correo electrónico',
-                          prefixIcon: Icon(Icons.mail_outline_rounded),
-                        ),
-                        validator: LoginValidators.email,
-                      ),
-                      const SizedBox(height: 16),
-                      TextFormField(
-                        controller: _passwordController,
-                        enabled: !_loading,
-                        obscureText: _obscurePassword,
-                        textInputAction: TextInputAction.done,
-                        autofillHints: const [AutofillHints.password],
-                        onFieldSubmitted: (_) => _submit(),
-                        decoration: InputDecoration(
-                          labelText: 'Contraseña',
-                          prefixIcon: const Icon(Icons.lock_outline_rounded),
-                          suffixIcon: IconButton(
-                            tooltip: _obscurePassword
-                                ? 'Mostrar contraseña'
-                                : 'Ocultar contraseña',
-                            onPressed: _loading
-                                ? null
-                                : () => setState(
-                                    () => _obscurePassword = !_obscurePassword,
-                                  ),
-                            icon: Icon(
-                              _obscurePassword
-                                  ? Icons.visibility_outlined
-                                  : Icons.visibility_off_outlined,
-                            ),
-                          ),
-                        ),
-                        validator: LoginValidators.password,
-                      ),
-                      if (_errorMessage != null) ...[
-                        const SizedBox(height: 18),
-                        StatusMessage(
-                          message: _errorMessage!,
-                          icon: Icons.error_outline_rounded,
-                          tone: StatusTone.error,
-                        ),
-                      ],
-                      const SizedBox(height: 24),
-                      FilledButton(
-                        onPressed: _loading ? null : _submit,
-                        child: _loading
-                            ? const SizedBox.square(
-                                dimension: 22,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: warmSurface,
-                                ),
-                              )
-                            : const Text('Iniciar sesión'),
-                      ),
-                      const SizedBox(height: 20),
-                      Text(
-                        '¿Aún no tienes acceso? Solicita el registro a un ejecutivo.',
-                        textAlign: TextAlign.center,
-                        style: Theme.of(context).textTheme.bodyMedium,
-                      ),
-                    ],
+    body: LayoutBuilder(
+      builder: (context, constraints) {
+        final wide = constraints.maxWidth >= Breakpoints.expanded;
+        final form = _buildForm(context, showBrand: !wide);
+        if (!wide) return form;
+        return Row(
+          children: [
+            const Expanded(
+              flex: 5,
+              child: Padding(
+                padding: EdgeInsets.all(AppSpace.lg),
+                child: _BrandPanel(),
+              ),
+            ),
+            Expanded(flex: 4, child: form),
+          ],
+        );
+      },
+    ),
+  );
+
+  Widget _buildForm(BuildContext context, {required bool showBrand}) =>
+      PaperBackground(
+        child: Stack(
+          children: [
+            if (showBrand)
+              const Positioned(
+                right: -70,
+                bottom: -50,
+                child: CornerDiamonds(),
+              ),
+            _formBody(context, showBrand: showBrand),
+          ],
+        ),
+      );
+
+  Widget _formBody(BuildContext context, {required bool showBrand}) => SafeArea(
+    child: Center(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(24, 36, 24, 32),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: ContentWidth.auth),
+          child: AutofillGroup(
+            child: Form(
+              key: _formKey,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (showBrand) ...[
+                    const BrandWordmark(centered: true),
+                    const SizedBox(height: 44),
+                  ],
+                  Text(
+                    'Hola de nuevo',
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.headlineMedium,
                   ),
-                ),
+                  const SizedBox(height: 10),
+                  Text(
+                    'Inicia sesión para gestionar tus servicios y pagos.',
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.bodyLarge,
+                  ),
+                  const SizedBox(height: 34),
+                  TextFormField(
+                    controller: _emailController,
+                    enabled: !_loading,
+                    keyboardType: TextInputType.emailAddress,
+                    textInputAction: TextInputAction.next,
+                    autofillHints: const [AutofillHints.email],
+                    autocorrect: false,
+                    decoration: const InputDecoration(
+                      labelText: 'Correo electrónico',
+                      prefixIcon: _FieldIcon(Icons.mail_outline_rounded),
+                    ),
+                    validator: LoginValidators.email,
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: _passwordController,
+                    enabled: !_loading,
+                    obscureText: _obscurePassword,
+                    textInputAction: TextInputAction.done,
+                    autofillHints: const [AutofillHints.password],
+                    onFieldSubmitted: (_) => _submit(),
+                    decoration: InputDecoration(
+                      labelText: 'Contraseña',
+                      prefixIcon: const _FieldIcon(Icons.lock_outline_rounded),
+                      suffixIcon: IconButton(
+                        tooltip: _obscurePassword
+                            ? 'Mostrar contraseña'
+                            : 'Ocultar contraseña',
+                        onPressed: _loading
+                            ? null
+                            : () => setState(
+                                () => _obscurePassword = !_obscurePassword,
+                              ),
+                        icon: Icon(
+                          _obscurePassword
+                              ? Icons.visibility_outlined
+                              : Icons.visibility_off_outlined,
+                        ),
+                      ),
+                    ),
+                    validator: LoginValidators.password,
+                  ),
+                  if (_errorMessage != null) ...[
+                    const SizedBox(height: 18),
+                    StatusMessage(
+                      message: _errorMessage!,
+                      icon: Icons.error_outline_rounded,
+                      tone: StatusTone.error,
+                    ),
+                  ],
+                  const SizedBox(height: 28),
+                  FilledButton(
+                    style: FilledButton.styleFrom(
+                      shape: const StadiumBorder(),
+                      minimumSize: const Size.fromHeight(56),
+                    ),
+                    onPressed: _loading ? null : _submit,
+                    child: _loading
+                        ? const SizedBox.square(
+                            dimension: 22,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: warmSurface,
+                            ),
+                          )
+                        : const Text('Iniciar sesión'),
+                  ),
+                  const SizedBox(height: 20),
+                  Text(
+                    '¿Aún no tienes acceso? Solicita el registro a un ejecutivo.',
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+                ],
               ),
             ),
           ),
@@ -186,4 +226,130 @@ class _LoginPageState extends State<LoginPage> {
       ),
     ),
   );
+}
+
+/// Ícono de campo seguido de una línea divisoria, como en el diseño móvil.
+class _FieldIcon extends StatelessWidget {
+  const _FieldIcon(this.icon);
+
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(left: AppSpace.lg, right: AppSpace.md),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, color: mutedInk),
+        const SizedBox(width: AppSpace.md),
+        Container(width: 1, height: 26, color: outlineColor),
+      ],
+    ),
+  );
+}
+
+/// Panel de marca del login en pantallas anchas: qué es Gestopago y por qué
+/// confiar en él, para que la pantalla no se sienta vacía.
+class _BrandPanel extends StatelessWidget {
+  const _BrandPanel();
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    // En ventanas bajas se omiten los beneficios para no desbordar el panel.
+    final roomy = MediaQuery.sizeOf(context).height >= 720;
+    return InkPanel(
+      radius: AppRadius.lg + 8,
+      padding: const EdgeInsets.fromLTRB(56, 48, 56, 48),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const BrandWordmark(compact: true, onDark: true),
+          const Spacer(),
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 480),
+            child: Text(
+              'Paga tus servicios con claridad y seguridad.',
+              style: textTheme.displaySmall?.copyWith(color: warmSurface),
+            ),
+          ),
+          const SizedBox(height: AppSpace.lg),
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 440),
+            child: Text(
+              'Consulta tus saldos, elige un servicio y autoriza cada pago '
+              'con un código que solo tú tienes.',
+              style: textTheme.bodyLarge?.copyWith(color: onInkMuted),
+            ),
+          ),
+          if (roomy) ...const [
+            SizedBox(height: AppSpace.xxl),
+            _Feature(
+              icon: Icons.verified_user_outlined,
+              title: 'Doble factor en cada pago',
+              text: 'Nada se cobra sin tu código del autenticador.',
+            ),
+            _Feature(
+              icon: Icons.account_balance_wallet_outlined,
+              title: 'Tus cuentas en un solo lugar',
+              text: 'Saldo disponible siempre a la vista.',
+            ),
+            _Feature(
+              icon: Icons.support_agent_outlined,
+              title: 'Respaldo de un ejecutivo',
+              text: 'Tu alta y cualquier aclaración, con una persona.',
+            ),
+          ],
+          const Spacer(),
+          Text(
+            'Sesión protegida con cookie segura y verificación CSRF.',
+            style: textTheme.bodySmall?.copyWith(color: onInkMuted),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _Feature extends StatelessWidget {
+  const _Feature({required this.icon, required this.title, required this.text});
+
+  final IconData icon;
+  final String title;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppSpace.lg),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          IconBadge(
+            icon: icon,
+            size: 40,
+            background: inkRaised,
+            foreground: terracottaOnInk,
+          ),
+          const SizedBox(width: AppSpace.lg),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: textTheme.titleMedium?.copyWith(color: warmSurface),
+                ),
+                Text(
+                  text,
+                  style: textTheme.bodyMedium?.copyWith(color: onInkMuted),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }

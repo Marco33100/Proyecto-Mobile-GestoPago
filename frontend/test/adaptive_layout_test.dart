@@ -73,7 +73,7 @@ void main() {
   ) async {
     await setScreen(tester, const Size(390, 844));
     await pumpHome(tester, executive());
-    expect(find.byType(NavigationBar), findsOneWidget);
+    expect(find.byKey(const ValueKey('bottom-nav')), findsOneWidget);
     expect(find.byType(NavigationRail), findsNothing);
     expect(tester.takeException(), isNull);
   });
@@ -83,7 +83,7 @@ void main() {
   ) async {
     await setScreen(tester, const Size(1440, 900));
     await pumpHome(tester, executive());
-    expect(find.byType(NavigationBar), findsNothing);
+    expect(find.byKey(const ValueKey('bottom-nav')), findsNothing);
     final rail = tester.widget<NavigationRail>(find.byType(NavigationRail));
     expect(rail.extended, isTrue);
     expect(find.text('Gestopago'), findsOneWidget);
