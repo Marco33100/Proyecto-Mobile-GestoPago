@@ -53,7 +53,14 @@ class _PurchaseHistoryPageState extends State<PurchaseHistoryPage> {
       setState(() {
         if (page == 0) _items.clear();
         if (content is List) {
-          _items.addAll(content.whereType<Map<String, dynamic>>());
+          // La paginación es por posición: si entra una compra nueva entre
+          // páginas, la última ya mostrada se repetiría. Se omite por pagoId.
+          final shown = _items.map((p) => p['pagoId']).toSet();
+          _items.addAll(
+            content.whereType<Map<String, dynamic>>().where(
+              (p) => shown.add(p['pagoId']),
+            ),
+          );
         }
         _page = page;
         // Sin compras el servidor responde codigo 0 sin datos.
@@ -203,6 +210,7 @@ class PurchaseDetailPage extends StatefulWidget {
 class _PurchaseDetailPageState extends State<PurchaseDetailPage> {
   Map<String, dynamic>? _detail;
   bool _loading = true;
+  bool _revealPin = false;
   String? _error;
 
   @override
@@ -272,9 +280,29 @@ class _PurchaseDetailPageState extends State<PurchaseDetailPage> {
             _row('Referencia', data['referencia']),
             _row('Teléfono', data['telefono']),
             _row('Folio interno', data['upc']),
-            _row('PIN', data['pin']),
+            _pinRow(data['pin']),
             _row('Instrucciones', data['leyenda']),
           ],
+        ),
+      ],
+    );
+  }
+
+  /// El PIN es canjeable: oculto hasta que el cliente lo pide, como en el pago.
+  Widget _pinRow(Object? value) {
+    final pin = value?.toString().trim() ?? '';
+    if (pin.isEmpty) return const SizedBox.shrink();
+    return Row(
+      children: [
+        Expanded(child: _row('PIN', _revealPin ? pin : 'Oculto por seguridad')),
+        IconButton(
+          tooltip: _revealPin ? 'Ocultar PIN' : 'Mostrar PIN',
+          onPressed: () => setState(() => _revealPin = !_revealPin),
+          icon: Icon(
+            _revealPin
+                ? Icons.visibility_off_outlined
+                : Icons.visibility_outlined,
+          ),
         ),
       ],
     );

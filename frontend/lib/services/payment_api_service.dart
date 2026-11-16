@@ -43,9 +43,11 @@ class PaymentApiService {
     Map<String, dynamic>? body,
     String method,
   ) async {
+    // El historial solo lee compras ya hechas: sus errores no hablan de repetir pagos.
     final financial =
         path.startsWith('/api/pagos/') &&
-        !path.startsWith('/api/pagos/segundo-factor/');
+        !path.startsWith('/api/pagos/segundo-factor/') &&
+        path != '/api/pagos/historial';
     final uri = Uri.parse('$base$path');
     if (kReleaseMode && uri.scheme != 'https') {
       throw const PaymentFailure('Los pagos requieren una conexion HTTPS.');
