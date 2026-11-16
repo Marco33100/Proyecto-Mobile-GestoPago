@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 
 import '../config/api_config.dart';
+import '../models/catalog.dart';
 import '../models/login_session.dart';
 import 'auth_headers.dart';
 
@@ -42,7 +43,7 @@ class HomeDataService {
     if (items is! List) return const [];
     return items
         .whereType<Map<String, dynamic>>()
-        .where((product) => const [1, 2, 4].contains(product['tipoFront']))
+        .where(isPurchasable)
         .where((product) => _text(product['servicio']).isNotEmpty)
         .toList(growable: false);
   }
