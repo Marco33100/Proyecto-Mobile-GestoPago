@@ -199,7 +199,8 @@ public class CuentaServiceImpl implements CuentaService {
     }
 
     @Override
-    @PreAuthorize("hasRole('EJECUTIVO')")
+    // Anonimo: registro propio (POST /api/clientes/registro). Un CLIENTE con sesion sigue sin acceso.
+    @PreAuthorize("hasRole('EJECUTIVO') or isAnonymous()")
     @Transactional(transactionManager = "sfTransactionManager")
     public CuentaEntity crearPara(ClienteEntity cliente) {
         if (!cliente.isActivo()) {

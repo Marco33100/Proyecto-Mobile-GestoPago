@@ -102,6 +102,28 @@ for (String route : List.of("/api/clientes/consulta", "/api/cuentas/consulta",
     }
 
     @Test
+    void misDatosSoloParaElClienteConSesion() throws Exception {
+        mvc.perform(get("/api/clientes/mis-datos")).andExpect(status().isUnauthorized());
+        when(sessions.rolVigente(any(), any())).thenReturn(RolUsuario.EJECUTIVO);
+        mvc.perform(get("/api/clientes/mis-datos").header("Authorization", "Bearer token"))
+                .andExpect(status().isForbidden());
+        verifyNoInteractions(clientes);
+        when(sessions.rolVigente(any(), any())).thenReturn(RolUsuario.CLIENTE);
+        mvc.perform(get("/api/clientes/mis-datos").header("Authorization", "Bearer token"))
+                .andExpect(status().isOk());
+        verify(clientes).consultarPropio();
+    }
+
+    @Test
+    void registroPropioEsPublicoSoloPorPost() throws Exception {
+        // Sin sesion llega a la validacion (400), no al 401; un GET sigue cerrado.
+        mvc.perform(postJson("/api/clientes/registro", Map.of())).andExpect(status().isBadRequest());
+        mvc.perform(get("/api/clientes/registro")).andExpect(status().isUnauthorized());
+        mvc.perform(postJson("/api/clientes", Map.of())).andExpect(status().isUnauthorized());
+        verifyNoInteractions(clientes, cuentas, registro);
+    }
+
+    @Test
     void clienteNoAdministraClientesNiCuentasEnNingunaRuta() throws Exception {
 when(sessions.rolVigente(any(), any())).thenReturn(RolUsuario.CLIENTE);
         for (HttpMethod method : List.of(HttpMethod.GET, HttpMethod.POST, HttpMethod.PUT, HttpMethod.DELETE)) {

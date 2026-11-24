@@ -77,7 +77,7 @@ class DatabaseSchemaMigrationTest {
     @ParameterizedTest
     @ValueSource(booleans = {false, true})
     void tiposLongitudesNulabilidadYPrecisionDeEntidadesCoincidenConPostgres(boolean consolidado) throws Exception {
-        (consolidado ? initialFlyway() : flyway("24")).migrate();
+        (consolidado ? initialFlyway() : flyway("27")).migrate();
         var entities = List.of(ClienteEntity.class, DomicilioEntity.class, CuentaEntity.class,
                 UserEntity.class, UserSessionEntity.class,
                 ProductEntity.class, GestoPagoToken.class,
@@ -207,21 +207,24 @@ class DatabaseSchemaMigrationTest {
 
     @Test
     void v1ConsolidadaReproduceElSchemaFinalYEsCompatibleConFlyway() throws Exception {
-        flyway("24").migrate();
+        flyway("27").migrate();
         String expected = schemaStructure();
         if (!schema.matches("schema_test_[a-f0-9]{32}")) throw new IllegalStateException("Schema invalido");
         sql("DROP SCHEMA " + schema + " CASCADE");
         // Flyway crea exclusivamente nuestro schema desechable, nunca public.
-        assertThat(initialFlyway().migrate().migrationsExecuted).isEqualTo(9);
+        assertThat(initialFlyway().migrate().migrationsExecuted).isEqualTo(12);
         sql("SET search_path TO " + schema);
         assertThat(schemaStructure()).isEqualTo(expected);
         initialFlyway().validate();
         assertThat(initialFlyway().migrate().migrationsExecuted).isZero();
         assertThat(scalar("SELECT count(*) FROM flyway_schema_history WHERE version IS NOT NULL"))
-                .isEqualTo("9");
+                .isEqualTo("12");
         assertThat(scalar("SELECT max(version::int) FROM flyway_schema_history WHERE version IS NOT NULL"))
-                .isEqualTo("24");
+                .isEqualTo("27");
         assertThat(scalar("SELECT count(*) FROM clientes")).isEqualTo("0");
+        assertThat(scalar("SELECT count(*) FROM cat_paises")).isEqualTo("249");
+        assertThat(scalar("SELECT nacionalidad FROM cat_paises WHERE codigo='MX'")).isEqualTo("Mexicana");
+        assertThat(scalar("SELECT count(*) FROM cat_ocupaciones")).isEqualTo("20");
         assertThat(scalar("SELECT count(*) FROM app_users")).isEqualTo("0");
         assertThat(scalar("SELECT count(*) FROM gestopago_tokens")).isEqualTo("0");
         seed();

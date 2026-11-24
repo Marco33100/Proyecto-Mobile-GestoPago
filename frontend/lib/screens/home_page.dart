@@ -8,6 +8,7 @@ import '../services/auth_api_service.dart';
 import '../services/home_data_service.dart';
 import '../services/payment_api_service.dart';
 import '../theme.dart';
+import '../widgets/debit_card.dart';
 import '../utils/money_format.dart';
 import '../widgets/brand_wordmark.dart';
 import '../widgets/paper_background.dart';
@@ -106,14 +107,14 @@ class _HomePageState extends State<HomePage> {
 
   void _selectTab(int index) {
     if (index == _selectedTab) return;
-    final leavingOperations = _selectedTab == _operationsTab;
     setState(() {
       _selectedTab = index;
       _visitedTabs.add(index);
       // Cada visita vuelve a consultar el historial: incluye compras recién hechas.
       if (index == _historyTab && !_isExecutive) _historyGeneration++;
-      // Al volver de pagar, los saldos pudieron cambiar.
-      if (index == _homeTab && leavingOperations && !_isExecutive) _refresh();
+      // Cada visita recarga saldos: un pago pudo apartar o liberar dinero aunque
+      // se haya pasado antes por otra pestaña.
+      if (index == _homeTab && !_isExecutive) _refresh();
     });
   }
 
@@ -174,7 +175,7 @@ class _HomePageState extends State<HomePage> {
           ),
     if (!_isExecutive)
       const _Destination(
-        label: 'Compras',
+        label: 'Movimientos',
         icon: Icons.receipt_long_outlined,
         selectedIcon: Icons.receipt_long_rounded,
       ),
@@ -937,74 +938,29 @@ class _AccountsList extends StatelessWidget {
               'Aún no tienes cuentas activas. Un ejecutivo puede activarlas por ti.',
         );
       }
-      return AppCard(
-        padding: const EdgeInsets.symmetric(
-          horizontal: AppSpace.lg + 2,
-          vertical: AppSpace.xs,
-        ),
-        child: Column(
-          children: [
-            for (var index = 0; index < accounts.length; index++) ...[
-              if (index > 0) const Divider(height: 1),
-              _AccountBalanceRow(account: accounts[index]),
+      return LayoutBuilder(
+        builder: (context, constraints) {
+          // Tarjetas de hasta 420 px; varias cuentas se acomodan en rejilla.
+          const gap = AppSpace.lg;
+          final columns = constraints.maxWidth >= 2 * 300 + gap ? 2 : 1;
+          final width = accounts.length == 1
+              ? constraints.maxWidth.clamp(0.0, 420.0)
+              : (constraints.maxWidth - gap * (columns - 1)) / columns;
+          return Wrap(
+            spacing: gap,
+            runSpacing: gap,
+            children: [
+              for (final account in accounts)
+                SizedBox(
+                  width: width,
+                  child: DebitCard(account: account),
+                ),
             ],
-          ],
-        ),
+          );
+        },
       );
     },
   );
-}
-
-class _AccountBalanceRow extends StatelessWidget {
-  const _AccountBalanceRow({required this.account});
-
-  final Map<String, dynamic> account;
-
-  @override
-  Widget build(BuildContext context) {
-    final number = account['numeroCuenta']?.toString() ?? '';
-    final masked = number.length > 4
-        ? '•••• ${number.substring(number.length - 4)}'
-        : number;
-    final available = account['saldoDisponible'];
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 15),
-      child: Row(
-        children: [
-          const IconBadge(
-            icon: Icons.account_balance_wallet_outlined,
-            size: 42,
-          ),
-          const SizedBox(width: 13),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(masked, style: Theme.of(context).textTheme.titleMedium),
-                const SizedBox(height: 3),
-                Text(
-                  'Disponible en Gestopago',
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 8),
-          Flexible(
-            child: FittedBox(
-              fit: BoxFit.scaleDown,
-              alignment: Alignment.centerRight,
-              child: Text(
-                MoneyFormat.mxn(available),
-                maxLines: 1,
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 }
 
 class _ServiceShortcuts extends StatelessWidget {

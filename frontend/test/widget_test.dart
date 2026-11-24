@@ -12,6 +12,9 @@ import 'package:gestopago_app/validation/cliente_validators.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
+bool isCatalog(http.Request request) =>
+    request.url.path == '/api/catalogos/registro';
+
 LoginSession session({String rol = 'EJECUTIVO'}) => LoginSession(
   accessToken: 'token-prueba',
   tokenType: 'Bearer',
@@ -109,7 +112,8 @@ void main() {
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
       var requests = 0;
-      final client = MockClient((_) async {
+      final client = MockClient((request) async {
+        if (isCatalog(request)) return http.Response('{}', 404);
         requests++;
         return http.Response('{}', 500);
       });
@@ -191,7 +195,8 @@ void main() {
 
   testWidgets('login rechaza datos largos antes de llamar API', (tester) async {
     var requests = 0;
-    final client = MockClient((_) async {
+    final client = MockClient((request) async {
+      if (isCatalog(request)) return http.Response('{}', 404);
       requests++;
       return http.Response('{}', 500);
     });
@@ -221,9 +226,7 @@ void main() {
       findsOneWidget,
     );
   });
-  testWidgets('login no ofrece el registro basico independiente', (
-    tester,
-  ) async {
+  testWidgets('login abre el registro publico de cuenta', (tester) async {
     final client = MockClient((_) async => http.Response('{}', 500));
     addTearDown(client.close);
     await tester.pumpWidget(
@@ -236,8 +239,68 @@ void main() {
     );
     expect(find.byType(TextFormField), findsNWidgets(2));
     expect(find.text('Iniciar sesión'), findsOneWidget);
-    expect(find.text('Crear una cuenta'), findsNothing);
-    expect(find.textContaining('ejecutivo'), findsOneWidget);
+    final signup = find.text('¿No tienes cuenta? Crear cuenta');
+    await tester.ensureVisible(signup);
+    await tester.tap(signup);
+    await tester.pumpAndSettle();
+    expect(find.byType(RegisterPage), findsOneWidget);
+    expect(find.text('Crea tu cuenta'), findsOneWidget);
+    expect(find.text('Continuar'), findsOneWidget);
+  });
+
+  testWidgets('con catalogos, nacionalidad, pais y ocupacion son listas', (
+    tester,
+  ) async {
+    final client = MockClient(
+      (request) async => isCatalog(request)
+          ? http.Response.bytes(
+              utf8.encode(
+                jsonEncode({
+                  'codigo': 1,
+                  'mensaje': 'ok',
+                  'datos': {
+                    'paises': ['Argentina', 'México'],
+                    'nacionalidades': ['Argentina', 'Mexicana'],
+                    'ocupaciones': ['Docente', 'Otro'],
+                  },
+                }),
+              ),
+              200,
+              headers: {'content-type': 'application/json; charset=utf-8'},
+            )
+          : http.Response('{}', 500),
+    );
+    addTearDown(client.close);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: RegisterPage(session: null, authApi: AuthApiService(client)),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final nationality = find.byKey(const ValueKey('nacionalidad'));
+    expect(
+      tester.widget<DropdownButtonFormField<String>>(nationality),
+      isNotNull,
+    );
+    expect(find.text('Mexicana'), findsOneWidget);
+  });
+
+  test('registro sin sesion usa la ruta publica sin token', () async {
+    late http.Request sent;
+    final client = MockClient((request) async {
+      sent = request;
+      return http.Response(
+        '{"codigo":1,"mensaje":"ok","datos":{"cuentas":[]}}',
+        201,
+      );
+    });
+    addTearDown(client.close);
+    final message = await AuthApiService(
+      client,
+    ).registerClient(session: null, payload: {});
+    expect(sent.url.path, '/api/clientes/registro');
+    expect(sent.headers.containsKey('Authorization'), isFalse);
+    expect(message, contains('Inicia sesión'));
   });
 
   testWidgets(
@@ -273,7 +336,8 @@ void main() {
     tester,
   ) async {
     var requests = 0;
-    final client = MockClient((_) async {
+    final client = MockClient((request) async {
+      if (isCatalog(request)) return http.Response('{}', 404);
       requests++;
       return http.Response('{}', 500);
     });
@@ -308,6 +372,7 @@ void main() {
       var requests = 0;
       Map<String, dynamic>? payload;
       final client = MockClient((request) async {
+        if (isCatalog(request)) return http.Response('{}', 404);
         requests++;
         expect(request.url.path, '/api/clientes');
         expect(request.headers['Authorization'], 'Bearer token-prueba');

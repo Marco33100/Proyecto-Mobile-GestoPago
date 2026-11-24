@@ -8,6 +8,7 @@ import '../services/payment_api_service.dart';
 import '../theme.dart';
 import '../utils/date_only.dart';
 import '../validation/cliente_validators.dart';
+import '../validation/input_filters.dart';
 import '../widgets/paper_background.dart';
 import '../widgets/responsive.dart';
 import '../widgets/status_message.dart';
@@ -24,7 +25,9 @@ class RegisterPage extends StatefulWidget {
   });
 
   final AuthApiService authApi;
-  final LoginSession session;
+
+  /// Null en el registro público desde el login.
+  final LoginSession? session;
   final Future<void> Function()? onSessionInvalid;
   final Map<String, dynamic>? initialClient;
   final AdminApiService? adminApi;
@@ -50,10 +53,14 @@ class _RegisterPageState extends State<RegisterPage> {
   String _sexo = 'FEMENINO';
   String _estadoCivil = 'SOLTERO';
   bool get _editing => widget.initialClient != null;
+  bool get _selfSignup => widget.session == null;
+  bool get _allowed => widget.session?.isExecutive ?? true;
+  RegistrationCatalogs? _catalogs;
 
   @override
   void initState() {
     super.initState();
+    _loadCatalogs();
     final client = widget.initialClient;
     if (client == null) return;
     for (final entry in client.entries) {
@@ -69,6 +76,17 @@ class _RegisterPageState extends State<RegisterPage> {
     }
     _sexo = client['sexo'] as String? ?? 'FEMENINO';
     _estadoCivil = client['estadoCivil'] as String? ?? 'SOLTERO';
+  }
+
+  Future<void> _loadCatalogs() async {
+    final catalogs = await widget.authApi.registrationCatalogs();
+    if (!mounted || catalogs == null) return;
+    // Valores por omision para un registro nuevo en México.
+    if (_text('pais').isEmpty) _controller('pais').text = 'México';
+    if (_text('nacionalidad').isEmpty) {
+      _controller('nacionalidad').text = 'Mexicana';
+    }
+    setState(() => _catalogs = catalogs);
   }
 
   TextEditingController _controller(String key) =>
@@ -114,12 +132,12 @@ class _RegisterPageState extends State<RegisterPage> {
       'correo',
       'telefonoMovil',
       'ocupacion',
-      'empresa',
-      'ingresoMensual',
       'contrasena',
     ])
       key: _text(key),
     'segundoNombre': _optional('segundoNombre'),
+    'empresa': _optional('empresa'),
+    'ingresoMensual': _optional('ingresoMensual'),
     'telefonoAlternativo': _optional('telefonoAlternativo'),
     'sexo': _sexo,
     'estadoCivil': _estadoCivil,
@@ -165,7 +183,7 @@ class _RegisterPageState extends State<RegisterPage> {
   }
 
   Future<void> _submit() async {
-    if (_loading || !widget.session.isExecutive) return;
+    if (_loading || !_allowed) return;
     _normalizeInputs();
     if (!_stepFormKeys[_currentStep].currentState!.validate()) return;
     setState(() => _loading = true);
@@ -208,7 +226,14 @@ class _RegisterPageState extends State<RegisterPage> {
 
   void _showError(String message) => ScaffoldMessenger.of(context)
     ..hideCurrentSnackBar()
-    ..showSnackBar(SnackBar(content: Text(message)));
+    ..showSnackBar(
+      SnackBar(
+        behavior: SnackBarBehavior.floating,
+        width: Breakpoints.isExpanded(context) ? 520 : null,
+        backgroundColor: const Color(0xFF9C3F36),
+        content: Text(message),
+      ),
+    );
 
   Future<void> _selectBirthDate() async {
     if (_loading || _datePickerOpen) return;
@@ -273,6 +298,7 @@ class _RegisterPageState extends State<RegisterPage> {
     String? Function(String?)? validator,
     TextInputType? keyboard,
     bool secret = false,
+    bool uppercase = false,
     TextCapitalization capitalization = TextCapitalization.words,
   }) => Padding(
     padding: const EdgeInsets.only(bottom: 16),
@@ -286,7 +312,13 @@ class _RegisterPageState extends State<RegisterPage> {
       textInputAction: TextInputAction.next,
       autocorrect: !secret,
       enableSuggestions: !secret,
-      inputFormatters: secret ? null : [LengthLimitingTextInputFormatter(max)],
+      inputFormatters: secret
+          ? null
+          : [
+              LengthLimitingTextInputFormatter(max),
+              ...InputFilters.forField(key),
+              if (uppercase) const _UpperCaseFormatter(),
+            ],
       decoration: InputDecoration(
         labelText: label,
         suffixIcon: key == 'contrasena' || key == 'confirmarContrasena'
@@ -323,10 +355,7 @@ class _RegisterPageState extends State<RegisterPage> {
     padding: const EdgeInsets.only(bottom: 16),
     child: DropdownButtonFormField<String>(
       initialValue: value,
-      decoration: InputDecoration(
-        labelText: label,
-        prefixIcon: const Icon(Icons.expand_more_rounded),
-      ),
+      decoration: InputDecoration(labelText: label),
       items: values
           .map(
             (option) => DropdownMenuItem(
@@ -343,14 +372,106 @@ class _RegisterPageState extends State<RegisterPage> {
     ),
   );
 
+  /// Lista desplegable si el catálogo cargó; si no, campo de texto.
+  Widget _catalogField(
+    String key,
+    String label,
+    List<String>? options, {
+    int max = 100,
+  }) {
+    if (options == null || options.isEmpty) {
+      return _field(key, label, max: max);
+    }
+    final current = _text(key);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: DropdownButtonFormField<String>(
+        key: ValueKey(key),
+        initialValue: options.contains(current) ? current : null,
+        isExpanded: true,
+        menuMaxHeight: 360,
+        decoration: InputDecoration(labelText: label),
+        items: [
+          for (final option in options)
+            DropdownMenuItem(
+              value: option,
+              child: Text(option, overflow: TextOverflow.ellipsis),
+            ),
+        ],
+        validator: (value) => value == null ? 'Elige una opción' : null,
+        onChanged: _loading
+            ? null
+            : (value) => _controller(key).text = value ?? '',
+      ),
+    );
+  }
+
+  /// Grupos de campos relacionados separados por aire.
+  Widget _groups(List<List<Widget>> groups) => Column(
+    children: [
+      for (var i = 0; i < groups.length; i++) ...[
+        if (i > 0) const SizedBox(height: 12),
+        _grid(groups[i]),
+      ],
+    ],
+  );
+
+  /// Dos columnas en pantallas anchas; una en celular.
+  Widget _grid(List<Widget> fields) {
+    if (!Breakpoints.isExpanded(context)) return Column(children: fields);
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Un teléfono en horizontal es "ancho" pero no cabe en dos columnas.
+        if (constraints.maxWidth < 560) return Column(children: fields);
+        final width = (constraints.maxWidth - 16) / 2;
+        return Wrap(
+          spacing: 16,
+          children: [
+            for (final field in fields) SizedBox(width: width, child: field),
+          ],
+        );
+      },
+    );
+  }
+
+  /// En computadora: campos más compactos y bordes suaves.
+  ThemeData _formTheme(BuildContext context, bool wide) {
+    final theme = Theme.of(context);
+    if (!wide) return theme;
+    const error = Color(0xFF9C3F36);
+    final border = OutlineInputBorder(
+      borderRadius: BorderRadius.circular(AppRadius.sm),
+      borderSide: const BorderSide(color: outlineColor),
+    );
+    return theme.copyWith(
+      inputDecorationTheme: theme.inputDecorationTheme.copyWith(
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 14,
+          vertical: 14,
+        ),
+        border: border,
+        enabledBorder: border,
+        focusedBorder: border.copyWith(
+          borderSide: const BorderSide(color: ink, width: 1.6),
+        ),
+        errorBorder: border.copyWith(
+          borderSide: const BorderSide(color: error),
+        ),
+        focusedErrorBorder: border.copyWith(
+          borderSide: const BorderSide(color: error, width: 1.6),
+        ),
+      ),
+    );
+  }
+
   Widget _currentFields() => switch (_currentStep) {
     0 => _personalFields(),
     1 => _contactAndAddressFields(),
     _ => _workAndAccessFields(),
   };
 
-  Widget _personalFields() => Column(
-    children: [
+  Widget _personalFields() => _groups([
+    [
       _field('nombre', 'Nombre', validator: ClienteValidators.name),
       _field(
         'segundoNombre',
@@ -367,25 +488,38 @@ class _RegisterPageState extends State<RegisterPage> {
         'Apellido materno',
         validator: ClienteValidators.name,
       ),
-      _birthDateField(),
+    ],
+    [
       _field(
         'curp',
         'CURP',
+        max: 18,
+        uppercase: true,
         capitalization: TextCapitalization.characters,
         validator: ClienteValidators.curp,
       ),
       _field(
         'rfc',
         'RFC',
+        max: 13,
+        uppercase: true,
         capitalization: TextCapitalization.characters,
         validator: ClienteValidators.rfc,
       ),
+    ],
+    [
+      _birthDateField(),
       _choice('Sexo', _sexo, const [
         'FEMENINO',
         'MASCULINO',
         'NO_BINARIO',
       ], (value) => _sexo = value),
-      _field('nacionalidad', 'Nacionalidad'),
+      _catalogField(
+        'nacionalidad',
+        'Nacionalidad',
+        _catalogs?.nationalities,
+        max: 60,
+      ),
       _choice('Estado civil', _estadoCivil, const [
         'SOLTERO',
         'CASADO',
@@ -394,10 +528,10 @@ class _RegisterPageState extends State<RegisterPage> {
         'UNION_LIBRE',
       ], (value) => _estadoCivil = value),
     ],
-  );
+  ]);
 
-  Widget _contactAndAddressFields() => Column(
-    children: [
+  Widget _contactAndAddressFields() => _groups([
+    [
       _field(
         'correo',
         'Correo / usuario de acceso',
@@ -419,17 +553,19 @@ class _RegisterPageState extends State<RegisterPage> {
         capitalization: TextCapitalization.none,
         validator: (value) => ClienteValidators.phone(value, optional: true),
       ),
+    ],
+    [
       _field('calle', 'Calle'),
-      _field('numeroExterior', 'Número exterior', max: 20),
+      _field('numeroExterior', 'Número exterior', max: 10),
       _field(
         'numeroInterior',
         'Número interior (opcional)',
-        max: 20,
+        max: 10,
         optional: true,
       ),
       _field('colonia', 'Colonia'),
-      _field('municipio', 'Municipio'),
-      _field('estado', 'Estado'),
+      _field('municipio', 'Municipio', max: 60),
+      _field('estado', 'Estado', max: 40),
       _field(
         'codigoPostal',
         'Código postal',
@@ -437,39 +573,49 @@ class _RegisterPageState extends State<RegisterPage> {
         capitalization: TextCapitalization.none,
         validator: ClienteValidators.postalCode,
       ),
-      _field('pais', 'País', max: 60),
+      _catalogField('pais', 'País', _catalogs?.countries, max: 60),
     ],
-  );
+  ]);
 
   Widget _workAndAccessFields() => Column(
     children: [
-      _field('ocupacion', 'Ocupación'),
-      _field('empresa', 'Empresa', max: 150),
-      _field(
-        'ingresoMensual',
-        'Ingreso mensual',
-        keyboard: const TextInputType.numberWithOptions(decimal: true),
-        capitalization: TextCapitalization.none,
-        validator: ClienteValidators.income,
-      ),
-      if (!_editing)
-        _field(
-          'contrasena',
-          'Contraseña para el cliente',
-          secret: true,
-          validator: ClienteValidators.password,
-        ),
-      if (!_editing)
-        _field(
-          'confirmarContrasena',
-          'Confirmar contraseña',
-          secret: true,
-          validator: (value) => value != _text('contrasena')
-              ? 'Las contraseñas no coinciden'
-              : null,
-        ),
+      _groups([
+        [
+          _catalogField('ocupacion', 'Ocupación', _catalogs?.occupations),
+          _field('empresa', 'Empresa (opcional)', max: 150, optional: true),
+          _field(
+            'ingresoMensual',
+            'Ingreso mensual',
+            keyboard: const TextInputType.numberWithOptions(decimal: true),
+            capitalization: TextCapitalization.none,
+            validator: (value) => ClienteValidators.incomeFor(
+              value,
+              occupation: _text('ocupacion'),
+              company: _text('empresa'),
+            ),
+          ),
+        ],
+        [
+          if (!_editing)
+            _field(
+              'contrasena',
+              _selfSignup ? 'Contraseña' : 'Contraseña para el cliente',
+              secret: true,
+              validator: ClienteValidators.password,
+            ),
+          if (!_editing)
+            _field(
+              'confirmarContrasena',
+              'Confirmar contraseña',
+              secret: true,
+              validator: (value) => value != _text('contrasena')
+                  ? 'Las contraseñas no coinciden'
+                  : null,
+            ),
+        ],
+      ]),
       const SizedBox(height: 4),
-      if (!_editing) const _AccountCreationNote(),
+      if (!_editing) _AccountCreationNote(selfSignup: _selfSignup),
       if (_editing)
         const Text(
           'La CURP, el RFC, el titular y el número de cuenta se conservan. Esta operación no cambia saldos.',
@@ -489,104 +635,119 @@ class _RegisterPageState extends State<RegisterPage> {
       },
       child: Scaffold(
         appBar: AppBar(
-          title: Text(_editing ? 'Editar cliente' : 'Registrar cliente'),
+          title: Text(
+            _editing
+                ? 'Editar cliente'
+                : _selfSignup
+                ? 'Crear cuenta'
+                : 'Registrar cliente',
+          ),
         ),
-        body: !widget.session.isExecutive
+        body: !_allowed
             ? const Center(
                 child: Text('Solo un ejecutivo puede registrar clientes.'),
               )
-            : PaperBackground(
-                child: SafeArea(
-                  child: Form(
-                    key: _stepFormKeys[_currentStep],
-                    child: CustomScrollView(
-                      controller: _scrollController,
-                      slivers: [
-                        SliverPadding(
-                          padding: const EdgeInsets.fromLTRB(24, 18, 24, 24),
-                          sliver: SliverToBoxAdapter(
-                            child: Center(
-                              child: ConstrainedBox(
-                                constraints: BoxConstraints(maxWidth: maxWidth),
-                                child: Column(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.stretch,
-                                  children: [
-                                    const SizedBox(height: 8),
-                                    Text(
-                                      _editing
-                                          ? 'Actualizar información'
-                                          : 'Registro de cliente',
-                                      style: Theme.of(
-                                        context,
-                                      ).textTheme.headlineMedium,
-                                    ),
-                                    const SizedBox(height: 8),
-                                    Text(
-                                      _editing
-                                          ? 'Revisa los datos modificables del cliente.'
-                                          : 'Completa los datos para crear el acceso del cliente.',
-                                      style: Theme.of(
-                                        context,
-                                      ).textTheme.bodyMedium,
-                                    ),
-                                    const SizedBox(height: 22),
-                                    Row(
-                                      children: [
-                                        Expanded(
-                                          child: ClipRRect(
-                                            borderRadius: BorderRadius.circular(
-                                              4,
+            : Theme(
+                data: _formTheme(context, wide),
+                child: PaperBackground(
+                  child: SafeArea(
+                    child: Form(
+                      key: _stepFormKeys[_currentStep],
+                      child: CustomScrollView(
+                        controller: _scrollController,
+                        slivers: [
+                          SliverPadding(
+                            padding: const EdgeInsets.fromLTRB(24, 18, 24, 24),
+                            sliver: SliverToBoxAdapter(
+                              child: Center(
+                                child: ConstrainedBox(
+                                  constraints: BoxConstraints(
+                                    maxWidth: maxWidth,
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.stretch,
+                                    children: [
+                                      const SizedBox(height: 8),
+                                      Text(
+                                        _editing
+                                            ? 'Actualizar información'
+                                            : _selfSignup
+                                            ? 'Crea tu cuenta'
+                                            : 'Registro de cliente',
+                                        style: Theme.of(
+                                          context,
+                                        ).textTheme.headlineMedium,
+                                      ),
+                                      const SizedBox(height: 8),
+                                      Text(
+                                        _editing
+                                            ? 'Revisa los datos modificables del cliente.'
+                                            : _selfSignup
+                                            ? 'Completa tus datos para crear tu cuenta y tu acceso.'
+                                            : 'Completa los datos para crear el acceso del cliente.',
+                                        style: Theme.of(
+                                          context,
+                                        ).textTheme.bodyMedium,
+                                      ),
+                                      const SizedBox(height: 22),
+                                      if (!wide)
+                                        Row(
+                                          children: [
+                                            Expanded(
+                                              child: ClipRRect(
+                                                borderRadius:
+                                                    BorderRadius.circular(4),
+                                                child: LinearProgressIndicator(
+                                                  value:
+                                                      (_currentStep + 1) /
+                                                      _stepNames.length,
+                                                  minHeight: 5,
+                                                ),
+                                              ),
                                             ),
-                                            child: LinearProgressIndicator(
-                                              value:
-                                                  (_currentStep + 1) /
-                                                  _stepNames.length,
-                                              minHeight: 5,
+                                            const SizedBox(width: 12),
+                                            Text(
+                                              '${_currentStep + 1} de ${_stepNames.length}',
+                                              style: Theme.of(
+                                                context,
+                                              ).textTheme.labelLarge,
                                             ),
+                                          ],
+                                        ),
+                                      const SizedBox(height: 17),
+                                      Text(
+                                        _stepNames[_currentStep],
+                                        style: Theme.of(
+                                          context,
+                                        ).textTheme.titleLarge,
+                                      ),
+                                      const SizedBox(height: 18),
+                                      if (wide)
+                                        TwoPane(
+                                          secondaryFirst: true,
+                                          secondaryWidth: 220,
+                                          primary: _currentFields(),
+                                          secondary: _StepList(
+                                            names: _stepNames,
+                                            current: _currentStep,
                                           ),
-                                        ),
-                                        const SizedBox(width: 12),
-                                        Text(
-                                          '${_currentStep + 1} de ${_stepNames.length}',
-                                          style: Theme.of(
-                                            context,
-                                          ).textTheme.labelLarge,
-                                        ),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 17),
-                                    Text(
-                                      _stepNames[_currentStep],
-                                      style: Theme.of(
-                                        context,
-                                      ).textTheme.titleLarge,
-                                    ),
-                                    const SizedBox(height: 18),
-                                    if (wide)
-                                      TwoPane(
-                                        secondaryFirst: true,
-                                        secondaryWidth: 220,
-                                        primary: _currentFields(),
-                                        secondary: _StepList(
-                                          names: _stepNames,
-                                          current: _currentStep,
-                                        ),
-                                      )
-                                    else
-                                      _currentFields(),
-                                  ],
+                                        )
+                                      else
+                                        _currentFields(),
+                                    ],
+                                  ),
                                 ),
                               ),
                             ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
                 ),
               ),
-        bottomNavigationBar: widget.session.isExecutive
+        bottomNavigationBar: _allowed
             ? SafeArea(
                 top: false,
                 child: Container(
@@ -601,9 +762,12 @@ class _RegisterPageState extends State<RegisterPage> {
                       constraints: BoxConstraints(maxWidth: maxWidth),
                       child: Row(
                         children: [
+                          if (wide) const Spacer(),
                           if (_currentStep > 0) ...[
-                            Expanded(
-                              child: OutlinedButton.icon(
+                            _slot(
+                              wide,
+                              160,
+                              OutlinedButton.icon(
                                 onPressed: _loading ? null : _goBack,
                                 icon: const Icon(Icons.arrow_back_rounded),
                                 label: const Text('Atrás'),
@@ -611,8 +775,10 @@ class _RegisterPageState extends State<RegisterPage> {
                             ),
                             const SizedBox(width: 12),
                           ],
-                          Expanded(
-                            child: FilledButton.icon(
+                          _slot(
+                            wide,
+                            220,
+                            FilledButton.icon(
                               onPressed: _loading
                                   ? null
                                   : _currentStep == _stepNames.length - 1
@@ -637,6 +803,8 @@ class _RegisterPageState extends State<RegisterPage> {
                                     : _currentStep == _stepNames.length - 1
                                     ? (_editing
                                           ? 'Guardar cambios'
+                                          : _selfSignup
+                                          ? 'Crear cuenta'
                                           : 'Registrar cliente')
                                     : 'Continuar',
                               ),
@@ -654,14 +822,31 @@ class _RegisterPageState extends State<RegisterPage> {
   }
 }
 
-class _AccountCreationNote extends StatelessWidget {
-  const _AccountCreationNote();
+/// Botón que llena el ancho en celular y tiene ancho fijo en computadora.
+Widget _slot(bool wide, double width, Widget child) =>
+    wide ? SizedBox(width: width, child: child) : Expanded(child: child);
+
+class _UpperCaseFormatter extends TextInputFormatter {
+  const _UpperCaseFormatter();
 
   @override
-  Widget build(BuildContext context) => const StatusMessage(
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) => newValue.copyWith(text: newValue.text.toUpperCase());
+}
+
+class _AccountCreationNote extends StatelessWidget {
+  const _AccountCreationNote({required this.selfSignup});
+
+  final bool selfSignup;
+
+  @override
+  Widget build(BuildContext context) => StatusMessage(
     icon: Icons.info_outline_rounded,
-    message:
-        'Al registrar al cliente, el sistema crea su cuenta y acceso. El correo será su usuario.',
+    message: selfSignup
+        ? 'Al crear tu cuenta, el sistema crea también tu acceso. Tu correo será tu usuario.'
+        : 'Al registrar al cliente, el sistema crea su cuenta y acceso. El correo será su usuario.',
   );
 }
 

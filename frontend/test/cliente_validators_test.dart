@@ -2,14 +2,31 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:gestopago_app/validation/cliente_validators.dart';
 
 void main() {
-  test('nombres: letras unicode, espacios normalizados, limites y opcionales',
-      () {
-    expect(ClienteValidators.name('  María    José  '), isNull);
-    expect(ClienteValidators.name('李明'), isNull);
-    for (final value in [' ', 'A', 'Marco2', 'Marco@', 'A' * 51]) {
-      expect(ClienteValidators.name(value), isNotNull);
-    }
-    expect(ClienteValidators.name('', optional: true), isNull);
+  test(
+    'nombres: letras unicode, espacios normalizados, limites y opcionales',
+    () {
+      expect(ClienteValidators.name('  María    José  '), isNull);
+      expect(ClienteValidators.name('李小明'), isNull);
+      expect(ClienteValidators.name('Al', optional: true), isNotNull);
+      expect(ClienteValidators.name('Ana', optional: true), isNull);
+      for (final value in [' ', 'Al', 'Marco2', 'Marco@', 'A' * 51]) {
+        expect(ClienteValidators.name(value), isNotNull);
+      }
+      expect(ClienteValidators.name('', optional: true), isNull);
+    },
+  );
+  test('ingreso opcional solo sin empresa y con ocupacion sin ingreso', () {
+    String? check(String occupation, String company, String value) =>
+        ClienteValidators.incomeFor(
+          value,
+          occupation: occupation,
+          company: company,
+        );
+    expect(check('Desempleado(a)', '', ''), isNull);
+    expect(check('Docente', '', ''), isNotNull);
+    expect(check('Estudiante', 'Cafeteria', ''), isNotNull);
+    expect(check('Estudiante', '', '0'), isNotNull);
+    expect(check('Docente', '', '1500'), isNull);
   });
   test('telefonos y CP conservan ceros, formatos estrictos', () {
     expect(ClienteValidators.phone('0123456789'), isNull);
@@ -25,16 +42,22 @@ void main() {
     expect(ClienteValidators.birthDate('2008-10-04', today: today), isNotNull);
     expect(ClienteValidators.birthDate('2027-01-01', today: today), isNotNull);
     expect(ClienteValidators.birthDate('2000-02-30', today: today), isNotNull);
-    expect(ClienteValidators.birthDate('1990-01-01T12:30:00Z', today: today),
-        isNotNull);
-    expect(ClienteValidators.birthDate('1990-01-01 00:00:00', today: today),
-        isNotNull);
     expect(
-        ClienteValidators.birthDate('2008-02-29', today: DateTime(2026, 2, 28)),
-        isNotNull);
+      ClienteValidators.birthDate('1990-01-01T12:30:00Z', today: today),
+      isNotNull,
+    );
     expect(
-        ClienteValidators.birthDate('2008-02-29', today: DateTime(2026, 3, 1)),
-        isNull);
+      ClienteValidators.birthDate('1990-01-01 00:00:00', today: today),
+      isNotNull,
+    );
+    expect(
+      ClienteValidators.birthDate('2008-02-29', today: DateTime(2026, 2, 28)),
+      isNotNull,
+    );
+    expect(
+      ClienteValidators.birthDate('2008-02-29', today: DateTime(2026, 3, 1)),
+      isNull,
+    );
   });
   test('longitudes de alta: acepta el limite y rechaza el siguiente', () {
     expect(ClienteValidators.name('A' * 50), isNull);
@@ -42,7 +65,9 @@ void main() {
     for (final limit in [20, 60, 100, 150]) {
       expect(ClienteValidators.requiredText('A' * limit, limit), isNull);
       expect(
-          ClienteValidators.requiredText('A' * (limit + 1), limit), isNotNull);
+        ClienteValidators.requiredText('A' * (limit + 1), limit),
+        isNotNull,
+      );
     }
     final email = '${'a' * 64}@${'b' * 31}.com';
     expect(email.length, 100);
@@ -66,7 +91,8 @@ void main() {
       'segura123!',
       'SEGURA123!',
       'SeguraABC!',
-      'Aa1!NaN'
+      'Aa1!NaN',
+      'Segura123!abc',
     ]) {
       expect(ClienteValidators.password(value), isNotNull);
     }

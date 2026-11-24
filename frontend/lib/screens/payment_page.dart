@@ -1282,10 +1282,10 @@ class _PaymentPageState extends State<PaymentPage> {
       'APLICADO' => 'Gestopago confirmó tu compra.',
       'PREPARADO' =>
         'Aún no se ha cobrado. Revisa los datos y autoriza para continuar.',
-      'ENVIADO' || 'PENDIENTE' =>
-        'El resultado todavía no está confirmado. Consulta su estado antes de intentar otra vez.',
+      'ENVIADO' || 'PENDIENTE' => 'Aún no tenemos el resultado de tu pago.',
       'REVISION' => 'El pago requiere revisión. No lo envíes de nuevo.',
-      'RECHAZADO' => 'El servidor indicó que el pago no fue aplicado.',
+      // La causa la explica el aviso del servidor, debajo.
+      'RECHAZADO' => 'Tu pago no se realizó.',
       'EXPIRADO' => 'La solicitud venció antes de completarse.',
       _ => 'Consulta nuevamente para conocer el resultado confirmado.',
     };

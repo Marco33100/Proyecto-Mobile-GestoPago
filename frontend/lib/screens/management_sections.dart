@@ -16,7 +16,7 @@ enum ManagementSection {
   ),
   usuarios(
     'Usuarios',
-    'Encuentra accesos con filtros y paginación.',
+    'Accesos para iniciar sesión, de clientes y ejecutivos.',
     Icons.manage_accounts_outlined,
   ),
   cuentas(

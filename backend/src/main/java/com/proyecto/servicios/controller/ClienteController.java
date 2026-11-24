@@ -11,6 +11,7 @@ import com.proyecto.servicios.service.ClienteService;
 import com.proyecto.servicios.service.ClienteRegistroService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
+import io.swagger.v3.oas.annotations.security.SecurityRequirements;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -19,6 +20,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -47,6 +49,33 @@ public class ClienteController {
     public ResponseEntity<GenericResponse<ClienteResponse>> registrar(@Valid @RequestBody RegistrarClienteRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED).body(GenericResponse.exito(
                 "Cliente registrado correctamente", clienteRegistroService.registrar(request)));
+    }
+
+    @PostMapping(value = "/registro", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @SecurityRequirements
+    @Operation(summary = "Registro publico: la persona crea su propia cuenta y acceso",
+            description = "No requiere sesion. Mismos datos y validaciones que el registro por ejecutivo; "
+                    + "comparte el limite de intentos por IP del login.")
+    public ResponseEntity<GenericResponse<ClienteResponse>> registrarPropio(
+            @Valid @RequestBody RegistrarClienteRequest request) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(GenericResponse.exito(
+                "Cuenta creada correctamente", clienteRegistroService.registrarPropio(request)));
+    }
+
+    @GetMapping("/mis-datos")
+    @Operation(summary = "Datos del cliente con sesion iniciada (rol CLIENTE)")
+    public ResponseEntity<GenericResponse<ClienteResponse>> misDatos() {
+        return ResponseEntity.ok(GenericResponse.exito("Datos consultados correctamente",
+                clienteService.consultarPropio()));
+    }
+
+    @PutMapping(value = "/mis-datos", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @Operation(summary = "El cliente actualiza su contacto, domicilio, estado civil y empleo",
+            description = "Nombre, fecha de nacimiento, CURP, RFC, sexo, nacionalidad y correo no se cambian aqui.")
+    public ResponseEntity<GenericResponse<ClienteResponse>> actualizarMisDatos(
+            @Valid @RequestBody com.proyecto.servicios.model.cliente.ActualizarMisDatosRequest request) {
+        return ResponseEntity.ok(GenericResponse.exito("Datos actualizados correctamente",
+                clienteService.actualizarPropio(request)));
     }
 
     @PostMapping(value = "/consulta", consumes = MediaType.APPLICATION_JSON_VALUE)

@@ -21,7 +21,9 @@ public class WebSessionCookies {
     public static final String COOKIE_MODE = "cookie";
     static final String COOKIE_PATH = "/api";
     /** Pasos del inicio de sesion: publicos, sin JWT previo y sin CSRF. */
-    public static final Set<String> LOGIN_PATHS = Set.of("/api/auth/login", "/api/auth/login/verificar");
+    // POST publicos sin sesion: sin JWT ni CSRF y con limite de intentos por IP.
+    public static final Set<String> LOGIN_PATHS = Set.of(
+            "/api/auth/login", "/api/auth/login/verificar", "/api/clientes/registro");
     private static final Set<String> SAFE_METHODS = Set.of(
             HttpMethod.GET.name(), HttpMethod.HEAD.name(),
             HttpMethod.OPTIONS.name(), HttpMethod.TRACE.name());

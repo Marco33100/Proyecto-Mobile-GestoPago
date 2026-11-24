@@ -94,16 +94,17 @@ void main() {
       'path': '/api/pagos/historial',
       'pagina': 0,
       'tamanio': 20,
+      'filtro': 'TODOS',
     });
     expect(find.text('Recarga Telcel'), findsOneWidget);
     expect(find.text('\$100.00 MXN'), findsOneWidget);
     expect(find.text('\$350.50 MXN'), findsOneWidget);
     expect(find.text('Ref. TX-b'), findsOneWidget);
-    expect(find.text('Ver más compras'), findsNothing);
+    expect(find.text('Ver más movimientos'), findsNothing);
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('sin compras ofrece pagar un servicio', (tester) async {
+  testWidgets('sin movimientos ofrece pagar un servicio', (tester) async {
     await pumpHistory(
       tester,
       (_) async => http.Response(
@@ -111,7 +112,7 @@ void main() {
         200,
       ),
     );
-    expect(find.text('Aún no tienes compras'), findsOneWidget);
+    expect(find.text('Aún no tienes movimientos'), findsOneWidget);
     await tester.tap(find.text('Pagar un servicio'));
     expect(paid, 1);
   });
@@ -125,13 +126,13 @@ void main() {
           ? _page([_purchase('b', 'Recarga Telcel', '100')], last: false)
           : _page([_purchase('a', 'Pago CFE', '350')], last: true),
     );
-    await tester.tap(find.text('Ver más compras'));
+    await tester.tap(find.text('Ver más movimientos'));
     await tester.pumpAndSettle();
 
     expect(requests.last['pagina'], 1);
     expect(find.text('Recarga Telcel'), findsOneWidget);
     expect(find.text('Pago CFE'), findsOneWidget);
-    expect(find.text('Ver más compras'), findsNothing);
+    expect(find.text('Ver más movimientos'), findsNothing);
   });
 
   testWidgets('si entra una compra entre paginas no se repite la ultima', (
@@ -147,7 +148,7 @@ void main() {
               _purchase('a', 'Pago CFE', '350'),
             ], last: true),
     );
-    await tester.tap(find.text('Ver más compras'));
+    await tester.tap(find.text('Ver más movimientos'));
     await tester.pumpAndSettle();
 
     expect(find.text('Recarga Telcel'), findsOneWidget);
@@ -179,7 +180,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(requests.last, {'path': '/api/pagos/consulta', 'pagoId': 'b'});
-    expect(find.text('Detalle de la compra'), findsWidgets);
+    expect(find.text('Detalle del movimiento'), findsWidgets);
     expect(find.text('Compra exitosa'), findsOneWidget);
     expect(find.text('AUT-b'), findsOneWidget);
     expect(find.text('ABC123XYZ0'), findsOneWidget);
@@ -195,6 +196,41 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('rechazados muestran su estado y su causa; el filtro se envia', (
+    tester,
+  ) async {
+    await pumpHistory(tester, (request) async {
+      if (request.url.path == '/api/pagos/historial') {
+        return _page([
+          {..._purchase('r', 'Recarga \$20', '20'), 'estado': 'RECHAZADO'},
+        ], last: true);
+      }
+      return http.Response(
+        jsonEncode({
+          'codigo': '02',
+          'mensaje': 'Pago rechazado',
+          'datos': {
+            ..._purchase('r', 'Recarga \$20', '20'),
+            'estado': 'RECHAZADO',
+            'aviso':
+                'El sistema de cobros de Gesto Pago no aplico la operacion.',
+          },
+        }),
+        200,
+      );
+    });
+    expect(find.text('Rechazada'), findsOneWidget);
+    await tester.tap(find.text('Rechazadas'));
+    await tester.pumpAndSettle();
+    expect(requests.last['filtro'], 'RECHAZADAS');
+
+    await tester.tap(find.text('Recarga \$20'));
+    await tester.pumpAndSettle();
+    expect(find.text('Compra rechazada'), findsOneWidget);
+    expect(find.textContaining('no aplico la operacion'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('un error del servidor se muestra sin datos inventados', (
     tester,
   ) async {
@@ -206,7 +242,7 @@ void main() {
       ),
     );
     expect(find.textContaining('no está disponible'), findsOneWidget);
-    expect(find.text('Aún no tienes compras'), findsNothing);
+    expect(find.text('Aún no tienes movimientos'), findsNothing);
     // Ver el historial no es un pago: el error no habla de repetir pagos.
     expect(find.textContaining('repetir'), findsNothing);
   });
