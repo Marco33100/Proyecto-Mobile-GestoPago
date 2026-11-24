@@ -103,6 +103,8 @@ public class SecurityConfiguration {
                                 "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html",
                                 "/actuator/health", "/error"
                         ).permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/clientes/registro").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/catalogos/registro").permitAll()
                         .requestMatchers("/api/auth/register").denyAll()
                         .requestMatchers("/api/usuarios/busqueda").hasRole(EJECUTIVO)
                         .requestMatchers("/api/pagos/conciliacion", "/api/pagos/conciliacion/**").hasRole(EJECUTIVO)
@@ -111,6 +113,7 @@ public class SecurityConfiguration {
                         .requestMatchers(HttpMethod.POST, "/api/cuentas/mias/consulta").hasRole(CLIENTE)
                         .requestMatchers(HttpMethod.POST, "/api/cuentas/consulta",
                                 "/api/cuentas/saldo/consulta").hasAnyRole(EJECUTIVO, CLIENTE)
+                        .requestMatchers("/api/clientes/mis-datos").hasRole(CLIENTE)
                         .requestMatchers("/api/clientes", "/api/clientes/**",
                                 "/api/cuentas", "/api/cuentas/**").hasRole(EJECUTIVO)
                         .requestMatchers("/api/**").authenticated()

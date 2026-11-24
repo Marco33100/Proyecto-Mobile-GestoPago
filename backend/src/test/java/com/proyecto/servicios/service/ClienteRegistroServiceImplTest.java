@@ -49,6 +49,7 @@ class ClienteRegistroServiceImplTest {
     @Mock private CuentaService cuentaService;
     @Mock private UserRepository userRepository;
     @Mock private PasswordEncoder passwordEncoder;
+    @Mock private com.proyecto.servicios.service.CatalogoService catalogoService;
 
     private ClienteRegistroServiceImpl service;
 
@@ -56,8 +57,17 @@ class ClienteRegistroServiceImplTest {
     void setUp() {
         service = new ClienteRegistroServiceImpl(
                 clienteRepository, domicilioRepository, cuentaService, org.mapstruct.factory.Mappers.getMapper(ClienteResponseMapper.class),
-                userRepository, passwordEncoder
+                userRepository, passwordEncoder, catalogoService
         );
+    }
+
+    @Test
+    void rechazaValoresFueraDeCatalogoSinGuardarNada() {
+        org.mockito.Mockito.doThrow(new com.proyecto.servicios.exception.cliente.ClienteValidationException(
+                "El pais debe elegirse del catalogo")).when(catalogoService).validarSeleccion(any(), any(), any());
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.registrarPropio(request()))
+                .hasMessageContaining("catalogo");
+        org.mockito.Mockito.verifyNoInteractions(clienteRepository, domicilioRepository, cuentaService, userRepository);
     }
 
     @Test

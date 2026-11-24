@@ -70,10 +70,10 @@ public class ClienteEntity {
     @Column(nullable = false, length = 100)
     private String ocupacion;
 
-    @Column(nullable = false, length = 150)
+    @Column(length = 150)
     private String empresa;
 
-    @Column(name = "ingreso_mensual", nullable = false, precision = 19, scale = 2)
+    @Column(name = "ingreso_mensual", precision = 19, scale = 2)
     private BigDecimal ingresoMensual;
 
     @Column(nullable = false)

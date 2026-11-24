@@ -13,4 +13,10 @@ public interface ClienteService {
     ClienteResponse actualizar(Long id, ActualizarClienteRequest request);
 
     ClienteResponse desactivar(Long id);
+
+    /** Datos del cliente con sesion iniciada. */
+    ClienteResponse consultarPropio();
+
+    /** El cliente con sesion cambia solo contacto, domicilio, estado civil y empleo. */
+    ClienteResponse actualizarPropio(com.proyecto.servicios.model.cliente.ActualizarMisDatosRequest datos);
 }

@@ -108,7 +108,7 @@ class ClienteConsultasPersistenceTest {
                 repositories.getRepository(ClienteRepository.class),
                 repositories.getRepository(DomicilioRepository.class), cuentas, org.mapstruct.factory.Mappers.getMapper(ClienteResponseMapper.class),
                 repositories.getRepository(UserRepository.class),
-                repositories.getRepository(UserSessionRepository.class), mock(ApplicationEventPublisher.class));
+                repositories.getRepository(UserSessionRepository.class), mock(ApplicationEventPublisher.class), mock(com.proyecto.servicios.service.CatalogoService.class));
         cuentasService = new CuentaServiceImpl(cuentas, new CuentaProperties(),
                 org.mapstruct.factory.Mappers.getMapper(ClienteResponseMapper.class));
 

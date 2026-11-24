@@ -164,6 +164,15 @@ class PagoFlowPersistenceTest {
         var primera = ledger.historial(actor, 0, 1);
         assertThat(primera.contenido()).hasSize(1); assertThat(primera.ultima()).isFalse();
         assertThat(ledger.historial(UUID.randomUUID(), 0, 20).contenido()).isEmpty();
+
+        // Movimientos: la rechazada tambien aparece con su estado; la preparada nunca enviada, no.
+        var todos = ledger.historial(actor, 0, 20,
+                com.proyecto.servicios.model.pago.HistorialRequest.Filtro.TODOS.estados());
+        assertThat(todos.contenido()).extracting(CompraResponse::pagoId)
+                .containsExactlyInAnyOrder(a.pagoId(), b.pagoId(), rechazada.pagoId());
+        assertThat(ledger.historial(actor, 0, 20,
+                com.proyecto.servicios.model.pago.HistorialRequest.Filtro.RECHAZADAS.estados()).contenido())
+                .extracting(CompraResponse::estado).containsExactly("RECHAZADO");
     }
     @Test void retieneSinCobrarYConfirmaUnaSolaVezSinComisionAdicional() {
         var pago = ledger.preparar(request("20.00"), actor).pago(); saldo("100", "0");

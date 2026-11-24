@@ -54,11 +54,12 @@ public class PagoController {
     @Operation(summary = "Consulta un pago propio; no reenvia pagos ni inicia otra retencion")
     public Resultado consultar(@Valid @RequestBody ConsultaRequest request) { return Resultado.de(pagos.consultar(request)); }
     @PostMapping(value = "/historial", consumes = "application/json")
-    @Operation(summary = "Lista las compras exitosas del cliente, de la mas reciente a la mas antigua",
-            description = "Solo operaciones APLICADO (confirmadas por el proveedor). codigo 0 sin compras. "
-                    + "El detalle de cada compra se consulta en /consulta con su pagoId.")
+    @Operation(summary = "Lista los movimientos del cliente, del mas reciente al mas antiguo",
+            description = "filtro: EXITOSAS (por omision, solo APLICADO), RECHAZADAS, PENDIENTES o TODOS. "
+                    + "Cada elemento trae su estado. codigo 0 sin resultados. "
+                    + "El detalle de cada operacion se consulta en /consulta con su pagoId.")
     public com.proyecto.servicios.model.GenericResponse<com.proyecto.servicios.model.cliente.PaginaResponse<CompraResponse>> historial(
-            @Valid @RequestBody com.proyecto.servicios.model.cliente.PaginacionRequest request) {
+            @Valid @RequestBody com.proyecto.servicios.model.pago.HistorialRequest request) {
         var pagina = pagos.historial(request);
         return com.proyecto.servicios.model.GenericResponse.consulta("Historial de compras", pagina, !pagina.contenido().isEmpty());
     }

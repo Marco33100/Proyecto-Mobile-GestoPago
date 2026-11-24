@@ -311,12 +311,16 @@ public class PagoLedger {
     }
     /** Solo compras confirmadas por el proveedor (APLICADO), de la mas reciente a la mas antigua. */
     public PaginaResponse<CompraResponse> historial(UUID actor, int pagina, int tamanio) {
-        var orden = Sort.by(Sort.Order.desc("enviadoEn"), Sort.Order.desc("id"));
+        return historial(actor, pagina, tamanio, List.of(PagoEntity.Estado.APLICADO));
+    }
+    public PaginaResponse<CompraResponse> historial(UUID actor, int pagina, int tamanio,
+                                                    java.util.Collection<PagoEntity.Estado> estados) {
+        var orden = Sort.by(Sort.Order.desc("enviadoEn").nullsLast(), Sort.Order.desc("creadoEn"), Sort.Order.desc("id"));
         return tx.execute(status -> PaginaResponse.desde(pagos
-                .findByUsuarioIdAndEstado(actor, PagoEntity.Estado.APLICADO, PageRequest.of(pagina, tamanio, orden))
+                .findByUsuarioIdAndEstadoIn(actor, estados, PageRequest.of(pagina, tamanio, orden))
                 .map(p -> new CompraResponse(p.getId(), p.getConcepto(), p.getMonto(),
                         p.getEnviadoEn() != null ? p.getEnviadoEn() : p.getCreadoEn(),
-                        p.getIdTransaccion(), p.getAutorizacion(), p.getNumeroCuenta()))));
+                        p.getIdTransaccion(), p.getAutorizacion(), p.getNumeroCuenta(), p.getEstado().name()))));
     }
     public PagoResponse cancelar(UUID id, UUID actor) {
         return tx.execute(status -> {
@@ -369,18 +373,38 @@ public class PagoLedger {
     }
     private String avisoEstado(PagoEntity pago, String pin) {
         String aviso = switch (pago.getEstado()) {
-            case ENVIADO, PENDIENTE -> "Pago pendiente de confirmacion. No repitas la operacion; el importe sigue retenido.";
+            case ENVIADO, PENDIENTE -> "Gesto Pago aún no confirma el resultado. No repitas la operación; el importe "
+                    + "sigue apartado hasta saberlo.";
             case REVISION -> "Pago en conciliacion. No repitas la operacion; el importe sigue retenido.";
             case PREPARADO -> "Revisa los datos y autoriza con tu codigo de autenticacion. Aun no se ha cobrado.";
             case EXPIRADO -> "El pago preparado vencio, fue cancelado o sus condiciones cambiaron. Prepara una nueva solicitud; no se realizo un cobro.";
             case RECHAZADO -> "No se realizo un nuevo cobro. La retencion, si existia, fue liberada.";
             case APLICADO -> "Conserva tu comprobante.";
         };
+        aviso = conCausa(pago, aviso);
         if (pago.getEstado() == PagoEntity.Estado.APLICADO && pago.isRequierePin() && (pin == null || pin.isBlank()))
             aviso = "Pago aplicado; el PIN esta pendiente de recuperacion con el proveedor. Conserva la autorizacion y no repitas el pago.";
         if (pago.isDuplicadoProveedor() && pago.getEstado() == PagoEntity.Estado.RECHAZADO)
             aviso = "El proveedor reporto una operacion anterior; no se realizo un nuevo cargo y la retencion fue liberada.";
         return aviso;
+    }
+    /** Explica al cliente por que quedo pendiente o rechazado, segun lo que contesto Gesto Pago. */
+    private static String conCausa(PagoEntity pago, String aviso) {
+        String codigo = pago.getCodigoProveedor();
+        return switch (pago.getEstado()) {
+            case ENVIADO, PENDIENTE -> "UNKNOWN".equals(codigo)
+                    ? "El sistema de cobros de Gesto Pago no está respondiendo. Estamos confirmando el resultado; "
+                    + "no repitas la operación, el importe sigue apartado."
+                    : aviso;
+            case RECHAZADO -> switch (codigo == null ? "" : codigo) {
+                case "NOT_SENT" -> "El sistema de cobros de Gesto Pago no está disponible, por eso el pago no se envió. "
+                        + "No se hizo ningún cargo a tu cuenta. Inténtalo más tarde.";
+                case "70" -> "El sistema de cobros de Gesto Pago no está funcionando en este momento, por eso no se "
+                        + "aplicó el pago. No se hizo ningún cargo y tu saldo quedó libre. Inténtalo más tarde.";
+                default -> aviso;
+            };
+            default -> aviso;
+        };
     }
     private boolean esReferencia(PagoEntity pago, com.fasterxml.jackson.databind.JsonNode payload) {
         return Objects.equals(pago.getTipoFront(), 4) || pago.getConsultaReferenciaCifrada() != null

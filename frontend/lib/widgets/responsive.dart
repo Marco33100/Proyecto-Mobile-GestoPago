@@ -127,7 +127,7 @@ class PaginationBar extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 16),
           child: Text(
             'Página ${page + 1}',
-            style: Theme.of(context).textTheme.labelLarge,
+            style: Theme.of(context).textTheme.labelLarge?.copyWith(color: ink),
           ),
         ),
         Expanded(
