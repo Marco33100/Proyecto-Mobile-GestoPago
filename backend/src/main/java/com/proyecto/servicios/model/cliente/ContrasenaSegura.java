@@ -11,7 +11,7 @@ import static java.lang.annotation.RetentionPolicy.RUNTIME;
 @Retention(RUNTIME)
 @Constraint(validatedBy = ContrasenaSeguraValidator.class)
 public @interface ContrasenaSegura {
-    String message() default "La contrasena debe tener entre 8 y 72 caracteres, maximo 72 bytes UTF-8, mayuscula, minuscula, numero y caracter especial";
+    String message() default "La contrasena debe tener entre 8 y 12 caracteres, mayuscula, minuscula, numero y caracter especial";
     Class<?>[] groups() default {};
     Class<? extends Payload>[] payload() default {};
 }

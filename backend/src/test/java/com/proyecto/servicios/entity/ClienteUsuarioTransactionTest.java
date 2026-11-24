@@ -164,7 +164,7 @@ class ClienteUsuarioTransactionTest {
         assertThat(clientes.count()).isZero();
         assertThat(cuentas.count()).isZero();
         String hashOriginal = ejecutivo.getPasswordHash();
-        properties.setPassword("OtraSegura456!");
+        properties.setPassword("Otra456!x");
         bootstrap.crearSiSeSolicita();
         assertThat(usuarios.count()).isEqualTo(1);
         assertThat(usuarios.findById(ejecutivo.getId()).orElseThrow().getPasswordHash()).isEqualTo(hashOriginal);
@@ -627,7 +627,8 @@ class ClienteUsuarioTransactionTest {
     private ClienteRegistroService registro(UserRepository userRepository) {
         var service = new ClienteRegistroServiceImpl(clientes, domicilios,
                 new CuentaServiceImpl(cuentas, new CuentaProperties(), org.mapstruct.factory.Mappers.getMapper(ClienteResponseMapper.class)),
-                org.mapstruct.factory.Mappers.getMapper(ClienteResponseMapper.class), userRepository, encoder);
+                org.mapstruct.factory.Mappers.getMapper(ClienteResponseMapper.class), userRepository, encoder,
+                mock(com.proyecto.servicios.service.CatalogoService.class));
         return proxy(service, ClienteRegistroService.class);
     }
 

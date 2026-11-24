@@ -18,6 +18,26 @@ class ClienteDatosTest {
     }
 
     @Test
+    void segundoNombreOpcionalPeroDeTresLetras() {
+        assertThatNoException().isThrownBy(() -> ClienteDatos.validarSegundoNombre(null));
+        assertThatNoException().isThrownBy(() -> ClienteDatos.validarSegundoNombre("  "));
+        assertThatNoException().isThrownBy(() -> ClienteDatos.validarSegundoNombre("Ana"));
+        assertThatThrownBy(() -> ClienteDatos.validarSegundoNombre(" An "))
+                .isInstanceOf(ClienteValidationException.class);
+    }
+
+    @Test
+    void ingresoSoloOpcionalSinEmpresaYConOcupacionSinIngreso() {
+        assertThatNoException().isThrownBy(() -> ClienteDatos.validarIngreso("Desempleado(a)", null, null));
+        assertThatNoException().isThrownBy(() -> ClienteDatos.validarIngreso("Estudiante", " ", null));
+        assertThatNoException().isThrownBy(() -> ClienteDatos.validarIngreso("Docente", null, java.math.BigDecimal.TEN));
+        assertThatThrownBy(() -> ClienteDatos.validarIngreso("Docente", null, null))
+                .isInstanceOf(ClienteValidationException.class);
+        assertThatThrownBy(() -> ClienteDatos.validarIngreso("Estudiante", "Cafeteria", null))
+                .isInstanceOf(ClienteValidationException.class);
+    }
+
+    @Test
     void corteDeEdadIncluyeCumpleanosYConservaReglaDeAnioBisiesto() {
         LocalDate hoy = LocalDate.of(2026, 2, 28);
         assertThat(ClienteDatos.esMayorDeEdad(LocalDate.of(2008, 2, 28), hoy)).isTrue();

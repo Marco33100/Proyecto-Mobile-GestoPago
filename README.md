@@ -223,10 +223,14 @@ La lista completa con esquemas está en **Swagger** (`/swagger-ui/index.html`).
 | POST | `/api/pagos/autorizar` | Cliente | Autoriza con TOTP y envía a Gesto Pago |
 | POST | `/api/pagos/consulta` | Cliente | Estado y comprobante de una compra |
 | POST | `/api/pagos/cancelar` | Cliente | Cancela una compra aún no enviada |
-| POST | `/api/pagos/historial` | Cliente | Compras exitosas paginadas |
+| POST | `/api/pagos/historial` | Cliente | Movimientos paginados con su estado; `filtro`: `EXITOSAS` (por omisión, solo compras confirmadas), `RECHAZADAS`, `PENDIENTES` o `TODOS` |
 | POST | `/api/usuarios/consulta` | Autenticado | Perfil propio |
 | PUT | `/api/usuarios/password` | Autenticado | Cambiar la contraseña propia |
 | POST | `/api/clientes` | Ejecutivo | Alta de cliente (cliente + domicilio + cuenta + usuario) |
+| POST | `/api/clientes/registro` | Público | Registro propio desde el login: mismos datos y validaciones; límite de intentos por IP |
+| GET | `/api/catalogos/registro` | Público | Países, nacionalidades y ocupaciones para las listas del registro; el alta valida contra ellos |
+| GET | `/api/clientes/mis-datos` | Cliente | Datos propios (contacto, domicilio y empleo) |
+| PUT | `/api/clientes/mis-datos` | Cliente | Edita teléfonos, estado civil, domicilio, ocupación, empresa e ingreso; identidad y correo no cambian |
 | POST | `/api/clientes/consulta` | Ejecutivo | Búsqueda de clientes |
 | PUT | `/api/clientes` | Ejecutivo | Actualizar cliente |
 | DELETE | `/api/clientes` | Ejecutivo | Baja lógica del cliente |
@@ -399,15 +403,19 @@ comprobante. **Cancelar** — `POST /api/pagos/cancelar` con `{"pagoId": "…"}`
 
 Detalle completo del flujo, estados y conciliación: [docs/payment-flow.md](docs/payment-flow.md).
 
-### 6.7 Historial de compras
+### 6.7 Historial de movimientos
 
 `POST /api/pagos/historial`
 
 ```json
-{ "pagina": 0, "tamanio": 20 }
+{ "pagina": 0, "tamanio": 20, "filtro": "TODOS" }
 ```
 
-Respuesta `200` (`codigo` 1) o `codigo` 0 si no hay compras:
+`filtro` es opcional: `EXITOSAS` (por omisión; solo compras confirmadas por el proveedor, el historial
+que pide el requisito), `RECHAZADAS`, `PENDIENTES` (enviadas sin resultado o en conciliación) o `TODOS`.
+Las solicitudes preparadas que nunca se autorizaron no aparecen.
+
+Respuesta `200` (`codigo` 1) o `codigo` 0 si no hay movimientos:
 
 ```json
 {
@@ -419,7 +427,7 @@ Respuesta `200` (`codigo` 1) o `codigo` 0 si no hay compras:
         "pagoId": "…", "concepto": "Recarga $20", "monto": 20.00,
         "fecha": "2026-11-15T16:32:00Z",
         "idTransaccion": "812345", "autorizacion": "556677",
-        "numeroCuenta": "CTA-0123456789ABCDEF0123"
+        "numeroCuenta": "CTA-0123456789ABCDEF0123", "estado": "APLICADO"
       }
     ],
     "pagina": 0, "tamanio": 20, "totalElementos": 1, "totalPaginas": 1, "ultima": true

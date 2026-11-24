@@ -49,6 +49,8 @@ class ClienteMethodSecurityTest {
             .withBean(CuentaService.class, () -> servicioCuentas)
             .withBean(ClienteResponseMapper.class, () -> org.mapstruct.factory.Mappers.getMapper(ClienteResponseMapper.class))
             .withBean(PasswordEncoder.class, () -> mock(PasswordEncoder.class))
+            .withBean(com.proyecto.servicios.service.CatalogoService.class,
+                    () -> mock(com.proyecto.servicios.service.CatalogoService.class))
             .withBean(ApplicationEventPublisher.class, () -> mock(ApplicationEventPublisher.class));
 
     @AfterEach void limpiar() { SecurityContextHolder.clearContext(); }

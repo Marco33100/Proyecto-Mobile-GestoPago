@@ -9,6 +9,13 @@ import '../models/login_challenge.dart';
 import '../models/login_session.dart';
 import 'auth_headers.dart';
 
+/// Opciones de los campos de lista del registro.
+typedef RegistrationCatalogs = ({
+  List<String> countries,
+  List<String> nationalities,
+  List<String> occupations,
+});
+
 class AuthApiService {
   AuthApiService(
     this._client, {
@@ -24,11 +31,12 @@ class AuthApiService {
   /// Web: el backend entrega la sesión en una cookie HttpOnly.
   final bool cookieSession;
 
+  /// Sin [session] es el registro público: la persona crea su propia cuenta.
   Future<String> registerClient({
-    required LoginSession session,
+    required LoginSession? session,
     required Map<String, dynamic> payload,
   }) => _post(
-    path: '/api/clientes',
+    path: session == null ? '/api/clientes/registro' : '/api/clientes',
     session: session,
     payload: payload,
     timeout: registrationTimeout,
@@ -39,11 +47,37 @@ class AuthApiService {
           ? accounts.first
           : null;
       final number = first is Map ? first['numeroCuenta'] : null;
+      if (session == null) {
+        return 'Cuenta creada. Inicia sesión con tu correo y contraseña.';
+      }
       return number == null
           ? 'Cliente registrado correctamente.'
           : 'Cliente registrado. Cuenta: $number';
     },
   );
+
+  /// Ruta pública. Null si no se pudo cargar: el formulario usa texto libre
+  /// y el servidor sigue validando contra el catálogo.
+  Future<RegistrationCatalogs?> registrationCatalogs() async {
+    try {
+      final response = await _client
+          .get(Uri.parse('${ApiConfig.baseUrl}/api/catalogos/registro'))
+          .timeout(requestTimeout);
+      if (response.statusCode != 200) return null;
+      // Acentos: Spring no siempre declara charset en application/json.
+      final data =
+          _decodeBody(utf8.decode(response.bodyBytes))['datos']
+              as Map<String, dynamic>;
+      List<String> list(String key) => (data[key] as List).cast<String>();
+      return (
+        countries: list('paises'),
+        nationalities: list('nacionalidades'),
+        occupations: list('ocupaciones'),
+      );
+    } on Object {
+      return null;
+    }
+  }
 
   /// Paso 1: verifica la contraseña. No crea sesión; devuelve el desafío del
   /// segundo factor (y la configuración del autenticador si aún no existe).

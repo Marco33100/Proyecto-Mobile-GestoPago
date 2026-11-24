@@ -55,7 +55,7 @@ public final class PagoDtos {
     /** Compra exitosa (APLICADO) para el historial. El detalle completo se obtiene con /consulta. */
     public record CompraResponse(
             UUID pagoId, String concepto, BigDecimal monto, Instant fecha,
-            String idTransaccion, String autorizacion, String numeroCuenta
+            String idTransaccion, String autorizacion, String numeroCuenta, String estado
     ) { }
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record Resultado(String codigo, String mensaje, PagoResponse datos) {

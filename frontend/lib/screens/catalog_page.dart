@@ -75,9 +75,32 @@ class _CatalogPageState extends State<CatalogPage> {
   Future<void> _checkPending() async {
     try {
       final id = await _pending.read(widget.session.userId);
-      if (mounted) setState(() => _hasPending = id != null);
+      var pending = id != null;
+      if (id != null && await _alreadyResolved(id)) {
+        await _pending.clear(widget.session.userId);
+        pending = false;
+      }
+      if (mounted) setState(() => _hasPending = pending);
     } catch (_) {
       // Sin almacenamiento seguro no se puede saber; el pago lo vuelve a revisar.
+    }
+  }
+
+  /// La marca local puede quedar vieja: el pago pudo resolverse (p. ej. por la
+  /// conciliación) o el cliente salió sin cerrar el resultado. Solo se consulta.
+  Future<bool> _alreadyResolved(String id) async {
+    try {
+      final payment = await widget.api.request('/api/pagos/consulta', {
+        'pagoId': id,
+      });
+      return const {
+        'APLICADO',
+        'RECHAZADO',
+        'EXPIRADO',
+      }.contains(payment['estado']);
+    } on PaymentFailure catch (failure) {
+      // Sin orden en el servidor no hay nada que esperar; otro error se respeta.
+      return failure.status == 404;
     }
   }
 

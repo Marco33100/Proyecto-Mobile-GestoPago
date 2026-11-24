@@ -42,11 +42,33 @@ public final class ClienteDatos {
 
     public static void validarNombres(String nombre, String apellidoPaterno, String apellidoMaterno) {
         if (nombreInvalido(nombre) || nombreInvalido(apellidoPaterno) || nombreInvalido(apellidoMaterno)) {
-            throw new ClienteValidationException("Nombre y apellidos deben tener al menos 2 caracteres");
+            throw new ClienteValidationException("Nombre y apellidos deben tener al menos 3 letras");
+        }
+    }
+
+    /** Opcional, pero si se captura debe tener al menos 3 letras. */
+    public static void validarSegundoNombre(String valor) {
+        String texto = normalizarOpcional(valor);
+        if (texto != null && texto.length() < 3) {
+            throw new ClienteValidationException("El segundo nombre debe tener al menos 3 letras");
+        }
+    }
+
+    /** Ocupaciones del catalogo que pueden no tener ingreso. */
+    public static final java.util.Set<String> OCUPACIONES_SIN_INGRESO =
+            java.util.Set.of("Desempleado(a)", "Estudiante", "Ama(o) de casa",
+                    "Jubilado(a) o pensionado(a)");
+
+    /** El ingreso es obligatorio si hay empresa o la ocupacion implica un ingreso. */
+    public static void validarIngreso(String ocupacion, String empresa, java.math.BigDecimal ingreso) {
+        boolean puedeOmitirse = normalizarOpcional(empresa) == null && ocupacion != null
+                && OCUPACIONES_SIN_INGRESO.contains(normalizarTexto(ocupacion));
+        if (ingreso == null && !puedeOmitirse) {
+            throw new ClienteValidationException("El ingreso mensual es obligatorio si tienes empresa o un empleo");
         }
     }
 
     private static boolean nombreInvalido(String valor) {
-        return valor == null || normalizarTexto(valor).length() < 2;
+        return valor == null || normalizarTexto(valor).length() < 3;
     }
 }

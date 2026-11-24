@@ -99,6 +99,16 @@ class CuentaMethodSecurityTest {
     }
 
     @Test
+    void visitanteSinSesionPuedeCrearSuCuentaEnElRegistroPropio() {
+        SecurityContextHolder.getContext().setAuthentication(new org.springframework.security.authentication
+                .AnonymousAuthenticationToken("registro", "anonymousUser",
+                        List.of(new SimpleGrantedAuthority("ROLE_ANONYMOUS"))));
+        // Pasa la seguridad y llega a la regla de negocio (cliente nulo).
+        runner.run(context -> assertThrows(NullPointerException.class,
+                () -> context.getBean(CuentaService.class).crearPara(null)));
+    }
+
+    @Test
     void clienteConPrincipalValidoNoAdministraCuentas() {
         autenticarCliente();
         runner.run(context -> {

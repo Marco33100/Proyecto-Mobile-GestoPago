@@ -6,6 +6,8 @@ import static com.proyecto.servicios.support.ClienteDatos.normalizarMayusculas;
 import static com.proyecto.servicios.support.ClienteDatos.normalizarCorreo;
 import static com.proyecto.servicios.support.ClienteDatos.validarMayoriaDeEdad;
 import static com.proyecto.servicios.support.ClienteDatos.validarNombres;
+import static com.proyecto.servicios.support.ClienteDatos.validarSegundoNombre;
+import static com.proyecto.servicios.support.ClienteDatos.validarIngreso;
 
 import com.proyecto.servicios.entity.sf.ClienteEntity;
 import com.proyecto.servicios.entity.sf.CuentaEntity;
@@ -25,6 +27,7 @@ import com.proyecto.servicios.model.cliente.ContrasenaSeguraValidator;
 import com.proyecto.servicios.repositorys.sf.ClienteRepository;
 import com.proyecto.servicios.repositorys.sf.DomicilioRepository;
 import com.proyecto.servicios.repositorys.sf.UserRepository;
+import com.proyecto.servicios.service.CatalogoService;
 import com.proyecto.servicios.service.ClienteRegistroService;
 import com.proyecto.servicios.service.CuentaService;
 import lombok.extern.slf4j.Slf4j;
@@ -52,6 +55,7 @@ public class ClienteRegistroServiceImpl implements ClienteRegistroService {
     private final ClienteResponseMapper responseMapper;
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
+    private final CatalogoService catalogoService;
 
     @Autowired
     public ClienteRegistroServiceImpl(
@@ -60,7 +64,8 @@ public class ClienteRegistroServiceImpl implements ClienteRegistroService {
             CuentaService cuentaService,
             ClienteResponseMapper responseMapper,
             UserRepository userRepository,
-            PasswordEncoder passwordEncoder
+            PasswordEncoder passwordEncoder,
+            CatalogoService catalogoService
     ) {
         this.clienteRepository = clienteRepository;
         this.domicilioRepository = domicilioRepository;
@@ -68,12 +73,23 @@ public class ClienteRegistroServiceImpl implements ClienteRegistroService {
         this.responseMapper = responseMapper;
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
+        this.catalogoService = catalogoService;
     }
 
     @Override
     @PreAuthorize("hasRole('EJECUTIVO')")
     @Transactional(transactionManager = "sfTransactionManager")
     public ClienteResponse registrar(RegistrarClienteRequest request) {
+        return crear(request);
+    }
+
+    @Override
+    @Transactional(transactionManager = "sfTransactionManager")
+    public ClienteResponse registrarPropio(RegistrarClienteRequest request) {
+        return crear(request);
+    }
+
+    private ClienteResponse crear(RegistrarClienteRequest request) {
         validarReglas(request);
         String curp = normalizarMayusculas(request.curp());
         String rfc = normalizarMayusculas(request.rfc());
@@ -104,6 +120,9 @@ public class ClienteRegistroServiceImpl implements ClienteRegistroService {
         }
         validarMayoriaDeEdad(request.fechaNacimiento());
         validarNombres(request.nombre(), request.apellidoPaterno(), request.apellidoMaterno());
+        validarSegundoNombre(request.segundoNombre());
+        validarIngreso(request.ocupacion(), request.empresa(), request.ingresoMensual());
+        catalogoService.validarSeleccion(request.nacionalidad(), request.domicilio().pais(), request.ocupacion());
     }
 
     private void validarDuplicados(String curp, String rfc, String correo) {
@@ -139,7 +158,7 @@ public class ClienteRegistroServiceImpl implements ClienteRegistroService {
                 curp,
                 rfc,
                 new ClienteEntity.Contacto(correo, request.telefonoMovil(), normalizarOpcional(request.telefonoAlternativo())),
-                new ClienteEntity.Empleo(normalizarTexto(request.ocupacion()), normalizarTexto(request.empresa()), request.ingresoMensual()),
+                new ClienteEntity.Empleo(normalizarTexto(request.ocupacion()), normalizarOpcional(request.empresa()), request.ingresoMensual()),
                 ahora);
     }
 

@@ -5,6 +5,8 @@ import static com.proyecto.servicios.support.ClienteDatos.normalizarOpcional;
 import static com.proyecto.servicios.support.ClienteDatos.normalizarCorreo;
 import static com.proyecto.servicios.support.ClienteDatos.validarMayoriaDeEdad;
 import static com.proyecto.servicios.support.ClienteDatos.validarNombres;
+import static com.proyecto.servicios.support.ClienteDatos.validarSegundoNombre;
+import static com.proyecto.servicios.support.ClienteDatos.validarIngreso;
 import com.proyecto.servicios.support.PaginacionDatos;
 
 import com.proyecto.servicios.entity.sf.ClienteEntity;
@@ -29,6 +31,7 @@ import com.proyecto.servicios.model.cliente.ConsultaClientesRequest;
 import com.proyecto.servicios.repositorys.sf.ClienteRepository;
 import com.proyecto.servicios.repositorys.sf.CuentaRepository;
 import com.proyecto.servicios.repositorys.sf.DomicilioRepository;
+import com.proyecto.servicios.service.CatalogoService;
 import com.proyecto.servicios.service.ClienteService;
 import com.proyecto.servicios.specification.ClienteSpecification;
 import lombok.extern.slf4j.Slf4j;
@@ -67,6 +70,7 @@ public class ClienteServiceImpl implements ClienteService {
     private final UserRepository userRepository;
     private final UserSessionRepository sessionRepository;
     private final ApplicationEventPublisher eventPublisher;
+    private final CatalogoService catalogoService;
 
     @Autowired
     public ClienteServiceImpl(
@@ -76,7 +80,8 @@ public class ClienteServiceImpl implements ClienteService {
             ClienteResponseMapper clienteResponseMapper,
             UserRepository userRepository,
             UserSessionRepository sessionRepository,
-            ApplicationEventPublisher eventPublisher
+            ApplicationEventPublisher eventPublisher,
+            CatalogoService catalogoService
     ) {
         this.clienteRepository = clienteRepository;
         this.domicilioRepository = domicilioRepository;
@@ -85,6 +90,7 @@ public class ClienteServiceImpl implements ClienteService {
         this.userRepository = userRepository;
         this.sessionRepository = sessionRepository;
         this.eventPublisher = eventPublisher;
+        this.catalogoService = catalogoService;
     }
 
     @Override
@@ -161,6 +167,47 @@ public class ClienteServiceImpl implements ClienteService {
         validarId(id);
         validarMayoriaDeEdad(request.fechaNacimiento());
         validarNombres(request.nombre(), request.apellidoPaterno(), request.apellidoMaterno());
+        validarSegundoNombre(request.segundoNombre());
+        validarIngreso(request.ocupacion(), request.empresa(), request.ingresoMensual());
+        catalogoService.validarSeleccion(request.nacionalidad(), request.domicilio().pais(), request.ocupacion());
+        return aplicar(id, request);
+    }
+
+    @Override
+    @PreAuthorize("hasRole('CLIENTE')")
+    public ClienteResponse consultarPropio() {
+        return cargarRespuesta(clientePropio());
+    }
+
+    @Override
+    @PreAuthorize("hasRole('CLIENTE')")
+    @Transactional(transactionManager = "sfTransactionManager")
+    public ClienteResponse actualizarPropio(com.proyecto.servicios.model.cliente.ActualizarMisDatosRequest datos) {
+        ClienteEntity actual = clientePropio();
+        validarIngreso(datos.ocupacion(), datos.empresa(), datos.ingresoMensual());
+        // La nacionalidad no cambia aqui: no se revalida un valor capturado antes del catalogo.
+        catalogoService.validarSeleccion(null, datos.domicilio().pais(), datos.ocupacion());
+        // Identidad y correo se conservan tal cual; solo cambian los datos que el cliente puede editar.
+        return aplicar(actual.getId(), new ActualizarClienteRequest(actual.getNombre(), actual.getSegundoNombre(),
+                actual.getApellidoPaterno(), actual.getApellidoMaterno(), actual.getFechaNacimiento(),
+                actual.getSexo(), actual.getNacionalidad(), datos.estadoCivil(),
+                actual.getReferenciaReconocimientoFacial(), actual.getCorreo(), datos.telefonoMovil(),
+                datos.telefonoAlternativo(), datos.ocupacion(), datos.empresa(), datos.ingresoMensual(),
+                datos.domicilio()));
+    }
+
+    private ClienteEntity clientePropio() {
+        var autenticacion = org.springframework.security.core.context.SecurityContextHolder.getContext()
+                .getAuthentication();
+        if (autenticacion == null
+                || !(autenticacion.getPrincipal() instanceof com.proyecto.servicios.model.auth.AuthenticatedUser usuario)) {
+            throw new org.springframework.security.access.AccessDeniedException("Se requiere una sesion de cliente");
+        }
+        return userRepository.findById(usuario.userId()).map(UserEntity::getCliente)
+                .orElseThrow(() -> new ClienteNoEncontradoException("No existe el cliente solicitado"));
+    }
+
+    private ClienteResponse aplicar(Long id, ActualizarClienteRequest request) {
         String correoNormalizado = normalizarCorreo(request.correo());
 
         try {
@@ -324,7 +371,7 @@ public class ClienteServiceImpl implements ClienteService {
         cliente.actualizar(new ClienteEntity.Nombre(normalizarTexto(request.nombre()), normalizarOpcional(request.segundoNombre()), normalizarTexto(request.apellidoPaterno()), normalizarTexto(request.apellidoMaterno())),
                 new ClienteEntity.Perfil(request.fechaNacimiento(), request.sexo(), normalizarTexto(request.nacionalidad()), request.estadoCivil(), normalizarOpcional(request.referenciaReconocimientoFacial())),
                 new ClienteEntity.Contacto(correoNormalizado, request.telefonoMovil(), normalizarOpcional(request.telefonoAlternativo())),
-                new ClienteEntity.Empleo(normalizarTexto(request.ocupacion()), normalizarTexto(request.empresa()), request.ingresoMensual()),
+                new ClienteEntity.Empleo(normalizarTexto(request.ocupacion()), normalizarOpcional(request.empresa()), request.ingresoMensual()),
                 ahora);
     }
 

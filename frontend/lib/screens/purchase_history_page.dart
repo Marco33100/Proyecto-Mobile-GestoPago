@@ -9,8 +9,9 @@ import '../widgets/management_layout.dart';
 import '../widgets/status_message.dart';
 import '../widgets/surfaces.dart';
 
-/// Historial de compras exitosas (APLICADO) del cliente, de la más reciente a
-/// la más antigua. El detalle de cada compra se consulta al servidor.
+/// Movimientos del cliente (exitosos, rechazados y pendientes), del más
+/// reciente al más antiguo. El filtro "Exitosas" es el historial de compras
+/// confirmadas. El detalle de cada movimiento se consulta al servidor.
 class PurchaseHistoryPage extends StatefulWidget {
   const PurchaseHistoryPage({
     super.key,
@@ -27,7 +28,14 @@ class PurchaseHistoryPage extends StatefulWidget {
 
 class _PurchaseHistoryPageState extends State<PurchaseHistoryPage> {
   static const _pageSize = 20;
+  static const _filters = {
+    'TODOS': 'Todos',
+    'EXITOSAS': 'Exitosas',
+    'RECHAZADAS': 'Rechazadas',
+    'PENDIENTES': 'Pendientes',
+  };
   final _items = <Map<String, dynamic>>[];
+  String _filter = 'TODOS';
   int _page = 0;
   bool _isLast = true;
   bool _loading = true;
@@ -48,6 +56,7 @@ class _PurchaseHistoryPageState extends State<PurchaseHistoryPage> {
       final data = await widget.api.request('/api/pagos/historial', {
         'pagina': page,
         'tamanio': _pageSize,
+        'filtro': _filter,
       });
       final content = data['contenido'];
       if (!mounted) return;
@@ -82,27 +91,50 @@ class _PurchaseHistoryPageState extends State<PurchaseHistoryPage> {
 
   @override
   Widget build(BuildContext context) => ManagementLayout(
-    title: 'Tus compras',
+    title: 'Movimientos',
     busy: _loading,
     error: _error,
     children: [
       const Text(
-        'Solo aparecen las compras que Gestopago confirmó como exitosas.',
+        'Tus pagos con su resultado: exitosos, rechazados y pendientes.',
       ),
-      Align(
-        alignment: Alignment.centerRight,
-        child: TextButton.icon(
-          onPressed: _loading ? null : () => _load(0),
-          icon: const Icon(Icons.refresh_rounded),
-          label: const Text('Actualizar'),
-        ),
+      const SizedBox(height: AppSpace.md),
+      Row(
+        children: [
+          Expanded(
+            child: Wrap(
+              spacing: AppSpace.sm,
+              runSpacing: AppSpace.sm,
+              children: [
+                for (final entry in _filters.entries)
+                  ChoiceChip(
+                    label: Text(entry.value),
+                    selected: _filter == entry.key,
+                    onSelected: _loading || _filter == entry.key
+                        ? null
+                        : (_) {
+                            setState(() => _filter = entry.key);
+                            _load(0);
+                          },
+                  ),
+              ],
+            ),
+          ),
+          TextButton.icon(
+            onPressed: _loading ? null : () => _load(0),
+            icon: const Icon(Icons.refresh_rounded),
+            label: const Text('Actualizar'),
+          ),
+        ],
       ),
       const SizedBox(height: AppSpace.sm),
       if (!_loading && _error == null && _items.isEmpty)
         StatusMessage(
-          title: 'Aún no tienes compras',
+          title: _filter == 'TODOS'
+              ? 'Aún no tienes movimientos'
+              : 'Sin movimientos con este filtro',
           message:
-              'Cuando una compra se confirme, aparecerá aquí con su '
+              'Cada pago que autorices aparecerá aquí con su resultado, '
               'fecha, importe y referencia.',
           icon: Icons.receipt_long_outlined,
           tone: StatusTone.neutral,
@@ -124,7 +156,7 @@ class _PurchaseHistoryPageState extends State<PurchaseHistoryPage> {
         OutlinedButton.icon(
           onPressed: _loading ? null : () => _load(_page + 1),
           icon: const Icon(Icons.expand_more_rounded),
-          label: const Text('Ver más compras'),
+          label: const Text('Ver más movimientos'),
         ),
     ],
   );
@@ -143,16 +175,21 @@ class _PurchaseTile extends StatelessWidget {
     final amount = MoneyFormat.mxn(purchase['monto']);
     final date = formatDateTime(purchase['fecha']) ?? 'Fecha no disponible';
     final reference = purchase['idTransaccion']?.toString();
+    final status = MovementStatus.of(purchase['estado']);
     // En teléfonos se omite el icono para que el nombre del producto quepa.
     final compact = MediaQuery.sizeOf(context).width < 480;
     return AppCard(
       onTap: onTap,
       padding: const EdgeInsets.all(AppSpace.lg),
-      semanticLabel: 'Compra $concept, $amount, $date. Ver detalle',
+      semanticLabel: '${status.label}: $concept, $amount, $date. Ver detalle',
       child: Row(
         children: [
           if (!compact) ...[
-            const IconBadge(icon: Icons.check_circle_outline_rounded),
+            IconBadge(
+              icon: status.icon,
+              background: status.background,
+              foreground: status.foreground,
+            ),
             const SizedBox(width: AppSpace.lg),
           ],
           Expanded(
@@ -166,6 +203,12 @@ class _PurchaseTile extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                 ),
                 const SizedBox(height: AppSpace.xs),
+                Text(
+                  status.label,
+                  style: theme.textTheme.labelLarge?.copyWith(
+                    color: status.foreground,
+                  ),
+                ),
                 Text(
                   date,
                   style: theme.textTheme.bodySmall?.copyWith(color: mutedInk),
@@ -192,8 +235,56 @@ class _PurchaseTile extends StatelessWidget {
   }
 }
 
-/// Detalle de una compra: se vuelve a consultar al servidor para mostrar el
-/// comprobante vigente (autorización, referencia, PIN si aplica).
+/// Apariencia de cada resultado; el color nunca va solo, siempre con texto.
+class MovementStatus {
+  const MovementStatus._(
+    this.label,
+    this.title,
+    this.icon,
+    this.background,
+    this.foreground,
+  );
+
+  final String label;
+  final String title;
+  final IconData icon;
+  final Color background;
+  final Color foreground;
+
+  bool get successful => label == 'Exitosa';
+
+  static const _success = MovementStatus._(
+    'Exitosa',
+    'Compra exitosa',
+    Icons.check_circle_outline_rounded,
+    successSurface,
+    ink,
+  );
+  static const _rejected = MovementStatus._(
+    'Rechazada',
+    'Compra rechazada',
+    Icons.cancel_outlined,
+    errorSurface,
+    errorOnSurface,
+  );
+  static const _pending = MovementStatus._(
+    'Pendiente',
+    'Compra pendiente',
+    Icons.hourglass_top_rounded,
+    sage,
+    terracotta,
+  );
+
+  /// Sin estado (servidor anterior al filtro) solo llegaban compras exitosas.
+  static MovementStatus of(Object? state) => switch (state?.toString()) {
+    'RECHAZADO' => _rejected,
+    'ENVIADO' || 'PENDIENTE' || 'REVISION' => _pending,
+    _ => _success,
+  };
+}
+
+/// Detalle de un movimiento: se vuelve a consultar al servidor para mostrar el
+/// comprobante vigente (autorización, referencia, PIN si aplica) o la causa.
 class PurchaseDetailPage extends StatefulWidget {
   const PurchaseDetailPage({
     super.key,
@@ -238,8 +329,10 @@ class _PurchaseDetailPageState extends State<PurchaseDetailPage> {
     // Mientras llega el detalle se muestra lo que ya trae el historial.
     final data = {...widget.purchase, ...?_detail};
     final theme = Theme.of(context);
+    final status = MovementStatus.of(data['estado']);
+    final notice = textOf(data['aviso']);
     return ManagementLayout(
-      title: 'Detalle de la compra',
+      title: 'Detalle del movimiento',
       busy: _loading,
       error: _error,
       children: [
@@ -247,16 +340,14 @@ class _PurchaseDetailPageState extends State<PurchaseDetailPage> {
           children: [
             Row(
               children: [
-                const IconBadge(
-                  icon: Icons.check_rounded,
-                  background: successSurface,
+                IconBadge(
+                  icon: status.icon,
+                  background: status.background,
+                  foreground: status.foreground,
                 ),
                 const SizedBox(width: AppSpace.md),
                 Expanded(
-                  child: Text(
-                    'Compra exitosa',
-                    style: theme.textTheme.titleMedium,
-                  ),
+                  child: Text(status.title, style: theme.textTheme.titleMedium),
                 ),
               ],
             ),
@@ -269,6 +360,13 @@ class _PurchaseDetailPageState extends State<PurchaseDetailPage> {
             Text(data['concepto']?.toString() ?? 'Compra'),
           ],
         ),
+        // La causa (p. ej. el sistema de cobros no respondió) la da el servidor.
+        if (!status.successful && notice.isNotEmpty)
+          StatusMessage(
+            message: notice,
+            icon: status.icon,
+            tone: StatusTone.neutral,
+          ),
         ManagementCard(
           children: [
             _row(

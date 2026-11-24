@@ -77,7 +77,12 @@ http.Response _ok(Object data) =>
 void main() {
   late List<String> paths;
 
-  Future<void> pumpCatalog(WidgetTester tester, {String? pending}) async {
+  Future<void> pumpCatalog(
+    WidgetTester tester, {
+    String? pending,
+    String state = 'PENDIENTE',
+    MemoryPending? store,
+  }) async {
     tester.view.physicalSize = const Size(900, 1400);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -102,7 +107,7 @@ void main() {
             'codigo': '02',
             'datos': {
               'pagoId': jsonDecode(request.body)['pagoId'],
-              'estado': 'PENDIENTE',
+              'estado': state,
               'concepto': 'CFE Pago de luz',
               'monto': 250,
             },
@@ -118,7 +123,7 @@ void main() {
         home: CatalogPage(
           session: _session,
           api: PaymentApiService(client, _session, baseUrl: 'http://api'),
-          pendingStore: MemoryPending(pending),
+          pendingStore: store ?? MemoryPending(pending),
         ),
       ),
     );
@@ -219,7 +224,10 @@ void main() {
       await tester.tap(find.text('Ahora no'));
       await tester.pumpAndSettle();
       expect(find.byType(PaymentPage), findsNothing);
-      expect(paths.where((p) => p.startsWith('/api/pagos')), isEmpty);
+      // Solo se consultó el estado (lectura); nunca se preparó ni autorizó.
+      expect(paths.where((p) => p.startsWith('/api/pagos')).toSet(), {
+        '/api/pagos/consulta',
+      });
 
       // "Ver estado del pago" abre el pago anterior, nunca uno nuevo.
       await tester.tap(find.text('Recarga 10'));
@@ -232,11 +240,29 @@ void main() {
       expect(find.text('Estado de tu pago'), findsOneWidget);
       expect(find.text('Compra pendiente'), findsOneWidget);
       expect(find.byKey(const ValueKey('chosen-product')), findsNothing);
-      expect(paths.where((p) => p.startsWith('/api/pagos')), [
+      expect(paths.where((p) => p.startsWith('/api/pagos')).toSet(), {
         '/api/pagos/consulta',
-      ]);
+      });
     },
   );
+
+  testWidgets('un pago ya rechazado no bloquea otra compra y limpia la marca', (
+    tester,
+  ) async {
+    final store = MemoryPending('pago-1');
+    await pumpCatalog(tester, state: 'RECHAZADO', store: store);
+    expect(find.textContaining('Tienes un pago en proceso'), findsNothing);
+    expect(store.id, isNull);
+    await tester.tap(find.text('Telcel'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Recarga 10'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Comprar'));
+    await tester.pumpAndSettle();
+    expect(find.text('Tienes un pago en proceso'), findsNothing);
+    expect(find.byType(PaymentPage), findsOneWidget);
+    expect(find.byKey(const ValueKey('chosen-product')), findsOneWidget);
+  });
 
   testWidgets('un producto que la app no puede pagar no ofrece comprar', (
     tester,

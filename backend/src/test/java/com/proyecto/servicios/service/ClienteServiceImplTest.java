@@ -80,7 +80,8 @@ class ClienteServiceImplTest {
                 clienteRepository,
                 domicilioRepository,
                 cuentaRepository,
-                org.mapstruct.factory.Mappers.getMapper(ClienteResponseMapper.class), userRepository, sessionRepository, eventPublisher
+                org.mapstruct.factory.Mappers.getMapper(ClienteResponseMapper.class), userRepository, sessionRepository, eventPublisher,
+                mock(com.proyecto.servicios.service.CatalogoService.class)
         );
     }
 
@@ -113,6 +114,44 @@ class ClienteServiceImplTest {
         verify(sessionRepository).deleteById(usuario.getId());
         verify(eventPublisher).publishEvent(any(UsuarioClienteModificadoEvent.class));
         verify(clienteRepository).existsByCorreoAndIdNot("nuevo@correo.com", cliente.getId());
+    }
+
+    @Test
+    void clienteActualizaSusDatosSinTocarIdentidadNiCorreoNiSesion() {
+        ClienteEntity cliente = cliente();
+        DomicilioEntity domicilio = domicilio(cliente);
+        String correo = cliente.getCorreo();
+        UserEntity usuario = new UserEntity(UUID.randomUUID(), correo, "hash",
+                cliente.getNombreCompleto(), cliente, Instant.now());
+        org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(
+                new org.springframework.security.authentication.UsernamePasswordAuthenticationToken(
+                        new com.proyecto.servicios.model.auth.AuthenticatedUser(
+                                usuario.getId(), UUID.randomUUID(), correo, correo), null, List.of()));
+        try {
+            when(userRepository.findById(usuario.getId())).thenReturn(java.util.Optional.of(usuario));
+            when(userRepository.findByClienteIdForUpdate(cliente.getId())).thenReturn(usuario);
+            when(clienteRepository.findClienteById(cliente.getId())).thenReturn(cliente);
+            when(clienteRepository.existsByCorreoAndIdNot(correo, cliente.getId())).thenReturn(false);
+            when(domicilioRepository.findByClienteId(cliente.getId())).thenReturn(domicilio);
+            when(clienteRepository.save(any(ClienteEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+            when(domicilioRepository.saveAndFlush(any(DomicilioEntity.class)))
+                    .thenAnswer(invocation -> invocation.getArgument(0));
+            when(cuentaRepository.findAllByClienteId(cliente.getId())).thenReturn(List.of());
+
+            ClienteResponse response = clienteService.actualizarPropio(
+                    new com.proyecto.servicios.model.cliente.ActualizarMisDatosRequest("5599887766", null,
+                            EstadoCivil.CASADO, "Docente", null, new BigDecimal("1000.00"),
+                            requestActualizacion().domicilio()));
+
+            assertEquals("5599887766", response.telefonoMovil());
+            assertEquals("Avenida Reforma", response.domicilio().calle());
+            assertEquals(cliente.getNombre(), response.nombre());
+            assertEquals("MOMA900101HDFRRR01", response.curp());
+            assertEquals(correo, response.correo());
+            org.mockito.Mockito.verify(sessionRepository, org.mockito.Mockito.never()).deleteById(any());
+        } finally {
+            org.springframework.security.core.context.SecurityContextHolder.clearContext();
+        }
     }
 
     @Test

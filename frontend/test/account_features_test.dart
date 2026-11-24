@@ -79,10 +79,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('5512345678'), findsOneWidget);
       expect(find.text('Seguridad de pagos'), findsNothing);
-      expect(
-        find.text('Perfil actualizado desde el servidor.'),
-        findsOneWidget,
-      );
+      expect(find.text('Activo'), findsOneWidget);
     },
   );
 
@@ -100,7 +97,7 @@ void main() {
             'correo': 'ana@example.com',
             'credenciales': {
               'contrasenaActual': 'Anterior123!',
-              'nuevaContrasena': 'NuevaSegura123!',
+              'nuevaContrasena': 'Nueva123!x',
             },
           });
           return http.Response('', 204);
@@ -131,8 +128,8 @@ void main() {
       await enter(tester, 'password-confirm', 'abc');
       await tap(tester, find.text('Guardar contraseña'));
       expect(changes, 0);
-      await enter(tester, 'password-new', 'NuevaSegura123!');
-      await enter(tester, 'password-confirm', 'NuevaSegura123!');
+      await enter(tester, 'password-new', 'Nueva123!x');
+      await enter(tester, 'password-confirm', 'Nueva123!x');
       await tap(tester, find.text('Guardar contraseña'));
       expect(changes, 0);
       await tap(tester, find.text('Confirmar'));
@@ -187,8 +184,8 @@ void main() {
       await tester.pumpAndSettle();
       await tap(tester, find.text('Cambiar contraseña'));
       await enter(tester, 'password-current', 'Anterior123!');
-      await enter(tester, 'password-new', 'NuevaSegura123!');
-      await enter(tester, 'password-confirm', 'NuevaSegura123!');
+      await enter(tester, 'password-new', 'Nueva123!x');
+      await enter(tester, 'password-confirm', 'Nueva123!x');
       await tap(tester, find.text('Guardar contraseña'));
       await tap(tester, find.text('Confirmar'));
       expect(find.text('La contraseña actual es incorrecta.'), findsOneWidget);
@@ -267,6 +264,7 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
+      await tap(tester, find.text('Más filtros'));
       await enter(tester, 'filter-desde', '2026-02-30');
       await tap(tester, find.text('Buscar'));
       expect(bodies.length, 1);

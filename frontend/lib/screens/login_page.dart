@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/login_challenge.dart';
 import '../models/login_session.dart';
 import '../widgets/second_factor_step.dart';
+import 'register_page.dart';
 import '../services/auth_api_service.dart';
 import '../storage/session_store_factory.dart';
 import '../storage/session_store.dart';
@@ -50,6 +51,18 @@ class _LoginPageState extends State<LoginPage> {
   }
 
   /// Paso 1: contraseña. Si es correcta, pasa al segundo factor.
+  Future<void> _openSignup() async {
+    final message = await Navigator.of(context).push<String>(
+      MaterialPageRoute(
+        builder: (_) => RegisterPage(authApi: widget.authApi, session: null),
+      ),
+    );
+    if (message == null || !mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
   Future<void> _submit() async {
     if (_loading) return;
     final normalizedEmail = _emailController.text.trim();
@@ -340,10 +353,9 @@ class _LoginPageState extends State<LoginPage> {
                               : const Text('Iniciar sesión'),
                         ),
                         const SizedBox(height: 20),
-                        Text(
-                          '¿Aún no tienes acceso? Solicita el registro a un ejecutivo.',
-                          textAlign: TextAlign.center,
-                          style: Theme.of(context).textTheme.bodyMedium,
+                        TextButton(
+                          onPressed: _loading ? null : _openSignup,
+                          child: const Text('¿No tienes cuenta? Crear cuenta'),
                         ),
                       ],
                     ),

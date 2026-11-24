@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../services/admin_api_service.dart';
 import '../services/auth_api_service.dart';
 import '../services/payment_api_service.dart';
 import '../theme.dart';
 import '../utils/money_format.dart';
 import '../utils/date_only.dart';
+import '../validation/input_filters.dart';
+import '../widgets/surfaces.dart';
 import '../widgets/management_layout.dart';
 import '../widgets/responsive.dart';
 import 'register_page.dart';
@@ -30,6 +33,7 @@ class _AdminSearchPageState extends State<AdminSearchPage> {
   AdminPageResult? _result;
   bool? _active;
   bool _busy = false;
+  bool _moreFilters = false;
   String? _error;
   bool get _clients => widget.section == 'clientes';
 
@@ -70,6 +74,24 @@ class _AdminSearchPageState extends State<AdminSearchPage> {
     }
   }
 
+  /// Filtros avanzados con valor: se cuentan en "Más filtros".
+  int get _advancedInUse => const [
+    'correo',
+    'numeroCuenta',
+    'id',
+    'desde',
+    'hasta',
+  ].where((key) => (_fields[key]?.text.trim() ?? '').isNotEmpty).length;
+
+  void _clear() {
+    for (final controller in _fields.values) {
+      controller.clear();
+    }
+    setState(() => _active = null);
+    _filters = {};
+    _load(0);
+  }
+
   void _search() {
     if (!_form.currentState!.validate()) return;
     _filters = {
@@ -90,7 +112,15 @@ class _AdminSearchPageState extends State<AdminSearchPage> {
       controller: _fields.putIfAbsent(key, TextEditingController.new),
       enabled: !_busy,
       decoration: InputDecoration(labelText: label),
-      maxLength: max,
+      inputFormatters: [
+        LengthLimitingTextInputFormatter(max),
+        ...switch (key) {
+          'id' || 'telefono' => [FilteringTextInputFormatter.digitsOnly],
+          'desde' ||
+          'hasta' => [FilteringTextInputFormatter.allow(RegExp(r'[0-9-]'))],
+          _ => InputFilters.forField(key),
+        },
+      ],
       keyboardType: key == 'id' || key == 'telefono'
           ? TextInputType.number
           : TextInputType.text,
@@ -136,119 +166,244 @@ class _AdminSearchPageState extends State<AdminSearchPage> {
   }
 
   @override
-  Widget build(BuildContext context) => ManagementLayout(
-    title: _clients ? 'Clientes' : 'Usuarios',
-    busy: _busy,
-    error: _error,
-    maxWidth: ContentWidth.wide,
-    children: [
-      Form(
-        key: _form,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    final primary = _clients
+        ? [
+            _field('nombre', 'Nombre', max: 50),
+            _field('rfc', 'RFC', max: 13),
+            _field('curp', 'CURP', max: 18),
+          ]
+        : [
+            _field('nombre', 'Nombre', max: 203),
+            _field('correo', 'Correo exacto', max: 254),
+            _field('telefono', 'Teléfono móvil', max: 10),
+          ];
+    final inUse = _advancedInUse;
+    return ManagementLayout(
+      title: _clients ? 'Clientes' : 'Usuarios',
+      busy: _busy,
+      error: _error,
+      maxWidth: ContentWidth.wide,
+      children: [
+        Text(
+          _clients
+              ? 'Busca por nombre, RFC o CURP; basta con una parte. Para editar o dar de baja, abre el cliente.'
+              : 'Accesos para iniciar sesión (clientes y ejecutivos). Para editar datos de una persona usa Clientes.',
+        ),
+        const SizedBox(height: AppSpace.lg),
+        ManagementCard(
           children: [
-            ResponsiveGrid(
-              minItemWidth: 260,
-              spacing: 16,
-              children: [
-                _field('nombre', 'Nombre', max: _clients ? 50 : 203),
-                _field('correo', 'Correo exacto', max: _clients ? 100 : 254),
-                if (_clients) ...[
-                  _field('rfc', 'RFC', max: 13),
-                  _field('curp', 'CURP', max: 18),
-                  _field('numeroCuenta', 'Número de cuenta', max: 24),
-                  _field('id', 'ID de cliente', max: 18),
-                  _field('desde', 'Registro desde (AAAA-MM-DD)', max: 10),
-                  _field('hasta', 'Registro hasta (AAAA-MM-DD)', max: 10),
-                ] else
-                  _field('telefono', 'Teléfono móvil', max: 10),
-              ],
-            ),
-            DropdownButtonFormField<String>(
-              initialValue: 'todos',
-              decoration: const InputDecoration(labelText: 'Estado'),
-              items: const [
-                DropdownMenuItem(value: 'todos', child: Text('Todos')),
-                DropdownMenuItem(value: 'activo', child: Text('Activo')),
-                DropdownMenuItem(value: 'inactivo', child: Text('Inactivo')),
-              ],
-              onChanged: _busy
-                  ? null
-                  : (value) => _active = switch (value) {
-                      'activo' => true,
-                      'inactivo' => false,
-                      _ => null,
-                    },
-            ),
-            const SizedBox(height: 12),
-            Text(
-              _clients
-                  ? 'Busca coincidencias en nombre, RFC o CURP. Si no hay coincidencias, se muestra el listado. Correo, cuenta e ID requieren el valor completo.'
-                  : 'Los filtros se combinan: se muestran usuarios que cumplen todos los criterios enviados.',
-            ),
-            const SizedBox(height: 18),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 360),
-                child: FilledButton.icon(
-                  onPressed: _busy ? null : _search,
-                  icon: const Icon(Icons.search),
-                  label: const Text('Buscar'),
-                ),
+            Form(
+              key: _form,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  ResponsiveGrid(
+                    minItemWidth: 240,
+                    spacing: 16,
+                    children: primary,
+                  ),
+                  if (_clients && _moreFilters) ...[
+                    Text(
+                      'Valores exactos',
+                      style: textTheme.labelLarge?.copyWith(color: mutedInk),
+                    ),
+                    const SizedBox(height: AppSpace.sm),
+                    ResponsiveGrid(
+                      minItemWidth: 240,
+                      spacing: 16,
+                      children: [
+                        _field('correo', 'Correo', max: 100),
+                        _field('numeroCuenta', 'Número de cuenta', max: 24),
+                        _field('id', 'ID de cliente', max: 18),
+                        _field('desde', 'Registro desde (AAAA-MM-DD)', max: 10),
+                        _field('hasta', 'Registro hasta (AAAA-MM-DD)', max: 10),
+                      ],
+                    ),
+                  ],
+                  Wrap(
+                    spacing: AppSpace.lg,
+                    runSpacing: AppSpace.md,
+                    alignment: WrapAlignment.spaceBetween,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      Wrap(
+                        spacing: AppSpace.sm,
+                        runSpacing: AppSpace.sm,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          for (final (value, label) in const [
+                            (null, 'Todos'),
+                            (true, 'Activos'),
+                            (false, 'Inactivos'),
+                          ])
+                            ChoiceChip(
+                              label: Text(label),
+                              selected: _active == value,
+                              onSelected: _busy
+                                  ? null
+                                  : (_) => setState(() => _active = value),
+                            ),
+                          if (_clients)
+                            TextButton.icon(
+                              onPressed: () =>
+                                  setState(() => _moreFilters = !_moreFilters),
+                              icon: Icon(
+                                _moreFilters
+                                    ? Icons.expand_less_rounded
+                                    : Icons.tune_rounded,
+                              ),
+                              label: Text(
+                                _moreFilters
+                                    ? 'Menos filtros'
+                                    : inUse == 0
+                                    ? 'Más filtros'
+                                    : 'Más filtros ($inUse)',
+                              ),
+                            ),
+                        ],
+                      ),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          TextButton(
+                            onPressed: _busy ? null : _clear,
+                            child: const Text('Limpiar'),
+                          ),
+                          const SizedBox(width: AppSpace.sm),
+                          FilledButton.icon(
+                            style: FilledButton.styleFrom(
+                              minimumSize: const Size(160, 48),
+                            ),
+                            onPressed: _busy ? null : _search,
+                            icon: const Icon(Icons.search),
+                            label: const Text('Buscar'),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ],
               ),
             ),
           ],
         ),
-      ),
-      const SizedBox(height: 24),
-      if (_result case final result?) ...[
-        Text(
-          '${result.total} resultados · Página ${result.page + 1}',
-          style: Theme.of(context).textTheme.titleMedium,
-        ),
-        const SizedBox(height: 12),
-        if (result.items.isEmpty) const Text('No se encontraron datos.'),
-        ResponsiveGrid(
-          children: [for (final item in result.items) _resultCard(item)],
-        ),
-        PaginationBar(
-          page: result.page,
-          isLast: result.last,
-          busy: _busy,
-          onPage: _load,
-        ),
+        const SizedBox(height: AppSpace.xl),
+        if (_result case final result?) ...[
+          Text(
+            result.total == 1 ? '1 resultado' : '${result.total} resultados',
+            style: textTheme.titleMedium,
+          ),
+          const SizedBox(height: AppSpace.md),
+          if (result.items.isEmpty) const Text('No se encontraron datos.'),
+          ResponsiveGrid(
+            children: [for (final item in result.items) _resultCard(item)],
+          ),
+          PaginationBar(
+            page: result.page,
+            isLast: result.last,
+            busy: _busy,
+            onPage: _load,
+          ),
+        ],
+        if (_error != null)
+          TextButton(
+            onPressed: _busy ? null : () => _load(0),
+            child: const Text('Reintentar consulta'),
+          ),
       ],
-      if (_error != null)
-        TextButton(
-          onPressed: _busy ? null : () => _load(0),
-          child: const Text('Reintentar consulta'),
-        ),
-    ],
-  );
+    );
+  }
 
-  Widget _resultCard(Map<String, dynamic> item) => ManagementCard(
-    children: [
-      Text(
-        _clients ? clientName(item) : '${item['nombre'] ?? ''}',
-        style: Theme.of(context).textTheme.titleLarge,
-      ),
-      const SizedBox(height: 6),
-      Text('${item['correo'] ?? ''}'),
-      Text(item['activo'] == true ? 'Activo' : 'Inactivo'),
-      if (_clients)
-        Text('RFC: ${item['rfc'] ?? ''} · CURP: ${item['curp'] ?? ''}'),
-      if (!_clients) ...[
-        SelectableText('ID: ${item['id'] ?? ''}'),
-        Text('Teléfono: ${item['telefono'] ?? 'Sin teléfono asociado'}'),
-      ],
-      if (_clients)
-        TextButton.icon(
-          onPressed: _busy ? null : () => _detail(item),
-          icon: const Icon(Icons.arrow_forward),
-          label: const Text('Ver cliente'),
+  Widget _resultCard(Map<String, dynamic> item) {
+    final textTheme = Theme.of(context).textTheme;
+    final name = _clients ? clientName(item) : '${item['nombre'] ?? ''}';
+    final active = item['activo'] == true;
+    final muted = textTheme.bodySmall?.copyWith(color: mutedInk);
+    return ManagementCard(
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            CircleAvatar(
+              radius: 22,
+              backgroundColor: sage,
+              foregroundColor: ink,
+              child: Text(
+                initialsOf(name),
+                style: const TextStyle(fontWeight: FontWeight.w700),
+              ),
+            ),
+            const SizedBox(width: AppSpace.md),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    name,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: textTheme.titleMedium,
+                  ),
+                  Text(
+                    '${item['correo'] ?? ''}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: textTheme.bodyMedium?.copyWith(color: mutedInk),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: AppSpace.sm),
+            _StatusPill(active: active),
+          ],
         ),
-    ],
+        const SizedBox(height: AppSpace.md),
+        if (_clients) ...[
+          Text('RFC  ${item['rfc'] ?? '—'}', style: muted),
+          Text('CURP  ${item['curp'] ?? '—'}', style: muted),
+        ] else ...[
+          Text(
+            'Teléfono  ${item['telefono'] ?? 'Sin teléfono asociado'}',
+            style: muted,
+          ),
+          SelectableText('ID  ${item['id'] ?? ''}', style: muted),
+        ],
+        if (_clients)
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton.icon(
+              onPressed: _busy ? null : () => _detail(item),
+              iconAlignment: IconAlignment.end,
+              icon: const Icon(Icons.arrow_forward_rounded),
+              label: const Text('Ver cliente'),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+/// Estado con color y texto (el color nunca va solo).
+class _StatusPill extends StatelessWidget {
+  const _StatusPill({required this.active});
+
+  final bool active;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+    decoration: BoxDecoration(
+      color: active ? successSurface : errorSurface,
+      borderRadius: BorderRadius.circular(999),
+    ),
+    child: Text(
+      active ? 'Activo' : 'Inactivo',
+      style: Theme.of(
+        context,
+      ).textTheme.labelMedium?.copyWith(color: active ? ink : errorOnSurface),
+    ),
   );
 }
 

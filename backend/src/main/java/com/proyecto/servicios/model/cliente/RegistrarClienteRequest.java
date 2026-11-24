@@ -20,13 +20,13 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 
 public record RegistrarClienteRequest(
-        @NotBlank(message = "El nombre es obligatorio y no puede contener solo espacios.") @Size(min = 2, max = 50)
+        @NotBlank(message = "El nombre es obligatorio y no puede contener solo espacios.") @Size(min = 3, max = 50)
         @Pattern(regexp = "^ *[\\p{L}]+(?: +[\\p{L}]+)*+ *$") String nombre,
         @Size(max = 50)
         @Pattern(regexp = "^ *$|^ *[\\p{L}]+(?: +[\\p{L}]+)*+ *$") String segundoNombre,
-        @NotBlank @Size(min = 2, max = 50)
+        @NotBlank @Size(min = 3, max = 50)
         @Pattern(regexp = "^ *[\\p{L}]+(?: +[\\p{L}]+)*+ *$") String apellidoPaterno,
-        @NotBlank @Size(min = 2, max = 50)
+        @NotBlank @Size(min = 3, max = 50)
         @Pattern(regexp = "^ *[\\p{L}]+(?: +[\\p{L}]+)*+ *$") String apellidoMaterno,
         @NotNull @Past @MayorDeEdad
         @JsonDeserialize(using = FechaSinHoraDeserializer.class)
@@ -53,8 +53,8 @@ public record RegistrarClienteRequest(
         @Pattern(regexp = "^\\s*$|^\\d{10}$", message = "debe estar vacío o contener exactamente 10 dígitos")
         String telefonoAlternativo,
         @NotBlank @Size(max = 100) String ocupacion,
-        @NotBlank @Size(max = 150) String empresa,
-        @NotNull @DecimalMin("0.01") @Digits(integer = 17, fraction = 2) BigDecimal ingresoMensual,
+        @Size(max = 150) String empresa,
+        @DecimalMin("0.01") @Digits(integer = 17, fraction = 2) BigDecimal ingresoMensual,
         @NotNull @Valid ActualizarDomicilioRequest domicilio,
         @NotBlank(message = "La contrasena es obligatoria")
         @ContrasenaSegura
