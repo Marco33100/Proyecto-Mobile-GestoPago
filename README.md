@@ -38,7 +38,7 @@ todas se validan en el backend.
 | --- | --- |
 | **Autenticación** | Iniciar sesión con correo y contraseña; completar el **segundo factor (TOTP)** con una app autenticadora; usar las mismas credenciales en web y móvil; cerrar sesión. |
 | **Sesión única** | Si ya hay una sesión abierta en otro dispositivo, el sistema **avisa y pide confirmación** antes de cerrarla. El dispositivo anterior regresa solo al login con el motivo ("iniciaste sesión en la plataforma web"). |
-| **Catálogo** | Consultar los productos reales de Gesto Pago agrupados por servicio y **categoría**; buscar (sin importar acentos); ver nombre, descripción, precio, imagen representativa (ícono de categoría e iniciales del servicio) y **disponibilidad** para compra. |
+| **Catálogo** | Consultar los productos reales de Gesto Pago agrupados por servicio y **categoría**; buscar (sin importar acentos); ver nombre, descripción, precio, imagen (logo del servicio o, si no tiene, sus iniciales; con ícono de categoría) y **disponibilidad** para compra. |
 | **Compra** | Elegir un producto, revisar sus datos y precio, **confirmar** y autorizar con el código TOTP. El resultado se distingue claramente: **compra exitosa, rechazada, pendiente o error de comunicación**, con confirmación visual. |
 | **Historial** | Consultar solo las **compras exitosas**: fecha y hora, producto, importe, referencia de la transacción y detalle (autorización, folio, PIN oculto por seguridad). |
 | **Gestión (ejecutivos)** | Registrar clientes (con su cuenta interna y usuario), buscarlos, consultar cuentas, dar de baja y conciliar pagos inciertos con doble aprobación. |
@@ -607,8 +607,9 @@ IP real de cada usuario.
 
 ## 14. Limitaciones conocidas
 
-- **Imágenes del catálogo:** Gesto Pago no envía imágenes; se usa un ícono por categoría con las
-  iniciales del servicio.
+- **Imágenes del catálogo:** los logos se cargan desde Gesto Pago según `idServicio`
+  ([docs/catalogo.md](docs/catalogo.md)). Los servicios sin logo muestran sus iniciales; el ícono de
+  categoría se muestra siempre.
 - **Disponibilidad del proveedor:** si Gesto Pago no responde, las compras quedan pendientes o fallan de
   forma controlada; el catálogo sigue disponible desde PostgreSQL o Redis.
 - **Plataformas:** web y móvil comparten el mismo código Flutter (autorizado por el docente).

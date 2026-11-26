@@ -368,8 +368,8 @@ String _normalize(String text) {
   return text.toLowerCase().split('').map((c) => accents[c] ?? c).join().trim();
 }
 
-/// Imagen representativa: Gestopago no envía logotipos, así que se usa el
-/// icono de la categoría con las iniciales del servicio.
+/// Logo del servicio con el icono de su categoría. Mientras carga, o si no hay
+/// logo, se muestran las iniciales.
 class ServiceAvatar extends StatelessWidget {
   const ServiceAvatar({super.key, required this.service, this.size = 52});
 
@@ -385,30 +385,61 @@ class ServiceAvatar extends StatelessWidget {
     final initials = words.isEmpty
         ? '?'
         : words.take(2).map((w) => w[0].toUpperCase()).join();
+    // Casi todos los logos son apaisados: en un cuadrado no se leen.
+    final width = size * 1.6;
+    final placeholder = Container(
+      width: width,
+      height: size,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: inkRaised,
+        borderRadius: BorderRadius.circular(AppRadius.sm),
+      ),
+      child: Text(
+        initials,
+        style: TextStyle(
+          color: paperHighlight,
+          fontWeight: FontWeight.w800,
+          fontSize: size * 0.34,
+        ),
+      ),
+    );
+    final logoUrl = service.logoUrl;
     return ExcludeSemantics(
       child: SizedBox(
-        width: size,
+        width: width,
         height: size,
         child: Stack(
           clipBehavior: Clip.none,
           children: [
-            Container(
-              width: size,
-              height: size,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: inkRaised,
-                borderRadius: BorderRadius.circular(AppRadius.sm),
+            if (logoUrl == null)
+              placeholder
+            else
+              Image.network(
+                logoUrl,
+                width: width,
+                height: size,
+                fit: BoxFit.contain,
+                // El servidor de imágenes no envía CORS: en web solo se pueden
+                // mostrar con un elemento <img>.
+                webHtmlElementStrategy: WebHtmlElementStrategy.prefer,
+                frameBuilder: (context, image, frame, wasSynchronous) =>
+                    frame == null
+                    ? placeholder
+                    // Fondo blanco: los logos están hechos para fondo claro.
+                    : Container(
+                        width: width,
+                        height: size,
+                        padding: const EdgeInsets.all(3),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(AppRadius.sm),
+                          border: Border.all(color: sage),
+                        ),
+                        child: image,
+                      ),
+                errorBuilder: (context, error, stackTrace) => placeholder,
               ),
-              child: Text(
-                initials,
-                style: TextStyle(
-                  color: paperHighlight,
-                  fontWeight: FontWeight.w800,
-                  fontSize: size * 0.34,
-                ),
-              ),
-            ),
             Positioned(
               right: -6,
               bottom: -6,
