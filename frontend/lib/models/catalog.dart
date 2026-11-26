@@ -134,6 +134,16 @@ class CatalogService {
 
   bool get purchasable => products.any(isPurchasable);
 
+  /// Logo que Gestopago publica por `idServicio` (sin credenciales). No todos
+  /// los servicios tienen uno.
+  String? get logoUrl {
+    final id = products.first['idServicio'];
+    return id is int && id > 0
+        ? 'https://gestopago.portalventas.net/sistema/images/gestopago'
+              '/servicios/$id.png'
+        : null;
+  }
+
   /// "Desde $10.00 MXN" con precio fijo; si no, la forma de pago.
   String get priceSummary {
     final fixed = products
