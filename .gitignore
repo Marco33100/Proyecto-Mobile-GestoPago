@@ -10,7 +10,6 @@ data/
 .env
 .env.*
 !.env.example
-graphify-out/
 
 ### IntelliJ IDEA ###
 .idea/modules.xml
