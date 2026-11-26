@@ -318,4 +318,24 @@ void main() {
     expect(services.first.priceSummary, 'Desde \$10.00 MXN');
     expect(services.last.purchasable, isFalse);
   });
+
+  test('el logo sale del idServicio y sin uno valido no hay URL', () {
+    String? logo(Object? id) => CatalogService('X', CatalogCategory.other, [
+      {'idServicio': id},
+    ]).logoUrl;
+
+    expect(logo(133), endsWith('/servicios/133.png'));
+    expect(logo(133), startsWith('https://gestopago.portalventas.net/'));
+    for (final invalid in [null, 0, -1, '133']) {
+      expect(logo(invalid), isNull);
+    }
+  });
+
+  testWidgets('si el logo no carga quedan las iniciales', (tester) async {
+    // En pruebas toda descarga de red falla.
+    await pumpCatalog(tester);
+
+    expect(find.text('BA'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
 }

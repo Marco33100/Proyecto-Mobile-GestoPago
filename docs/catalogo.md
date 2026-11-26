@@ -48,7 +48,15 @@ Gestopago no envía nombres ni imágenes de categoría. Los grupos salen de los 
 | 16 | Apuestas |
 | otro | Otros |
 
-Como imagen representativa se usa el icono de la categoría con las iniciales del servicio, porque la API no incluye logotipos.
+## Logos
+
+El catálogo no incluye imágenes. La app arma la dirección del logo con `idServicio`:
+
+`https://gestopago.portalventas.net/sistema/images/gestopago/servicios/{idServicio}.png`
+
+La descarga la hace la app, sin credenciales y sin pasar por el backend, Redis ni la base de datos. La dirección no aparece en la documentación del proyecto sobre la API: se comprobó con peticiones directas (133 Telcel y 71 Amazon responden la imagen). Algunos servicios no tienen logo (404); en ese caso, y mientras carga, se muestran las iniciales. El icono de la categoría se conserva en ambos casos.
+
+En web el logo se muestra con un elemento `<img>`, porque ese servidor no envía encabezados CORS.
 
 ## Flujo de compra
 
